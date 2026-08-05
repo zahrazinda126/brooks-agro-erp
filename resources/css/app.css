@@ -1,0 +1,487 @@
+/* ==========================================================================
+   Brooks Agro ERP
+
+   Brand carried over from the prototype: maroon, gold, charcoal.
+   Built for a phone in a poultry shed — direct sun, dirty hands, a cheap
+   Android device, patchy signal:
+
+   - No web fonts. Nothing to download, nothing to fail.
+   - Minimum 48px touch targets throughout.
+   - High contrast only. Mid-greys disappear in glare.
+   - Figures set in tabular numerals so columns of counts align.
+   ========================================================================== */
+
+:root {
+    /* Brand */
+    --maroon-900: #5C1220;
+    --maroon-800: #6F1623;
+    --maroon-700: #8B1E2D;   /* primary */
+    --maroon-100: #F6E7E9;
+
+    --gold-600: #B8942C;
+    --gold-500: #D4AF37;     /* accent — active state, focus */
+    --gold-100: #FBF3DC;
+
+    /* Sidebar */
+    --charcoal-900: #1B2027;
+    --charcoal-800: #222831;
+    --charcoal-700: #2D3642;
+
+    /* Status */
+    --danger-600: #DC2626;
+    --danger-100: #FDE8E8;
+    --success-600: #16A34A;
+    --warning-500: #F59E0B;
+
+    /* Surfaces */
+    --ink: #1F2937;
+    --ink-soft: #6B7280;
+    --line: #E6EBF2;
+    --paper: #F5F7FB;
+    --card: #FFFFFF;
+
+    --radius: 14px;
+    --radius-sm: 10px;
+    --tap: 48px;
+    --shadow: 0 8px 20px rgba(0, 0, 0, .08);
+
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+            "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+    font-family: var(--font);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   The signature: figures.
+
+   Counts and shillings are the product of this system, so they carry the
+   typographic weight. Tabular numerals keep columns aligned; the unit sits
+   beneath in small caps so the number stays uncluttered.
+   -------------------------------------------------------------------------- */
+.figure {
+    display: block;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-weight: 700;
+    font-size: 2rem;
+    letter-spacing: -.02em;
+    line-height: 1.1;
+    color: var(--ink);
+}
+
+.figure--lg { font-size: 2.75rem; }
+.figure--muted { color: var(--ink-soft); }
+.figure--alarm { color: var(--danger-600); }
+
+.figure-unit {
+    display: block;
+    margin-top: 4px;
+    font-size: .6875rem;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+/* --------------------------------------------------------------------------
+   Sign in
+   -------------------------------------------------------------------------- */
+.auth {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+    background: var(--maroon-800);
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 28px 22px 26px;
+}
+
+.auth-mark { text-align: center; margin-bottom: 22px; }
+
+.auth-mark h1 {
+    margin: 0;
+    font-size: 1.375rem;
+    font-weight: 800;
+    letter-spacing: -.015em;
+    color: var(--maroon-700);
+}
+
+.auth-mark p {
+    margin: 4px 0 0;
+    font-size: .8125rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--ink-soft);
+}
+
+/* A hairline of gold under the wordmark — the one flourish. */
+.auth-mark::after {
+    content: "";
+    display: block;
+    width: 46px;
+    height: 3px;
+    margin: 12px auto 0;
+    background: var(--gold-500);
+    border-radius: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Forms
+   -------------------------------------------------------------------------- */
+.field { margin-bottom: 16px; }
+
+.field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: .8125rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+.field input,
+.field select,
+.field textarea {
+    width: 100%;
+    min-height: var(--tap);
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 1.0625rem;      /* >=16px stops iOS zooming on focus */
+    color: var(--ink);
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: var(--radius-sm);
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+    outline: 3px solid var(--gold-500);
+    outline-offset: 1px;
+    border-color: var(--maroon-700);
+}
+
+.field--error input { border-color: var(--danger-600); }
+
+.field-error {
+    margin: 6px 0 0;
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--danger-600);
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: var(--tap);
+    padding: 12px 18px;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+    background: var(--maroon-700);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.btn:hover { background: var(--maroon-800); }
+.btn:focus-visible { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+
+.btn--gold { background: var(--gold-600); }
+.btn--gold:hover { background: var(--gold-500); }
+
+.btn--quiet {
+    width: auto;
+    background: transparent;
+    color: var(--maroon-700);
+    border: 2px solid var(--line);
+}
+
+.btn--quiet:hover { background: var(--maroon-100); }
+
+.notice {
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    border-radius: var(--radius-sm);
+    font-size: .9375rem;
+    background: var(--gold-100);
+    border-left: 4px solid var(--gold-600);
+}
+
+.notice--alarm { background: var(--danger-100); border-left-color: var(--danger-600); }
+.notice--ok    { background: var(--maroon-100); border-left-color: var(--maroon-700); }
+
+/* --------------------------------------------------------------------------
+   Application shell
+
+   Phone: top bar, slide-in drawer, content full width.
+   Laptop: the drawer becomes a permanent column spanning both rows.
+   -------------------------------------------------------------------------- */
+.shell { min-height: 100dvh; }
+
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    padding: 8px 14px;
+    background: var(--maroon-700);
+    color: #fff;
+}
+
+.topbar h1 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -.01em;
+}
+
+.topbar-sub {
+    display: block;
+    font-size: .6875rem;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    opacity: .8;
+}
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--tap);
+    height: var(--tap);
+    flex: 0 0 var(--tap);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: #fff;
+    cursor: pointer;
+}
+
+.icon-btn:hover { background: rgba(255, 255, 255, .12); }
+.icon-btn:focus-visible { outline: 3px solid var(--gold-500); }
+.icon-btn svg { width: 24px; height: 24px; }
+
+.icon-btn--menu { margin-left: -10px; }
+
+.topbar-end { margin-left: auto; }
+
+/* Drawer */
+.drawer {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    width: min(84vw, 320px);
+    background: var(--charcoal-800);
+    color: #fff;
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.drawer[data-open="true"] { transform: translateX(0); }
+
+.drawer-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(27, 32, 39, .6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+}
+
+.drawer-scrim[data-open="true"] { opacity: 1; pointer-events: auto; }
+
+.drawer-head {
+    padding: 18px;
+    background: var(--charcoal-900);
+    border-bottom: 3px solid var(--gold-500);
+}
+
+.drawer-head strong { display: block; font-size: 1rem; }
+
+.drawer-head span {
+    display: block;
+    margin-top: 2px;
+    font-size: .75rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    opacity: .72;
+}
+
+.nav-group { padding: 14px 0 4px; }
+
+.nav-group > h2 {
+    margin: 0 0 6px;
+    padding: 0 18px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--gold-500);
+    opacity: .85;
+}
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    min-height: var(--tap);
+    padding: 10px 18px;
+    color: #fff;
+    text-decoration: none;
+    font-size: .9375rem;
+    border-left: 3px solid transparent;
+}
+
+.nav-link:hover { background: var(--charcoal-700); }
+
+.nav-link[aria-current="page"] {
+    background: var(--charcoal-700);
+    border-left-color: var(--gold-500);
+    font-weight: 700;
+}
+
+.nav-link:focus-visible { outline: 3px solid var(--gold-500); outline-offset: -3px; }
+
+/* Content */
+.content { padding: 18px 16px 40px; }
+
+.page-head { margin-bottom: 18px; }
+
+.page-head h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -.02em;
+}
+
+.page-head p {
+    margin: 4px 0 0;
+    color: var(--ink-soft);
+    font-size: .9375rem;
+}
+
+/* Cards */
+.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow);
+}
+
+.card + .card { margin-top: 12px; }
+
+.card-label {
+    margin: 0 0 8px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.grid > .card + .card { margin-top: 0; }
+
+.muted { color: var(--ink-soft); font-size: .9375rem; }
+
+.pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    background: var(--maroon-100);
+    color: var(--maroon-700);
+}
+
+.pill--gold { background: var(--gold-100); color: var(--gold-600); }
+
+/* --------------------------------------------------------------------------
+   Laptop and up
+
+   The drawer spans BOTH grid rows. Without grid-row: 1 / -1 it sits in row
+   one only, its full height forces that row to fill the viewport, and the
+   top bar stretches down with it — pushing the content below the fold.
+   That was the bug in the first build.
+   -------------------------------------------------------------------------- */
+@media (min-width: 900px) {
+    .shell {
+        display: grid;
+        grid-template-columns: 272px minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .drawer {
+        grid-column: 1;
+        grid-row: 1 / -1;
+        position: sticky;
+        top: 0;
+        align-self: start;
+        height: 100dvh;
+        width: auto;
+        transform: none;
+        transition: none;
+        z-index: 10;
+    }
+
+    .drawer-scrim { display: none; }
+    .icon-btn--menu { display: none; }
+
+    .topbar {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    .content {
+        grid-column: 2;
+        grid-row: 2;
+        padding: 26px 30px 60px;
+        width: 100%;
+        max-width: 1180px;
+    }
+
+    .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .drawer, .drawer-scrim { transition: none; }
+}

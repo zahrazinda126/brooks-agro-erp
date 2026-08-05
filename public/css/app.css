@@ -1,0 +1,2702 @@
+:root {
+    --maroon-900: #5C1220;
+    --maroon-800: #6F1623;
+    --maroon-700: #8B1E2D;
+    --maroon-100: #F6E7E9;
+
+    --gold-600: #B8942C;
+    --gold-500: #D4AF37;
+    --gold-100: #FBF3DC;
+
+    --charcoal-900: #1B2027;
+    --charcoal-800: #222831;
+    --charcoal-700: #2D3642;
+
+    --danger-600: #DC2626;
+    --danger-100: #FDE8E8;
+
+    --ink: #1F2937;
+    --ink-soft: #6B7280;
+    --line: #E6EBF2;
+    --paper: #F5F7FB;
+    --card: #FFFFFF;
+
+    --radius: 14px;
+    --radius-sm: 10px;
+    --tap: 48px;
+    --shadow: 0 8px 20px rgba(0,0,0,.08);
+
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+    font-family: var(--font);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+}
+
+/* Figures: tabular numerals so columns of counts align. */
+.figure {
+    display: block;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-weight: 700;
+    font-size: 2rem;
+    letter-spacing: -.02em;
+    line-height: 1.1;
+}
+
+.figure--lg { font-size: 2.75rem; }
+.figure--alarm { color: var(--danger-600); }
+
+.figure-unit {
+    display: block;
+    margin-top: 4px;
+    font-size: .6875rem;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+/* Sign in */
+.auth {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+    background: var(--maroon-800);
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 28px 22px 26px;
+}
+
+.auth-mark { text-align: center; margin-bottom: 22px; }
+
+.auth-mark h1 {
+    margin: 0;
+    font-size: 1.375rem;
+    font-weight: 800;
+    letter-spacing: -.015em;
+    color: var(--maroon-700);
+}
+
+.auth-mark p {
+    margin: 4px 0 0;
+    font-size: .8125rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--ink-soft);
+}
+
+.auth-mark::after {
+    content: "";
+    display: block;
+    width: 46px;
+    height: 3px;
+    margin: 12px auto 0;
+    background: var(--gold-500);
+    border-radius: 2px;
+}
+
+/* Forms */
+.field { margin-bottom: 16px; }
+
+.field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: .8125rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+.field input, .field select, .field textarea {
+    width: 100%;
+    min-height: var(--tap);
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 1.0625rem;
+    color: var(--ink);
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: var(--radius-sm);
+}
+
+.field input:focus, .field select:focus, .field textarea:focus {
+    outline: 3px solid var(--gold-500);
+    outline-offset: 1px;
+    border-color: var(--maroon-700);
+}
+
+.field--error input { border-color: var(--danger-600); }
+
+.field-error {
+    margin: 6px 0 0;
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--danger-600);
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: var(--tap);
+    padding: 12px 18px;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+    background: var(--maroon-700);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.btn:hover { background: var(--maroon-800); }
+.btn:focus-visible { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+
+.btn--gold { background: var(--gold-600); }
+.btn--gold:hover { background: var(--gold-500); }
+
+.btn--quiet {
+    width: auto;
+    background: transparent;
+    color: var(--maroon-700);
+    border: 2px solid var(--line);
+}
+
+.btn--quiet:hover { background: var(--maroon-100); }
+
+.notice {
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    border-radius: var(--radius-sm);
+    font-size: .9375rem;
+    background: var(--gold-100);
+    border-left: 4px solid var(--gold-600);
+}
+
+.notice--alarm { background: var(--danger-100); border-left-color: var(--danger-600); }
+.notice--ok { background: var(--maroon-100); border-left-color: var(--maroon-700); }
+
+/* Shell */
+.shell { min-height: 100dvh; }
+
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    padding: 8px 14px;
+    background: var(--maroon-700);
+    color: #fff;
+}
+
+.topbar h1 { margin: 0; font-size: 1rem; font-weight: 700; }
+
+.topbar-sub {
+    display: block;
+    font-size: .6875rem;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    opacity: .8;
+}
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--tap);
+    height: var(--tap);
+    flex: 0 0 var(--tap);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: #fff;
+    cursor: pointer;
+}
+
+.icon-btn:hover { background: rgba(255,255,255,.12); }
+.icon-btn:focus-visible { outline: 3px solid var(--gold-500); }
+.icon-btn svg { width: 24px; height: 24px; }
+.icon-btn--menu { margin-left: -10px; }
+.topbar-end { margin-left: auto; }
+
+/* Drawer */
+.drawer {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    width: min(84vw, 320px);
+    background: var(--charcoal-800);
+    color: #fff;
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.drawer[data-open="true"] { transform: translateX(0); }
+
+.drawer-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(27,32,39,.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+}
+
+.drawer-scrim[data-open="true"] { opacity: 1; pointer-events: auto; }
+
+.drawer-head {
+    padding: 18px;
+    background: var(--charcoal-900);
+    border-bottom: 3px solid var(--gold-500);
+}
+
+.drawer-head strong { display: block; font-size: 1rem; }
+
+.drawer-head span {
+    display: block;
+    margin-top: 2px;
+    font-size: .75rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    opacity: .72;
+}
+
+.nav-group { padding: 14px 0 4px; }
+
+.nav-group > h2 {
+    margin: 0 0 6px;
+    padding: 0 18px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--gold-500);
+}
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    min-height: var(--tap);
+    padding: 10px 18px;
+    color: #fff;
+    text-decoration: none;
+    font-size: .9375rem;
+    border-left: 3px solid transparent;
+}
+
+.nav-link:hover { background: var(--charcoal-700); }
+
+.nav-link[aria-current="page"] {
+    background: var(--charcoal-700);
+    border-left-color: var(--gold-500);
+    font-weight: 700;
+}
+
+.nav-link:focus-visible { outline: 3px solid var(--gold-500); outline-offset: -3px; }
+
+/* Content */
+.content { padding: 18px 16px 40px; }
+.page-head { margin-bottom: 18px; }
+
+.page-head h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -.02em;
+}
+
+.page-head p { margin: 4px 0 0; color: var(--ink-soft); font-size: .9375rem; }
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow);
+}
+
+.card + .card { margin-top: 12px; }
+
+.card-label {
+    margin: 0 0 8px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.grid > .card + .card { margin-top: 0; }
+.muted { color: var(--ink-soft); font-size: .9375rem; }
+
+.pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    background: var(--maroon-100);
+    color: var(--maroon-700);
+}
+
+/* Laptop and up.
+   grid-row: 1 / -1 on the drawer is the fix for the earlier bug: without
+   it the sidebar sat in row one only, its 100dvh height forced that row
+   to fill the viewport, and the topbar stretched down with it. */
+@media (min-width: 900px) {
+    .shell {
+        display: grid;
+        grid-template-columns: 272px minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .drawer {
+        grid-column: 1;
+        grid-row: 1 / -1;
+        position: sticky;
+        top: 0;
+        align-self: start;
+        height: 100dvh;
+        width: auto;
+        transform: none;
+        transition: none;
+        z-index: 10;
+    }
+
+    .drawer-scrim { display: none; }
+    .icon-btn--menu { display: none; }
+
+    .topbar { grid-column: 2; grid-row: 1; }
+
+    .content {
+        grid-column: 2;
+        grid-row: 2;
+        padding: 26px 30px 60px;
+        width: 100%;
+        max-width: 1180px;
+    }
+
+    .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .drawer, .drawer-scrim { transition: none; }
+}
+/* --------------------------------------------------------------------------
+   Sidebar groups
+
+   At 84 screens a flat list is unusable, so groups collapse and a filter
+   box sits above them. <details>/<summary> gives us open/close for free,
+   including keyboard support.
+   -------------------------------------------------------------------------- */
+.nav-filter { padding: 12px 14px 4px; }
+
+.nav-filter input {
+    width: 100%;
+    min-height: 42px;
+    padding: 9px 12px;
+    font-family: inherit;
+    font-size: .9375rem;
+    color: #fff;
+    background: var(--charcoal-700);
+    border: 2px solid transparent;
+    border-radius: var(--radius-sm);
+}
+
+.nav-filter input::placeholder { color: rgba(255,255,255,.55); }
+
+.nav-filter input:focus {
+    outline: none;
+    border-color: var(--gold-500);
+}
+
+.nav-group { padding: 0; }
+
+.nav-group > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 8px 18px;
+    cursor: pointer;
+    list-style: none;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--gold-500);
+}
+
+.nav-group > summary::-webkit-details-marker { display: none; }
+
+.nav-group > summary:hover { background: var(--charcoal-700); }
+
+.nav-group > summary:focus-visible {
+    outline: 3px solid var(--gold-500);
+    outline-offset: -3px;
+}
+
+/* Chevron, rotated when the group is open. */
+.nav-group > summary::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 140ms ease;
+}
+
+.nav-group[open] > summary::before { transform: rotate(45deg); }
+
+.nav-group > summary > span { flex: 1; }
+
+.nav-group > summary > em {
+    font-style: normal;
+    font-size: .6875rem;
+    opacity: .6;
+}
+
+.nav-empty, .nav-none {
+    padding: 14px 18px;
+    margin: 0;
+    font-size: .9375rem;
+    color: rgba(255,255,255,.75);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nav-group > summary::before { transition: none; }
+}
+/* ==========================================================================
+   MODULE 3 — HR screens
+
+   Append this to the END of public/css/app.css. Nothing above it changes.
+   ========================================================================== */
+
+/* Staff numbers, phones, account numbers and usernames are read character
+   by character and often copied by hand. Monospace stops 5/S and 8/B from
+   being guessed at. */
+.mono {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .01em;
+}
+
+/* --------------------------------------------------------------------------
+   Page head with an action on the right
+   -------------------------------------------------------------------------- */
+.page-head--split {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.btn--inline { width: auto; }
+
+.form-actions,
+.button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.button-row form { margin: 0; }
+
+/* --------------------------------------------------------------------------
+   Forms
+   -------------------------------------------------------------------------- */
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0 16px;
+}
+
+.field--wide { grid-column: 1 / -1; }
+
+.field--actions {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.field-hint {
+    margin: 6px 0 0;
+    font-size: .8125rem;
+    color: var(--ink-soft);
+}
+
+.req {
+    font-size: .625rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    color: var(--maroon-700);
+}
+
+.field textarea {
+    resize: vertical;
+    min-height: 88px;
+    line-height: 1.5;
+}
+
+.filters {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0 16px;
+    margin-bottom: 16px;
+}
+
+/* --------------------------------------------------------------------------
+   Data list
+
+   One markup, two shapes: stacked cards on a phone, aligned columns on a
+   laptop. Each cell carries its own label so the phone view stays readable
+   without a header row.
+   -------------------------------------------------------------------------- */
+.data-head { display: none; }
+
+.data-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.data-row {
+    display: block;
+    padding: 14px 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    color: inherit;
+    text-decoration: none;
+}
+
+.data-row:hover { border-color: var(--maroon-700); }
+
+.data-row:focus-visible {
+    outline: 3px solid var(--gold-500);
+    outline-offset: 2px;
+}
+
+.data-cell {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 0;
+    font-size: .9375rem;
+}
+
+.data-cell::before {
+    content: attr(data-label);
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    flex: 0 0 auto;
+}
+
+.data-cell--strong { font-weight: 700; font-size: 1rem; }
+
+.data-sub {
+    display: block;
+    font-style: normal;
+    font-weight: 400;
+    font-size: .8125rem;
+    color: var(--ink-soft);
+}
+
+.pager { margin-top: 18px; }
+
+.pager svg { width: 16px; height: 16px; vertical-align: middle; }
+
+.empty { text-align: left; }
+
+/* --------------------------------------------------------------------------
+   Detail view
+   -------------------------------------------------------------------------- */
+.detail-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.detail-grid > .card + .card { margin-top: 0; }
+
+.facts {
+    display: grid;
+    grid-template-columns: minmax(96px, auto) 1fr;
+    gap: 8px 14px;
+    margin: 0;
+}
+
+.facts dt {
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding-top: 2px;
+}
+
+.facts dd { margin: 0; }
+
+.pill--muted { background: var(--line); color: var(--ink-soft); }
+.pill--alarm { background: var(--danger-100); color: var(--danger-600); }
+
+/* --------------------------------------------------------------------------
+   Credentials panel
+
+   Shown once, never again. Gold-edged so it reads as "write this down now"
+   rather than as an ordinary confirmation message.
+   -------------------------------------------------------------------------- */
+.credentials {
+    padding: 18px;
+    margin-bottom: 18px;
+    background: var(--gold-100);
+    border: 2px solid var(--gold-500);
+    border-radius: var(--radius);
+}
+
+.credentials-pair {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+}
+
+.cred-value {
+    display: block;
+    margin-top: 2px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--ink);
+    user-select: all;      /* one tap selects the whole value */
+}
+
+/* --------------------------------------------------------------------------
+   Laptop and up
+   -------------------------------------------------------------------------- */
+@media (min-width: 760px) {
+    .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .filters { grid-template-columns: 2fr 1fr 1fr auto; }
+    .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .credentials-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 900px) {
+    .data-list { gap: 0; }
+
+    .data-head,
+    .data-row {
+        display: grid;
+        grid-template-columns: 120px 2fr 1.2fr 1.2fr 1fr;
+        gap: 16px;
+        align-items: center;
+    }
+
+    .data-head {
+        padding: 10px 16px;
+        font-size: .6875rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--ink-soft);
+    }
+
+    .data-row {
+        border-radius: 0;
+        box-shadow: none;
+        border-bottom: none;
+    }
+
+    .data-row:first-of-type { border-radius: var(--radius) var(--radius) 0 0; }
+
+    .data-row:last-of-type {
+        border-radius: 0 0 var(--radius) var(--radius);
+        border-bottom: 1px solid var(--line);
+    }
+
+    .data-cell { display: block; padding: 0; }
+    .data-cell::before { display: none; }
+}
+/* ==========================================================================
+   MODULE 5 — Sidebar with logo and icons
+
+   REPLACES the sidebar rules you already have. Instructions in the guide
+   tell you which block to delete first.
+   ========================================================================== */
+
+/* Brand block at the top of the drawer. */
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 16px 18px;
+    background: var(--charcoal-900);
+}
+
+.brand-mark {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+    flex: 0 0 38px;
+    background: #fff;
+    border-radius: 8px;
+    padding: 3px;
+}
+
+.brand-name {
+    font-size: 1.0625rem;
+    font-weight: 800;
+    letter-spacing: -.015em;
+    color: #fff;
+}
+
+.drawer-head {
+    padding: 13px 18px;
+    background: var(--charcoal-900);
+    border-bottom: 3px solid var(--gold-500);
+}
+
+.drawer-head strong { display: block; font-size: .9375rem; }
+
+.drawer-head span {
+    display: block;
+    margin-top: 2px;
+    font-size: .75rem;
+    letter-spacing: .04em;
+    color: rgba(255, 255, 255, .68);
+}
+
+/* Filter */
+.nav-filter { padding: 12px 14px 6px; }
+
+.nav-filter input {
+    width: 100%;
+    min-height: 42px;
+    padding: 9px 12px;
+    font-family: inherit;
+    font-size: .9375rem;
+    color: #fff;
+    background: var(--charcoal-700);
+    border: 2px solid transparent;
+    border-radius: var(--radius-sm);
+}
+
+.nav-filter input::placeholder { color: rgba(255, 255, 255, .5); }
+.nav-filter input:focus { outline: none; border-color: var(--gold-500); }
+
+/* Groups */
+.nav-group { padding: 0; }
+
+.nav-group > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 8px 18px;
+    cursor: pointer;
+    list-style: none;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, .5);
+}
+
+.nav-group > summary::-webkit-details-marker { display: none; }
+.nav-group > summary:hover { color: rgba(255, 255, 255, .8); }
+
+.nav-group > summary:focus-visible {
+    outline: 3px solid var(--gold-500);
+    outline-offset: -3px;
+}
+
+.nav-group > summary::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    flex: 0 0 6px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 140ms ease;
+}
+
+.nav-group[open] > summary::before { transform: rotate(45deg); }
+.nav-group > summary > span { flex: 1; }
+.nav-group > summary > em { font-style: normal; font-size: .6875rem; opacity: .55; }
+
+/* Links.
+
+   The active item is a filled maroon pill rather than a left border —
+   it reads at a glance on a phone held at arm's length, and it ties the
+   sidebar to the top bar. */
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: var(--tap);
+    margin: 2px 10px;
+    padding: 9px 12px;
+    color: rgba(255, 255, 255, .88);
+    text-decoration: none;
+    font-size: .9375rem;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    width: calc(100% - 20px);
+    text-align: left;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.nav-link:hover { background: var(--charcoal-700); color: #fff; }
+
+.nav-link[aria-current="page"] {
+    background: var(--maroon-700);
+    color: #fff;
+    font-weight: 700;
+}
+
+.nav-link:focus-visible {
+    outline: 3px solid var(--gold-500);
+    outline-offset: -2px;
+}
+
+.nav-icon {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    opacity: .85;
+}
+
+.nav-link[aria-current="page"] .nav-icon { opacity: 1; }
+
+.nav-empty, .nav-none {
+    padding: 14px 18px;
+    margin: 0;
+    font-size: .9375rem;
+    color: rgba(255, 255, 255, .72);
+}
+
+.nav-signout {
+    margin: 10px 0 18px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, .12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nav-group > summary::before { transition: none; }
+}
+/* ==========================================================================
+   MODULE 6 — Poultry batches
+
+   Append to the END of public/css/app.css.
+   ========================================================================== */
+
+/* Batch cards. Three figures side by side is the fastest read on a phone:
+   how many birds, how old, how many lost. */
+.batch-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.batch-card {
+    display: block;
+    padding: 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    color: inherit;
+    text-decoration: none;
+}
+
+.batch-card:hover { border-color: var(--maroon-700); }
+
+.batch-card:focus-visible {
+    outline: 3px solid var(--gold-500);
+    outline-offset: 2px;
+}
+
+.batch-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.batch-card-head strong { font-size: 1.0625rem; font-weight: 800; }
+
+.batch-name {
+    display: block;
+    margin-top: 2px;
+    font-size: .875rem;
+    color: var(--ink-soft);
+}
+
+.batch-figures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+}
+
+.batch-figures .figure { font-size: 1.5rem; }
+
+.batch-meta {
+    margin: 10px 0 0;
+    font-size: .875rem;
+    color: var(--ink-soft);
+}
+
+/* Lifecycle stage. Colour carries meaning: amber while the flock is still
+   costing money without producing, maroon once it is in lay, grey when
+   spent. */
+.stage {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    background: var(--gold-100);
+    color: var(--gold-600);
+}
+
+.stage--early-lay,
+.stage--in-lay { background: var(--maroon-100); color: var(--maroon-700); }
+
+.stage--ready { background: #DCFCE7; color: #15803D; }
+
+.stage--spent { background: var(--line); color: var(--ink-soft); }
+
+/* Inline flag on a card — quieter than a full notice. */
+.flag {
+    margin: 10px 0 0;
+    padding: 8px 11px;
+    border-radius: var(--radius-sm);
+    font-size: .875rem;
+    background: var(--gold-100);
+    color: #6B5410;
+}
+
+.flag--alarm { background: var(--danger-100); color: var(--danger-600); font-weight: 600; }
+
+/* Expected egg sizes */
+.grade-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.grade-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 11px;
+    background: var(--paper);
+    border-radius: var(--radius-sm);
+    font-size: .9375rem;
+}
+
+@media (min-width: 760px) {
+    .batch-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1100px) {
+    .batch-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* ==========================================================================
+   MODULE 6c — Breeds
+
+   Append to the END of public/css/app.css.
+   ========================================================================== */
+
+.section-heading {
+    margin: 22px 0 10px;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+.section-heading:first-of-type { margin-top: 4px; }
+
+.breed-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.breed-card {
+    padding: 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.breed-card--off { opacity: .6; }
+
+.breed-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.breed-card-head strong { font-size: 1.0625rem; font-weight: 800; }
+
+.breed-usage {
+    display: block;
+    margin-top: 2px;
+    font-size: .8125rem;
+    color: var(--ink-soft);
+}
+
+.btn--small {
+    min-height: 38px;
+    padding: 7px 14px;
+    font-size: .875rem;
+}
+
+/* The laying span as a line: two breeds can be compared at a glance in a
+   way four separate numbers do not allow. */
+.lay-span {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    font-size: .8125rem;
+    font-weight: 700;
+    color: var(--maroon-700);
+}
+
+.lay-bar {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--gold-500), var(--maroon-700));
+}
+
+.breed-notes {
+    margin: 12px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: .875rem;
+    color: var(--ink-soft);
+}
+
+/* A button that reads as a link — for secondary actions inside a card
+   where a full button would compete with the primary one. */
+.link-button {
+    padding: 0;
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--maroon-700);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.link-button:hover { color: var(--maroon-900); }
+
+.link-button:focus-visible {
+    outline: 3px solid var(--gold-500);
+    outline-offset: 2px;
+}
+
+@media (min-width: 760px) {
+    .breed-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1100px) {
+    .breed-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* ==========================================================================
+   MODULE 7 — Dashboard
+
+   Append to the END of public/css/app.css.
+   ========================================================================== */
+
+/* A card carrying something wrong. Left edge only — a fully red card
+   shouts, and if everything shouts nothing gets read. */
+.card--alarm {
+    border-color: var(--danger-600);
+    border-left-width: 4px;
+}
+
+.attention-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--line);
+    color: inherit;
+    text-decoration: none;
+}
+
+.attention-row:last-of-type { border-bottom: none; padding-bottom: 0; }
+.attention-row:hover strong { color: var(--maroon-700); }
+
+.attention-row:focus-visible {
+    outline: 3px solid var(--gold-500);
+    outline-offset: 2px;
+}
+
+.attention-row em {
+    font-style: normal;
+    font-size: .875rem;
+    color: var(--ink-soft);
+    margin-left: 6px;
+}
+
+.attention-why {
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--danger-600);
+}
+
+.attention-why--soon { color: var(--gold-600); }
+
+/* Shortcuts. Big square targets — this is the one thing on the dashboard
+   a worker taps, often with one hand and dirty fingers. */
+.shortcut-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.shortcut {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 88px;
+    padding: 14px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    color: var(--ink);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: .9375rem;
+}
+
+.shortcut:hover {
+    border-color: var(--maroon-700);
+    background: var(--maroon-100);
+}
+
+.shortcut:focus-visible {
+    outline: 3px solid var(--gold-500);
+    outline-offset: 2px;
+}
+
+.shortcut-icon {
+    width: 26px;
+    height: 26px;
+    color: var(--maroon-700);
+}
+
+@media (min-width: 760px) {
+    .shortcut-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1100px) {
+    .shortcut-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+/* ==========================================================================
+   PHASE 3 — Worker entry and manager assessment
+
+   Append to the END of public/css/app.css.
+
+   Designed for a worker who may read slowly, has never used a system like
+   this, and is holding a phone one-handed in a poultry house. Everything
+   here follows from that: nothing under 56px, nothing under 16px of text,
+   colour used to mean something rather than to decorate.
+   ========================================================================== */
+
+/* ---------- Saved confirmation ----------
+   Shown after every save. People new to a system do not trust that it
+   worked unless it says so, and will re-enter rather than risk it. */
+.saved {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+    background: #DCFCE7;
+    border: 2px solid #16A34A;
+    border-radius: var(--radius);
+}
+
+.saved-tick { width: 34px; height: 34px; flex: 0 0 34px; color: #15803D; }
+.saved strong { display: block; font-size: 1.125rem; color: #14532D; }
+.saved span { display: block; font-size: .9375rem; color: #166534; }
+.saved em { display: block; margin-top: 4px; font-style: normal; font-size: .875rem; color: #15803D; }
+
+
+/* The main target. 108px tall because a thumb is imprecise and a mis-tap
+   here means the wrong record entirely. */
+.work-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 108px;
+    padding: 12px 8px;
+    background: var(--maroon-700);
+    border-radius: var(--radius);
+    color: #fff;
+    text-decoration: none;
+    text-align: center;
+}
+
+.work-btn:active { background: var(--maroon-900); }
+.work-btn:focus-visible { outline: 4px solid var(--gold-500); outline-offset: 3px; }
+
+.work-btn--done { background: var(--card); color: var(--ink-soft); border: 2px solid var(--line); }
+.work-btn--done .work-icon { color: #16A34A; }
+
+.work-icon { width: 30px; height: 30px; }
+.work-label { font-size: 1rem; font-weight: 800; }
+.work-state { font-size: .75rem; opacity: .85; }
+
+/* ---------- Entry screens ---------- */
+.entry-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px; height: 52px;
+    flex: 0 0 52px;
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--ink);
+}
+
+.back svg { width: 26px; height: 26px; }
+.back:focus-visible { outline: 3px solid var(--gold-500); }
+
+.entry-head h2 { margin: 0; font-size: 1.5rem; font-weight: 800; }
+.entry-head p { margin: 2px 0 0; font-size: .9375rem; color: var(--ink-soft); }
+
+/* One question, asked plainly. */
+.ask { margin-bottom: 24px; }
+
+.ask-q {
+    margin: 0 0 4px;
+    font-size: 1.125rem;
+    font-weight: 800;
+    color: var(--ink);
+}
+
+.ask-hint {
+    margin: 0 0 12px;
+    font-size: .9375rem;
+    color: var(--ink-soft);
+    line-height: 1.5;
+}
+
+.ask textarea {
+    width: 100%;
+    min-height: 76px;
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 1.0625rem;
+    border: 2px solid var(--line);
+    border-radius: var(--radius-sm);
+    resize: vertical;
+}
+
+.ask textarea:focus { outline: 3px solid var(--gold-500); border-color: var(--maroon-700); }
+
+/* ---------- Choices ---------- */
+.choice-row { display: flex; gap: 10px; }
+.choice-row--wrap { flex-wrap: wrap; }
+
+.choice { flex: 1; min-width: 120px; cursor: pointer; }
+.choice input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.choice span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 60px;
+    padding: 10px;
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: var(--radius-sm);
+    font-size: 1rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+.choice input:checked + span {
+    background: var(--maroon-700);
+    border-color: var(--maroon-700);
+    color: #fff;
+}
+
+.choice input:focus-visible + span { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+
+/* ---------- Counters ----------
+   Tap, don't type. A keypad is slower and easier to mis-hit than a large
+   button, and typing invites a stray digit that becomes 300 dead birds. */
+.total-bar {
+    position: sticky;
+    top: 60px;
+    z-index: 20;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px;
+    background: var(--charcoal-800);
+    color: #fff;
+    border-radius: var(--radius);
+    margin-bottom: 6px;
+}
+
+.total-num {
+    font-size: 2.25rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.total-lbl { font-size: .875rem; opacity: .8; }
+
+.counter-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+.counter-card--defect { background: var(--paper); }
+
+.counter-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.counter-head strong { font-size: 1.0625rem; font-weight: 800; }
+.counter-head span { font-size: .8125rem; color: var(--ink-soft); }
+
+.counter-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+}
+
+.counter-row--minor .counter-what { color: var(--ink-soft); }
+.counter-what { font-size: .9375rem; font-weight: 600; }
+
+.stepper { display: flex; align-items: center; gap: 8px; }
+
+.step {
+    width: 56px; height: 56px;
+    flex: 0 0 56px;
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1;
+    background: var(--maroon-100);
+    color: var(--maroon-700);
+    border: 2px solid var(--maroon-700);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.step:active { background: var(--maroon-700); color: #fff; }
+.step:focus-visible { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+
+.step-val {
+    width: 72px;
+    height: 56px;
+    text-align: center;
+    font-family: inherit;
+    font-size: 1.5rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    border: 2px solid var(--line);
+    border-radius: var(--radius-sm);
+    -moz-appearance: textfield;
+}
+
+.step-val::-webkit-outer-spin-button,
+.step-val::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* The single big counter — deaths, bags */
+.big-counter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+}
+
+.big-step {
+    width: 76px; height: 76px;
+    flex: 0 0 76px;
+    font-size: 2.25rem;
+    font-weight: 700;
+    line-height: 1;
+    background: var(--maroon-100);
+    color: var(--maroon-700);
+    border: 2px solid var(--maroon-700);
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+
+.big-step:active { background: var(--maroon-700); color: #fff; }
+.big-step:focus-visible { outline: 4px solid var(--gold-500); outline-offset: 3px; }
+
+.big-val {
+    width: 130px;
+    height: 76px;
+    text-align: center;
+    font-family: inherit;
+    font-size: 2.5rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    -moz-appearance: textfield;
+}
+
+.big-val::-webkit-outer-spin-button,
+.big-val::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.big-counter--small .big-step { width: 60px; height: 60px; flex: 0 0 60px; font-size: 1.75rem; }
+.big-counter--small .big-val { width: 104px; height: 60px; font-size: 1.875rem; }
+
+.convert {
+    margin-top: 12px;
+    text-align: center;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--maroon-700);
+}
+
+/* ---------- Folded sections ----------
+   Things that are usually zero. Giving them equal weight doubles the
+   length of the screen for nothing. */
+.fold {
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0 14px;
+    margin-bottom: 22px;
+}
+
+.fold > summary {
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    list-style: none;
+    padding: 12px 0;
+}
+
+.fold > summary::-webkit-details-marker { display: none; }
+
+.fold > summary::after {
+    content: "+";
+    margin-left: auto;
+    font-size: 1.75rem;
+    font-weight: 400;
+    color: var(--maroon-700);
+    line-height: 1;
+}
+
+.fold[open] > summary::after { content: "−"; }
+.fold[open] { padding-bottom: 14px; }
+
+/* ---------- Reassurance ----------
+   Explicitly telling a worker what they are NOT responsible for. New
+   users hesitate most over what they think they might get wrong. */
+.reassure {
+    padding: 14px 16px;
+    margin-bottom: 20px;
+    background: var(--gold-100);
+    border-left: 4px solid var(--gold-500);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    font-size: .9375rem;
+    color: #6B5410;
+}
+
+/* ---------- The save button ----------
+   Full width, 68px, at the bottom where a thumb rests. One button per
+   screen: there is never a choice about what to do next. */
+.btn-big {
+    display: block;
+    width: 100%;
+    min-height: 68px;
+    padding: 16px;
+    margin-bottom: 30px;
+    font-family: inherit;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #fff;
+    background: var(--maroon-700);
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+
+.btn-big:active { background: var(--maroon-900); }
+.btn-big:focus-visible { outline: 4px solid var(--gold-500); outline-offset: 3px; }
+
+/* ---------- Manager assessment ---------- */
+.assess-card {
+    display: block;
+    padding: 16px;
+    margin-bottom: 12px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--danger-600);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    color: inherit;
+    text-decoration: none;
+}
+
+.assess-card--late { border-left-color: #B45309; background: #FFFBEB; }
+.assess-card:hover { border-color: var(--maroon-700); border-left-color: var(--danger-600); }
+.assess-card:focus-visible { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+
+.assess-top { display: flex; align-items: center; gap: 14px; }
+
+.assess-count {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 58px; height: 58px;
+    flex: 0 0 58px;
+    background: var(--danger-100);
+    color: var(--danger-600);
+    border-radius: var(--radius);
+    font-size: 1.625rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.assess-top strong { display: block; font-size: 1.0625rem; font-weight: 800; }
+.assess-sub { display: block; font-size: .8125rem; color: var(--ink-soft); margin-top: 2px; }
+
+.assess-split { margin: 10px 0 0; font-size: .875rem; color: var(--ink-soft); }
+
+.assess-note {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    background: var(--paper);
+    border-radius: var(--radius-sm);
+    font-size: .9375rem;
+    font-style: italic;
+}
+
+.assess-note span {
+    display: block;
+    font-style: normal;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+}
+
+.assess-meta { margin: 10px 0 0; font-size: .8125rem; color: var(--ink-soft); }
+.assess-waiting { font-style: normal; font-weight: 700; color: #B45309; }
+
+/* What the worker observed — visually separated from the judgement. */
+.observed {
+    padding: 16px;
+    margin-bottom: 16px;
+    background: var(--charcoal-800);
+    color: #fff;
+    border-radius: var(--radius);
+}
+
+.observed-label {
+    margin: 0 0 12px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--gold-500);
+}
+
+.observed-figures {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.observed-figures .figure { color: #fff; font-size: 1.75rem; }
+.observed-figures .figure--alarm { color: #FCA5A5; }
+.observed-figures .figure-unit { color: rgba(255,255,255,.65); }
+
+.observed-note {
+    margin: 14px 0 0;
+    padding: 12px;
+    background: rgba(255,255,255,.08);
+    border-radius: var(--radius-sm);
+    font-style: italic;
+    font-size: .9375rem;
+}
+
+.observed-note span {
+    display: block;
+    font-style: normal;
+    font-size: .75rem;
+    color: rgba(255,255,255,.6);
+    margin-bottom: 4px;
+}
+
+.observed-meta { margin: 12px 0 0; font-size: .75rem; color: rgba(255,255,255,.55); }
+
+.ctx-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: .9375rem;
+}
+
+.ctx-row:last-child { border-bottom: none; }
+
+/* Cause list */
+.cause-group {
+    margin: 18px 0 8px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+.cause-list { display: flex; flex-direction: column; gap: 8px; }
+
+.cause { cursor: pointer; }
+.cause input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.cause span {
+    display: block;
+    padding: 13px 15px;
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: var(--radius-sm);
+}
+
+.cause strong { display: block; font-size: 1rem; font-weight: 700; }
+
+.cause em {
+    display: block;
+    margin-top: 3px;
+    font-style: normal;
+    font-size: .875rem;
+    color: var(--ink-soft);
+    line-height: 1.45;
+}
+
+.cause input:checked + span {
+    border-color: var(--maroon-700);
+    background: var(--maroon-100);
+}
+
+.cause input:focus-visible + span { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+
+.tag-spread {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: var(--danger-100);
+    color: var(--danger-600);
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    font-style: normal;
+    text-transform: uppercase;
+}
+
+.done-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: .9375rem;
+}
+
+.done-row:last-child { border-bottom: none; }
+.done-cause { font-weight: 600; }
+.done-who { color: var(--ink-soft); font-size: .8125rem; }
+
+@media (min-width: 760px) {
+    .work-buttons { grid-template-columns: repeat(3, minmax(0, 180px)); }
+}
+/* ==========================================================================
+   WORKER HOME — buttons as the cards
+
+   Append to the END of public/css/app.css.
+
+   Then DELETE these old rules from earlier in the file, or they will fight
+   with these:
+
+       .work-card
+       .work-head          (and .work-head strong / .work-head span)
+       .work-buttons
+       .work-btn           (and .work-btn--done)
+       .work-icon
+       .work-label
+       .work-state
+
+   Search for "work-card" — the whole block sits together.
+   ========================================================================== */
+
+/* The flock, as a plain heading. No box: a white card on a white page is a
+   border doing no work, and it steals width from the buttons. */
+.flock {
+    margin-bottom: 32px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--line);
+}
+
+.flock:last-of-type { border-bottom: none; padding-bottom: 0; }
+
+.flock-head { margin-bottom: 14px; }
+
+.flock-head h3 {
+    margin: 0;
+    font-size: 1.375rem;
+    font-weight: 800;
+    letter-spacing: -.015em;
+}
+
+.flock-head p {
+    margin: 3px 0 0;
+    font-size: .9375rem;
+    color: var(--ink-soft);
+}
+
+/* The jobs.
+
+   auto-fit with a 150px floor means the row reflows on its own: two jobs
+   sit side by side, three fit across a phone, four wrap to 2x2 rather than
+   squeezing. No count-specific rules needed. */
+.jobs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+}
+
+.job {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 132px;
+    padding: 18px 12px;
+    background: var(--maroon-700);
+    border: 3px solid var(--maroon-700);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    color: #fff;
+    text-decoration: none;
+    text-align: center;
+}
+
+.job:active { background: var(--maroon-900); border-color: var(--maroon-900); }
+
+.job:focus-visible {
+    outline: 4px solid var(--gold-500);
+    outline-offset: 3px;
+}
+
+/* Done today. Kept visible and still tappable — a worker may need to
+   correct a figure — but clearly settled, so the eye goes to what is left. */
+.job--done {
+    background: var(--card);
+    border-color: #16A34A;
+    color: var(--ink);
+}
+
+.job--done:active { background: #DCFCE7; border-color: #15803D; }
+.job--done .job-icon { color: #16A34A; }
+.job--done .job-state { color: #15803D; font-weight: 700; }
+
+.job-icon {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+}
+
+.job-label {
+    font-size: 1.125rem;
+    font-weight: 800;
+    letter-spacing: -.01em;
+}
+
+.job-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: .8125rem;
+    opacity: .9;
+}
+
+.job-tick { width: 15px; height: 15px; }
+
+/* On a wider screen the buttons should not stretch to the full width of a
+   laptop — a 400px-wide "Feed" button looks broken. */
+@media (min-width: 700px) {
+    .jobs {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 200px));
+    }
+}
+
+/* ==========================================================================
+   FEED — several feeds, and any bag size
+
+   Append to the END of public/css/app.css.
+
+   If you already pasted an earlier "FEED" block, DELETE it first — search
+   for ".feed-group" and remove down to ".ft-facts". This block replaces it.
+   ========================================================================== */
+
+.feed-group {
+    margin: 20px 0 8px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+.feed-list { display: flex; flex-direction: column; gap: 8px; }
+
+.feed {
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.feed--on { border-color: var(--maroon-700); }
+
+/* Feeds that do not suit this flock's age are still offered — a farm may
+   legitimately feed something unusual, and a screen that refuses what
+   someone actually did just gets worked around. They sit quieter. */
+.feed--unlikely:not(.feed--on) { opacity: .62; }
+
+.feed-pick {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 62px;
+    padding: 12px 14px;
+    cursor: pointer;
+}
+
+.feed-pick input {
+    width: 26px; height: 26px;
+    flex: 0 0 26px;
+    accent-color: var(--maroon-700);
+    cursor: pointer;
+}
+
+.feed--on .feed-pick { background: var(--maroon-100); }
+
+.feed-name strong { display: block; font-size: 1rem; font-weight: 700; }
+
+.feed-name em {
+    display: block;
+    margin-top: 2px;
+    font-style: normal;
+    font-size: .8125rem;
+    color: var(--ink-soft);
+    line-height: 1.4;
+}
+
+.feed-pick input:focus-visible + .feed-name {
+    outline: 3px solid var(--gold-500);
+    outline-offset: 3px;
+}
+
+.feed-amount {
+    padding: 4px 14px 14px;
+    border-top: 1px solid var(--line);
+}
+
+.feed-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 0;
+}
+
+.feed-what { font-size: .9375rem; font-weight: 600; }
+.feed-row--minor .feed-what { color: var(--ink-soft); font-weight: 400; }
+
+.step-val--wide { width: 96px; }
+
+/* The bag size sits as quiet text, not as a row of buttons. The manager
+   sets it per feed, so the worker normally never touches it — putting ten
+   weight buttons on screen for a choice made once a year is noise. */
+.bag-size {
+    margin: 2px 0 0;
+    font-size: .875rem;
+    color: var(--ink-soft);
+}
+
+.bag-size [data-bagsize] { font-weight: 700; color: var(--ink); }
+
+.bag-size .link-button { margin-left: 8px; font-size: .8125rem; }
+
+.size-pick {
+    margin-top: 10px;
+    padding: 12px;
+    background: var(--paper);
+    border-radius: var(--radius-sm);
+}
+
+.weight-pick { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.weight { cursor: pointer; }
+.weight input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.weight span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 50px;
+    min-height: 46px;
+    padding: 6px 10px;
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: var(--radius-sm);
+    font-size: .9375rem;
+    font-weight: 700;
+}
+
+.weight input:checked + span {
+    background: var(--maroon-700);
+    border-color: var(--maroon-700);
+    color: #fff;
+}
+
+.weight input:focus-visible + span { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+
+.kg-custom {
+    width: 96px;
+    min-height: 46px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    text-align: center;
+    border: 2px solid var(--line);
+    border-radius: var(--radius-sm);
+    -moz-appearance: textfield;
+}
+
+.kg-custom::-webkit-outer-spin-button,
+.kg-custom::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.kg-custom:focus { outline: 3px solid var(--gold-500); border-color: var(--maroon-700); }
+
+/* Loose weighing. Quiet, because most feed is bagged — but present,
+   because plenty is not. */
+.loose-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    padding: 10px 0 0;
+    border-top: 1px solid var(--line);
+    cursor: pointer;
+    font-size: .875rem;
+    color: var(--ink-soft);
+}
+
+.loose-toggle input {
+    width: 20px; height: 20px;
+    flex: 0 0 20px;
+    accent-color: var(--maroon-700);
+    cursor: pointer;
+}
+
+.feed-sum {
+    margin: 8px 0 0;
+    text-align: right;
+    font-size: 1.125rem;
+    font-weight: 800;
+    color: var(--maroon-700);
+}
+
+/* Feed types admin screen */
+.ft-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.ft-row:last-child { border-bottom: none; }
+.ft-row--off { opacity: .55; }
+.ft-row strong { font-size: 1rem; }
+
+.ft-row em {
+    display: block;
+    margin-top: 2px;
+    font-style: normal;
+    font-size: .8125rem;
+    color: var(--ink-soft);
+}
+
+.ft-facts {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: .8125rem;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+}
+/* ==========================================================================
+   WORKER SHELL — no sidebar
+
+   Append to the END of public/css/app.css.
+
+   The management layout is a two-column grid. A worker's is a single
+   column, so the desktop grid rules must not apply — hence a separate
+   class rather than hiding the sidebar and leaving an empty 272px column
+   behind.
+   ========================================================================== */
+
+.shell--plain {
+    display: block;
+    max-width: 760px;
+    margin: 0 auto;
+}
+
+.shell--plain .topbar {
+    grid-column: auto;
+    grid-row: auto;
+}
+
+.shell--plain .content {
+    grid-column: auto;
+    grid-row: auto;
+    max-width: none;
+    padding: 20px 18px 60px;
+}
+
+/* The mark, where the menu button would have been. Tapping it goes home —
+   the one navigation a worker needs, and it is where a thumb already
+   reaches for "back". */
+.topbar-home {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--tap);
+    height: var(--tap);
+    flex: 0 0 var(--tap);
+    margin-left: -6px;
+    border-radius: var(--radius-sm);
+    color: #fff;
+    text-decoration: none;
+}
+
+.topbar-home:hover { background: rgba(255, 255, 255, .12); }
+.topbar-home:focus-visible { outline: 3px solid var(--gold-500); }
+
+.topbar-mark {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 7px;
+    padding: 2px;
+}
+
+.topbar-mark-icon { width: 24px; height: 24px; }
+
+/* On a laptop the worker screen would otherwise stretch to 1400px, leaving
+   the buttons stranded far apart. Centred and capped reads the same on a
+   phone and on a desk. */
+@media (min-width: 900px) {
+    .shell--plain .topbar { border-radius: 0; }
+    .shell--plain .content { padding: 26px 24px 60px; }
+}
+/* ==========================================================================
+   BIRDS USED ON THE FARM
+
+   Append to the END of public/css/app.css.
+   ========================================================================== */
+
+.consume-row {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 12px 14px;
+    align-items: start;
+    padding: 14px 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 10px;
+}
+
+/* Unconfirmed records carry a gold edge — not an error, but not finished
+   either, and the whole control depends on someone finishing it. */
+.consume-row--pending { border-left: 4px solid var(--gold-500); }
+
+.consume-qty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px; height: 56px;
+    background: var(--maroon-100);
+    color: var(--maroon-700);
+    border-radius: var(--radius);
+    font-size: 1.5rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.consume-main strong { display: block; font-size: 1rem; font-weight: 700; }
+
+.consume-main span {
+    display: block;
+    margin-top: 2px;
+    font-size: .875rem;
+    color: var(--ink-soft);
+}
+
+.consume-main em {
+    display: block;
+    margin-top: 4px;
+    font-style: normal;
+    font-size: .875rem;
+}
+
+.consume-who {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: .8125rem;
+}
+
+.consume-who .muted { font-size: .8125rem; }
+
+.consume-state {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+@media (min-width: 900px) {
+    .consume-row {
+        grid-template-columns: 56px minmax(0, 2fr) minmax(0, 1.4fr) auto;
+        align-items: center;
+    }
+
+    .consume-who, .consume-state { grid-column: auto; }
+}
+/* ==========================================================================
+   FLOCK HEALTH
+
+   Append to the END of public/css/app.css.
+   ========================================================================== */
+
+/* Withdrawal is not a card among cards. Selling eggs during withdrawal is
+   illegal and unsafe, so it gets a banner, and it gets red. */
+.withdrawal-banner {
+    padding: 18px;
+    margin-bottom: 18px;
+    background: var(--danger-100);
+    border: 3px solid var(--danger-600);
+    border-radius: var(--radius);
+}
+
+.withdrawal-title {
+    margin: 0 0 14px;
+    font-size: 1.125rem;
+    font-weight: 800;
+    letter-spacing: -.01em;
+    color: var(--danger-600);
+    text-transform: uppercase;
+}
+
+.withdrawal-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 12px 0;
+    border-top: 1px solid rgba(185, 28, 28, .2);
+}
+
+.withdrawal-row:first-of-type { border-top: none; padding-top: 0; }
+
+.withdrawal-row strong { display: block; font-size: 1.0625rem; }
+
+.withdrawal-row span {
+    display: block;
+    font-size: .875rem;
+    color: #7F1D1D;
+}
+
+.withdrawal-when { text-align: right; }
+.withdrawal-when .figure { font-size: 2rem; }
+.withdrawal-when .figure-unit { color: #7F1D1D; }
+
+.batch-card--held { border-color: var(--danger-600); border-left-width: 4px; }
+
+/* Timeline */
+.timeline { display: flex; flex-direction: column; gap: 2px; }
+
+.tl-item {
+    display: grid;
+    grid-template-columns: 62px 1fr;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-bottom: 8px;
+}
+
+.tl-date { text-align: center; }
+.tl-date strong { display: block; font-size: 1rem; font-weight: 800; }
+.tl-date span { display: block; font-size: .75rem; color: var(--ink-soft); }
+
+.tl-body > strong { font-size: 1.0625rem; font-weight: 700; }
+
+.tl-kind {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: var(--paper);
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+.tl-facts {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+    font-size: .8125rem;
+    color: var(--ink-soft);
+}
+
+.tl-note { margin: 8px 0 0; font-size: .9375rem; }
+
+.tl-withdrawal {
+    margin: 8px 0 0;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--paper);
+    font-size: .8125rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+}
+
+.tl-withdrawal--active {
+    background: var(--danger-100);
+    color: var(--danger-600);
+}
+
+.tl-who { margin: 8px 0 0; font-size: .8125rem; color: var(--ink-soft); }
+/* ==========================================================================
+   BATCH FORM — the arrival summary
+
+   Append to the END of public/css/app.css.
+   ========================================================================== */
+
+/* Three figures side by side as someone types, so the deal is visible
+   before it is saved rather than after. */
+.arrival-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+}
+
+.arrival-summary .figure { font-size: 1.5rem; }
+
+@media (max-width: 560px) {
+    .arrival-summary { grid-template-columns: 1fr; gap: 10px; }
+    .arrival-summary .figure { font-size: 1.25rem; }
+}
+/* ==========================================================================
+   COLLECTION TIMES AND REVIEW
+
+   Append to the END of public/css/app.css.
+   ========================================================================== */
+
+/* A time field big enough to tap. The browser draws the picker itself. */
+.time-input {
+    width: 100%;
+    max-width: 200px;
+    min-height: 60px;
+    padding: 10px 14px;
+    font-family: inherit;
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    color: var(--ink);
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: var(--radius-sm);
+}
+
+.time-input:focus {
+    outline: 3px solid var(--gold-500);
+    border-color: var(--maroon-700);
+}
+
+/* Told plainly, not hidden. Nobody should be surprised later to find
+   their name on a record. */
+.signed-note {
+    margin: 0 0 18px;
+    padding: 12px 14px;
+    background: var(--paper);
+    border-radius: var(--radius-sm);
+    font-size: .875rem;
+    color: var(--ink-soft);
+}
+
+/* --- Review screen --- */
+.collection-list { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+
+.collection {
+    padding: 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+/* Entered long after it was collected. Amber, not red — late is a question
+   worth asking, not a wrongdoing. */
+.collection--late { border-left: 4px solid var(--gold-600); }
+
+.collection-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.collection-head strong { display: block; font-size: 1.0625rem; font-weight: 800; }
+
+.collection-head span {
+    display: block;
+    margin-top: 2px;
+    font-size: .875rem;
+    color: var(--ink-soft);
+}
+
+.collection-total { text-align: right; }
+.collection-total .figure { font-size: 1.75rem; }
+
+.collection-grades {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+
+.grade-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 5px 10px;
+    background: var(--maroon-100);
+    color: var(--maroon-700);
+    border-radius: 99px;
+    font-size: .8125rem;
+    font-weight: 600;
+}
+
+.grade-chip strong { font-variant-numeric: tabular-nums; }
+.grade-chip--defect { background: var(--line); color: var(--ink-soft); }
+
+/* The two times, side by side, because the comparison is the point. */
+.collection-times {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+}
+
+.time-label {
+    display: block;
+    font-size: .625rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+}
+
+.collection-times strong {
+    display: block;
+    margin-top: 3px;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.collection-times em {
+    display: block;
+    margin-top: 2px;
+    font-style: normal;
+    font-size: .75rem;
+    color: var(--ink-soft);
+}
+
+.collection-note {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    background: var(--paper);
+    border-radius: var(--radius-sm);
+    font-size: .9375rem;
+    font-style: italic;
+}
+
+@media (max-width: 560px) {
+    .collection-times { grid-template-columns: 1fr 1fr; }
+}
+/* ==========================================================================
+   MEDICINE DETAIL PANEL
+
+   Append to the END of public/css/app.css.
+
+   You may also DELETE the old radio-list rules if nothing else uses them —
+   search for ".cause-group" and ".cause-list". The mortality assessment
+   screen still uses them, so leave them if that screen is installed.
+   ========================================================================== */
+
+/* Fills in beneath the dropdown once something is chosen. Less on screen
+   than nineteen radio buttons, and more about the thing actually picked. */
+.med-detail {
+    margin-top: 14px;
+    padding: 14px 16px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+}
+
+.med-detail .facts { margin: 0; }
+
+.med-note {
+    margin: 12px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: .875rem;
+    color: var(--ink-soft);
+    line-height: 1.5;
+}
+
+/* Grouped dropdowns are long. Give them room and keep the group headings
+   legible — they are what makes nineteen options navigable. */
+.field select optgroup {
+    font-weight: 800;
+    font-style: normal;
+    color: var(--maroon-700);
+}
+
+.field select option {
+    font-weight: 400;
+    color: var(--ink);
+    padding: 4px 0;
+}
+/* ==========================================================================
+   NESTED SIDEBAR
+
+   Append to the END of public/css/app.css.
+   ========================================================================== */
+
+/* A heading that opens into more links. Sits at the same level as a plain
+   link so the eye reads one list, not two kinds of thing. */
+.nav-sub > summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: var(--tap);
+    margin: 2px 10px;
+    padding: 9px 12px;
+    cursor: pointer;
+    list-style: none;
+    border-radius: var(--radius-sm);
+    color: rgba(255, 255, 255, .88);
+    font-size: .9375rem;
+}
+
+.nav-sub > summary::-webkit-details-marker { display: none; }
+.nav-sub > summary:hover { background: var(--charcoal-700); color: #fff; }
+
+.nav-sub > summary:focus-visible {
+    outline: 3px solid var(--gold-500);
+    outline-offset: -2px;
+}
+
+.nav-sub > summary > span { flex: 1; }
+
+/* The count, so someone can see there are six things inside without
+   opening it. */
+.nav-sub > summary > em {
+    font-style: normal;
+    font-size: .6875rem;
+    opacity: .5;
+}
+
+/* Chevron on the right, rotating when open. On the group headings above
+   it sits on the left — different position, so the two levels never look
+   like the same control. */
+.nav-sub > summary::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    flex: 0 0 6px;
+    margin-left: 2px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 140ms ease;
+    opacity: .6;
+}
+
+.nav-sub[open] > summary::after { transform: rotate(45deg); }
+.nav-sub[open] > summary { color: #fff; }
+
+/* Children. Indented and marked with a rule, so it is obvious where the
+   nesting begins and ends. */
+.nav-link--child {
+    min-height: 42px;
+    margin: 0 10px 0 30px;
+    padding: 8px 12px;
+    font-size: .875rem;
+    color: rgba(255, 255, 255, .76);
+    border-left: 2px solid rgba(255, 255, 255, .14);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.nav-link--child:hover {
+    color: #fff;
+    border-left-color: var(--gold-500);
+}
+
+.nav-link--child[aria-current="page"] {
+    background: var(--maroon-700);
+    border-left-color: var(--gold-500);
+    color: #fff;
+    font-weight: 700;
+}
+
+/* The last child rounds off the run. */
+.nav-sub > .nav-link--child:last-of-type { margin-bottom: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .nav-sub > summary::after { transition: none; }
+}
+
