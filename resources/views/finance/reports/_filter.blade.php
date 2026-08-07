@@ -1,0 +1,1 @@
+<form method="GET" class="card filters"><div class="field"><label>From</label><input type="date" name="from" value="{{ $from }}"></div><div class="field"><label>To</label><input type="date" name="to" value="{{ $to }}"></div><div class="field field--actions"><button class="btn">Run report</button></div></form>

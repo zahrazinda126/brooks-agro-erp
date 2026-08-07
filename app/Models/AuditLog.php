@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\AttendanceRecorder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -57,5 +58,9 @@ class AuditLog extends Model
             'user_agent'     => substr((string) request()->userAgent(), 0, 255),
             'created_at'     => now(),
         ]);
+
+        if ($user) {
+            AttendanceRecorder::markPresent($user, $event === 'login' ? 'sign-in' : 'saved system activity');
+        }
     }
 }

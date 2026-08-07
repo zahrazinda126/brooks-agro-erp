@@ -6,6 +6,7 @@ use App\Models\AnimalGroup;
 use App\Models\Employee;
 use App\Models\Module;
 use App\Models\User;
+use App\Models\Approval;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -49,6 +50,8 @@ class DashboardController extends Controller
     private function panelsFor(User $user): array
     {
         $panels = [];
+        $isHrManager = $user->role?->code === 'hr-manager'
+            || $user->roles->contains('code', 'hr-manager');
 
         // A worker's own tasks come before anything else on the farm.
         if ($user->canAccess('my-tasks') || $user->canAccess('my-work')) {
@@ -67,7 +70,22 @@ class DashboardController extends Controller
             $panels[] = 'staff';
         }
 
-        if ($user->canAccess('finance') || $user->canAccess('payroll')) {
+        if ($user->canAccess('approvals')) {
+            $data['approvals'] = [
+                'pending' => Approval::where('status', 'pending')->count(),
+                'overdue' => Approval::where('status', 'pending')->where('due_at', '<', now())->count(),
+            ];
+        }
+
+        if ($isHrManager && $user->canAccess('kpi-dashboards')) {
+            $panels[] = 'hr-kpis';
+        }
+
+        // Payroll data belongs to Finance. HR can maintain the staff records
+        // that feed it, but does not need an empty finance summary on their
+        // dashboard just because they can record salary advances.
+        if (($user->canAccess('finance') || $user->canAccess('payroll'))
+            && ! ($isHrManager && ! $user->canAccess('finance'))) {
             $panels[] = 'money';
         }
 
@@ -159,6 +177,13 @@ class DashboardController extends Controller
             'batches', 'my-tasks', 'approvals', 'hr', 'payroll',
             'inventory', 'reports',
         ];
+
+        $isHrManager = $user->role?->code === 'hr-manager'
+            || $user->roles->contains('code', 'hr-manager');
+
+        if ($isHrManager) {
+            $wanted = array_values(array_diff($wanted, ['hr', 'payroll', 'reports']));
+        }
 
         $allowed = array_filter($wanted, fn ($k) => $user->canAccess($k));
 

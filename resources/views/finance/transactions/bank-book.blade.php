@@ -1,0 +1,7 @@
+@extends('layouts.app')
+@section('title','Bank Book')
+@section('content')
+<div class="page-head"><h2>Bank Book</h2><p>Bank-account transactions and running balance.</p></div>
+<form method="GET" class="card filters"><div class="field"><label>Bank account</label><select name="account"><option value="">All bank accounts</option>@foreach($accounts as $account)<option value="{{ $account }}" @selected(request('account')===$account)>{{ $account }}</option>@endforeach</select></div><div class="field field--actions"><button class="btn btn--inline">Apply</button></div></form>
+<div class="card"><p class="card-label">Recorded balance</p><span class="figure">UGX {{ number_format($balance) }}</span></div><div class="data-list"><div class="data-head"><span>Date</span><span>Account</span><span>Money in</span><span>Money out</span><span>Balance</span></div>@forelse($rows as $t)<div class="data-row"><span class="data-cell">{{ $t->transaction_date->format('j M Y') }}</span><span class="data-cell">{{ $t->account }}<em class="data-sub">{{ $t->description }}</em></span><span class="data-cell">{{ $t->type==='money_received'?'UGX '.number_format($t->amount):'—' }}</span><span class="data-cell">{{ $t->type==='money_paid'?'UGX '.number_format($t->amount):'—' }}</span><span class="data-cell">UGX {{ number_format($t->running_balance) }}</span></div>@empty <div class="card empty"><p class="muted" style="margin:0">No bank transactions recorded yet.</p></div>@endforelse</div>
+@endsection

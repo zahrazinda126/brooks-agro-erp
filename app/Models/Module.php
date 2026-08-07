@@ -9,6 +9,33 @@ use Illuminate\Support\Facades\Route;
 
 class Module extends Model
 {
+    private const NAVIGATION = [
+        'Poultry' => ['poultry', 'flocks', 'batches', 'breeds', 'egg-entry', 'egg-inventory',
+            'bird-consumption', 'feed-consumption', 'health', 'medications', 'mortality-entry',
+            'mortality-assess', 'vaccination', 'biosecurity', 'hatchery'],
+        'Livestock' => ['goats', 'rabbits', 'dogs', 'dog-care', 'breeding', 'milk-record', 'kindling-record'],
+        'Stock' => ['inventory', 'stores', 'feedmill', 'feed-types', 'feed-received', 'goods-received',
+            'goods-issued', 'stock-transfers', 'stock-adjustments', 'reorder-levels', 'purchases',
+            'purchase-orders', 'quotations', 'suppliers'],
+        'Finance' => ['finance', 'sales', 'customers', 'invoices', 'receipts', 'returns', 'customer-ledger',
+            'payroll', 'expenses', 'payments', 'transactions', 'journal-entries', 'chart-of-accounts',
+            'general-ledger', 'cash-book', 'bank-book', 'bank-reconcile', 'receivables', 'payables',
+            'assets', 'budget', 'data-entry', 'loans', 'advances'],
+        'People' => ['hr', 'attendance', 'leave', 'overtime', 'contracts', 'welfare', 'employee-medical',
+            'discipline', 'training', 'staff-performance'],
+        'Reports' => ['reports', 'analytics', 'kpi-dashboards', 'scheduled-reports', 'trial-balance',
+            'profit-loss', 'balance-sheet', 'cash-flow'],
+        'Administration' => ['settings', 'security', 'audit', 'ai'],
+        'Operations' => ['production', 'quality', 'maintenance', 'fleet', 'assign-supervisors', 'assign-tasks',
+            'approvals', 'messages', 'notifications', 'my-work', 'my-tasks', 'my-performance'],
+    ];
+
+    private const NAVIGATION_LABELS = [
+        'batches' => 'Birds', 'flocks' => 'Birds', 'egg-entry' => 'Egg Collection',
+        'egg-inventory' => 'Egg Collection', 'feed-consumption' => 'Feeding',
+        'feedmill' => 'Feed', 'feed-types' => 'Feed', 'employee-medical' => 'Medical Records',
+        'staff-performance' => 'Performance', 'discipline' => 'Disciplinary',
+    ];
     protected $fillable = ['key', 'name', 'group', 'parent_key', 'is_container',
                            'route', 'icon', 'sort_order', 'is_worker_module', 'is_active'];
 
@@ -69,6 +96,15 @@ class Module extends Model
      */
     public function url(): string
     {
+        $builtRoutes = ['reports'=>'finance.reports.index', 'kpi-dashboards'=>'finance.reports.kpis', 'purchases'=>'finance.farm.purchases', 'production'=>'finance.farm.production', 'veterinary'=>'finance.farm.veterinary', 'approvals' => 'approvals.index', 'transactions' => 'finance.transactions.index', 'general-ledger' => 'finance.general-ledger.index', 'receivables' => 'finance.receivables.index', 'payables' => 'finance.payables.index', 'budget' => 'finance.budgets.index', 'assets' => 'finance.assets.index', 'cash-book' => 'finance.cash-book.index', 'bank-book' => 'finance.bank-book.index'];
+        if (isset($builtRoutes[$this->key]) && Route::has($builtRoutes[$this->key])) {
+            return route($builtRoutes[$this->key]);
+        }
+        if (in_array($this->key, ['profit-loss','balance-sheet','cash-flow','trial-balance'], true)) return route('finance.reports.statement', ['report'=>$this->key]);
+        if ($this->key === 'staff-performance' && Route::has('poultry.performance.index')) {
+            return route('poultry.performance.index');
+        }
+
         if ($this->route && Route::has($this->route)) {
             return route($this->route);
         }
@@ -156,5 +192,26 @@ class Module extends Model
     public function iconName(): string
     {
         return self::ICONS[$this->key] ?? 'dot';
+    }
+
+    public function navigationGroup(): string
+    {
+        foreach (self::NAVIGATION as $group => $keys) {
+            if (in_array($this->key, $keys, true)) {
+                return $group;
+            }
+        }
+
+        return 'Operations';
+    }
+
+    public function navigationLabel(): string
+    {
+        return self::NAVIGATION_LABELS[$this->key] ?? $this->name;
+    }
+
+    public static function navigationGroupOrder(string $group): int
+    {
+        return array_search($group, array_keys(self::NAVIGATION), true) + 1;
     }
 }

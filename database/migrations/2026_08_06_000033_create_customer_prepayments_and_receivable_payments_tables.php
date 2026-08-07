@@ -1,0 +1,5 @@
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration { public function up(): void { Schema::create('customer_prepayments', function(Blueprint $t){$t->id();$t->string('customer_name',160);$t->date('received_date');$t->decimal('amount',14,2);$t->decimal('amount_used',14,2)->default(0);$t->string('farm_account',120);$t->string('payment_method',30);$t->string('reference',80)->nullable();$t->foreignId('recorded_by')->constrained('users');$t->timestamps();}); Schema::create('receivable_payments',function(Blueprint $t){$t->id();$t->foreignId('receivable_id')->constrained()->cascadeOnDelete();$t->date('received_date');$t->decimal('amount',14,2);$t->string('farm_account',120)->nullable();$t->string('payment_method',30)->nullable();$t->string('reference',80)->nullable();$t->string('source',20)->default('payment');$t->foreignId('recorded_by')->constrained('users');$t->timestamps();}); } public function down(): void {Schema::dropIfExists('receivable_payments');Schema::dropIfExists('customer_prepayments');} };

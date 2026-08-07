@@ -1,0 +1,8 @@
+@extends('layouts.app')
+@section('title','General Ledger')
+@section('content')
+<div class="page-head"><h2>General Ledger</h2><p>Every recorded transaction, shown as its debit and credit entries.</p></div>
+<form method="GET" class="card filters"><div class="field"><label>Account</label><select name="account"><option value="">All accounts</option>@foreach($accounts as $account)<option value="{{ $account }}" @selected(request('account')===$account)>{{ $account }}</option>@endforeach</select></div><div class="field field--actions"><button class="btn btn--inline">Apply</button></div></form>
+<div class="summary-grid"><div class="summary-card"><span>Total debits</span><strong>UGX {{ number_format($totalDebit) }}</strong></div><div class="summary-card"><span>Total credits</span><strong>UGX {{ number_format($totalCredit) }}</strong></div></div>
+<div class="card table-card"><table><thead><tr><th>Date</th><th>Account</th><th>Description</th><th>Reference</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>@forelse($entries as $entry)<tr><td>{{ $entry->date->format('d M Y') }}</td><td>{{ $entry->account }}</td><td>{{ $entry->description }}</td><td>{{ $entry->reference ?: '—' }}</td><td class="num">{{ $entry->debit ? 'UGX '.number_format($entry->debit) : '—' }}</td><td class="num">{{ $entry->credit ? 'UGX '.number_format($entry->credit) : '—' }}</td></tr>@empty<tr><td colspan="6" class="empty">No accounting entries recorded yet.</td></tr>@endforelse</tbody></table></div>
+@endsection

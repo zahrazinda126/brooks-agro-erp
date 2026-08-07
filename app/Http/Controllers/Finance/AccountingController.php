@@ -1,0 +1,123 @@
+<?php
+
+namespace App\Http\Controllers\Finance;
+
+use App\Http\Controllers\Controller;
+use App\Models\Budget;
+use App\Models\FixedAsset;
+use App\Models\Payable;
+use App\Models\Approval;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+class AccountingController extends Controller
+{
+    public function payables(Request $request): View
+    {
+        abort_unless($request->user()->canAccess('payables'), 403);
+        $items = Payable::query()->latest('invoice_date')->paginate(30);
+        $outstanding = Payable::where('status', 'open')->get()->sum(fn (Payable $item) => (float) $item->amount - (float) $item->amount_paid);
+        return view('finance.accounting.payables', compact('items', 'outstanding'));
+    }
+
+    public function storePayable(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('payables', 'create'), 403);
+        $data = $request->validate(['supplier_name'=>['required','string','max:160'],'invoice_number'=>['nullable','string','max:80'],'invoice_date'=>['required','date'],'due_date'=>['nullable','date','after_or_equal:invoice_date'],'description'=>['required','string','max:1000'],'amount'=>['required','numeric','min:1']]);
+        Payable::create($data + ['amount_paid'=>0,'status'=>'open','recorded_by'=>$request->user()->id]);
+        return back()->with('status', 'Supplier bill recorded.');
+    }
+
+    public function budgets(Request $request): View
+    {
+        abort_unless($request->user()->canAccess('budget'), 403);
+        $start=now()->startOfWeek()->toDateString();
+        $allItems=Budget::where('period_start',$start)->orderBy('category')->orderBy('id')->get();
+        $unit=$request->query('unit','all');
+        $needles=['poultry'=>'Poultry','kituntu'=>'Kituntu','goats'=>'Goat','rabbits'=>'Rabbit','dogs'=>'Dog','administration'=>'Administration'];
+        $items=isset($needles[$unit])?$allItems->filter(fn($item)=>str_contains(strtolower($item->category),strtolower($needles[$unit])))->values():$allItems;
+        $approval = $allItems->isEmpty() ? null : Approval::with(['submitter', 'decisionMaker', 'steps.decisionMaker'])
+            ->where('approvable_type', Budget::class)
+            ->whereIn('approvable_id', $allItems->pluck('id'))
+            ->latest('submitted_at')->first();
+
+        return view('finance.accounting.budgets', [
+            'items'=>$items, 'plannedTotal'=>$items->sum('planned_amount'), 'allTotal'=>$allItems->sum('planned_amount'),
+            'unit'=>$unit, 'budgetStatus'=>$allItems->first()?->status ?? 'draft', 'approval'=>$approval,
+            'periodStart'=>$allItems->first()?->period_start, 'periodEnd'=>$allItems->first()?->period_end,
+        ]);
+    }
+
+    public function storeBudget(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('budget', 'create'), 403);
+        $data=$request->validate(['category'=>['required','string','max:120'],'item'=>['required','string','max:160'],'unit'=>['nullable','string','max:40'],'quantity'=>['required','numeric','min:0.01'],'unit_price'=>['required','numeric','min:0'],'period_start'=>['required','date'],'period_end'=>['required','date','after_or_equal:period_start'],'notes'=>['nullable','string','max:1000']]); $data['planned_amount']=$data['quantity']*$data['unit_price'];
+        abort_if(Budget::where('period_start', $data['period_start'])->where('status', '!=', 'draft')->exists(), 422, 'An approved or submitted budget cannot be changed.');
+        Budget::create($data+['recorded_by'=>$request->user()->id]); return back()->with('status','Budget line recorded.');
+    }
+
+    public function updateBudget(Request $request, Budget $budget): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('budget', 'edit'), 403); abort_unless($budget->status === 'draft', 422, 'Only a draft budget can be edited.'); $data=$request->validate(['quantity'=>['required','numeric','min:0'],'unit_price'=>['required','numeric','min:0']]); $budget->update(['quantity'=>$data['quantity'],'unit_price'=>$data['unit_price'],'planned_amount'=>(float)$data['quantity']*(float)$data['unit_price']]); return back()->with('status','Budget line updated.');
+    }
+
+    public function updateWeeklyBudget(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('budget', 'edit'), 403); if(Budget::where('period_start',now()->startOfWeek()->toDateString())->where('status','!=','draft')->exists()) return back()->withErrors(['budget'=>'Only a draft budget can be edited.']); $data=$request->validate(['lines'=>['required','array'],'lines.*.quantity'=>['required','numeric','min:0'],'lines.*.unit_price'=>['required','numeric','min:0']]);
+        foreach($data['lines'] as $id=>$line) { $budget=Budget::find($id); if($budget) $budget->update(['quantity'=>$line['quantity'],'unit_price'=>$line['unit_price'],'planned_amount'=>(float)$line['quantity']*(float)$line['unit_price']]); } return back()->with('status','Weekly budget saved.');
+    }
+    public function submitBudget(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('budget', 'edit'), 403);
+        $budgets = Budget::where('period_start', now()->startOfWeek()->toDateString())->where('status', 'draft')->get();
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($budgets, $request) {
+            foreach ($budgets as $budget) {
+                $budget->update(['status' => 'submitted', 'submitted_at' => now()]);
+            }
+
+            if ($budgets->isNotEmpty()) {
+                $approval = $budgets->first()->approvals()->create([
+                    'module_key' => 'budget', 'department_id' => $request->user()->department_id,
+                    'submitted_by' => $request->user()->id, 'submitted_at' => now(),
+                    'submission_note' => $budgets->count().' budget lines submitted for executive review.',
+                    'due_at' => now()->addDays(2), 'required_levels' => 2,
+                ]);
+                $approval->steps()->createMany([
+                    ['stage'=>1, 'role_code'=>'ceo', 'status'=>'pending'],
+                    ['stage'=>2, 'role_code'=>'director', 'status'=>'waiting'],
+                ]);
+            }
+        });
+
+        return back()->with('status', $budgets->isNotEmpty() ? 'Weekly budget submitted for approval.' : 'There is no draft budget to submit.');
+    }
+
+    public function seedWeeklyBudget(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('budget', 'create'), 403); $template=$request->validate(['template'=>['required','in:kituntu,nti']])['template']; $start=now()->startOfWeek()->toDateString(); $end=now()->endOfWeek()->toDateString(); abort_if(Budget::where('period_start',$start)->where('status','!=','draft')->exists(), 422, 'An approved or submitted budget cannot be changed.');
+        $items=$template==='kituntu' ? [['Kituntu Tomato Garden','Mancozeb','kgs',20,17500],['Kituntu Tomato Garden','Coppermate','kgs',6,32000],['Kituntu Tomato Garden','Mistress','kgs',6,40000],['Kituntu Tomato Garden','Green Miracle','litres',6,30000],['Kituntu Tomato Garden','Iron Force','litres',3,23000],['Kituntu Tomato Garden','Labour for cutting mulches','trips',1,1000000],['Kituntu Tomato Garden','Transport for Kalimbwe','trip',1,150000],['Kituntu Tomato Garden','Drums','pcs',10,100000],['Kituntu Tomato Garden','Cabbage seeds','sachets',1,85000],['Kituntu Passion Fruits','Enkoddo','pcs',1000,3000],['Kituntu Passion Fruits','Biocure','litres',10,23000],['Kituntu Passion Fruits','Nimbercidine','litres',10,32000],['Kituntu Passion Fruits','NPK 17','bags',5,150000],['Kituntu Passion Fruits','CAN','bags',2,150000],['Kituntu Passion Fruits','Winner','bags',1.5,185000],['Kituntu Passion Fruits','Power','bags',1,190000]] : [['NTI Goat Unit','Fuel for the machine','litres',4,8750],['NTI Goat Unit','Mineral block','blocks',4,10000],['NTI Goat Unit','Gloves','bottle',1,26000],['NTI Goat Unit','Maize stalk transportation','trips',3,50000],['NTI Goat Unit','Penstrep','bottle',1,15000],['NTI Dogs Unit','Dog porridge','kgs',50,2000],['NTI Dogs Unit','Classic Milk','box',1,38000],['NTI Dogs Unit','Bravo Puppy feeds','box',25,10000],['NTI Dogs Unit','Disinfectant','5 litre jerrycan',1,60000],['NTI Dogs Unit','Liquid soap','jerrycan',1,30000]];
+        foreach($items as [$category,$item,$unit,$quantity,$price]) Budget::create(['category'=>$category,'item'=>$item,'unit'=>$unit,'quantity'=>$quantity,'unit_price'=>$price,'planned_amount'=>$quantity*$price,'period_start'=>$start,'period_end'=>$end,'recorded_by'=>$request->user()->id]); return back()->with('status','Weekly budget template loaded. Edit prices, remove unneeded lines, or add exceptions.');
+    }
+    public function destroyBudget(Request $request, Budget $budget): RedirectResponse { abort_unless($request->user()->canDo('budget','edit') || $request->user()->canDo('budget','delete'),403); abort_unless($budget->status === 'draft', 422, 'Only a draft budget can be changed.'); $budget->delete(); return back()->with('status','Budget item removed.'); }
+
+    public function assets(Request $request): View
+    {
+        abort_unless($request->user()->canAccess('assets'), 403);
+        return view('finance.accounting.assets', [
+            'items'=>FixedAsset::query()->latest('purchase_date')->paginate(30),
+            'assetValue'=>FixedAsset::where('status','active')->sum('purchase_cost'),
+            'categories'=>FixedAsset::CATEGORIES,
+            'commonAssets'=>FixedAsset::COMMON_FARM_ASSETS,
+            'categoryTotals'=>FixedAsset::where('status','active')->selectRaw('category, count(*) as asset_count, sum(purchase_cost) as total_cost')->groupBy('category')->orderBy('category')->get(),
+        ]);
+    }
+
+    public function storeAsset(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('assets', 'create'), 403);
+        $data=$request->validate(['name'=>['required','string','max:160'],'asset_tag'=>['nullable','string','max:80'],'category'=>['required',\Illuminate\Validation\Rule::in(array_keys(FixedAsset::CATEGORIES))],'purchase_date'=>['required','date'],'purchase_cost'=>['required','numeric','min:1'],'useful_life_years'=>['nullable','integer','min:1','max:100'],'location'=>['nullable','string','max:160'],'notes'=>['nullable','string','max:1000']]);
+        FixedAsset::create($data+['status'=>'active','recorded_by'=>$request->user()->id]); return back()->with('status','Fixed asset recorded.');
+    }
+}

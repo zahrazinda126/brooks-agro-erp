@@ -213,9 +213,13 @@ class User extends Authenticatable
 
         return Module::whereIn('key', $allowed)
             ->where('is_active', true)
-            ->orderBy('sort_order')
             ->get()
-            ->groupBy('group');
+            // Containers are legacy finance headings. Every role now sees
+            // one consistent business-area menu instead.
+            ->filter(fn (Module $module) => $module->key !== 'dashboard' && ! $module->is_container)
+            ->sortBy(fn (Module $module) => sprintf('%03d-%05d',
+                Module::navigationGroupOrder($module->navigationGroup()), $module->sort_order))
+            ->groupBy(fn (Module $module) => $module->navigationGroup());
     }
 
         /*

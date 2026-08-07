@@ -117,10 +117,10 @@
     @elseif ($panel === 'approvals')
         <div class="card">
             <p class="card-label">Waiting for you</p>
-            <p class="muted" style="margin:0;">
-                Nothing to approve. Records submitted by workers will appear here
-                once daily entry is built.
-            </p>
+            <span class="figure {{ ($data['approvals']['pending'] ?? 0) ? 'figure--alarm' : '' }}">{{ $data['approvals']['pending'] ?? 0 }}</span>
+            <span class="figure-unit">pending approvals</span>
+            @if(($data['approvals']['overdue'] ?? 0) > 0)<p>{{ $data['approvals']['overdue'] }} overdue</p>@endif
+            <p><a class="btn" href="{{ route('approvals.index') }}">Open approval queue</a></p>
         </div>
 
     {{-- ============================================================
@@ -160,6 +160,16 @@
                 <span class="figure figure--muted">—</span>
                 <span class="figure-unit">Payroll not built yet</span>
             </div>
+        </div>
+
+    {{-- ============================================================
+         HR KPI entry
+         ============================================================ --}}
+    @elseif ($panel === 'hr-kpis')
+        <div class="card">
+            <p class="card-label">HR KPI Dashboard</p>
+            <p class="muted" style="margin:0 0 14px;">Attendance, performance, contracts, welfare and deductions in one place.</p>
+            <a class="btn btn--inline" href="{{ route('hr.kpis.index') }}">Open KPI Dashboard</a>
         </div>
 
     {{-- ============================================================

@@ -1,0 +1,6 @@
+@extends('layouts.app')
+@section('title','Transaction Register')
+@section('content')
+<div class="page-head page-head--split"><div><h2>Transaction Register</h2><p>Every money movement is recorded here before it reaches reports.</p></div>@if($user->canDo('transactions','create'))<a class="btn btn--inline" href="{{ route('finance.transactions.create') }}">Record transaction</a>@endif</div>
+<div class="data-list"><div class="data-head"><span>Date</span><span>Type</span><span>Account</span><span>Amount</span><span>Reference</span></div>@forelse($transactions as $t)<div class="data-row"><span class="data-cell" data-label="Date">{{ $t->transaction_date->format('j M Y') }}</span><span class="data-cell" data-label="Type">{{ Str::headline($t->type) }}</span><span class="data-cell" data-label="Account">{{ $t->account }}<em class="data-sub">{{ $t->description }}</em></span><span class="data-cell" data-label="Amount">UGX {{ number_format($t->amount) }}</span><span class="data-cell" data-label="Reference">{{ $t->reference ?: '—' }}</span></div>@empty <div class="card empty"><p class="muted" style="margin:0">No transactions recorded yet.</p></div>@endforelse</div><div class="pager">{{ $transactions->links() }}</div>
+@endsection

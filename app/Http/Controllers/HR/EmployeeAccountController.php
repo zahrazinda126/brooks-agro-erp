@@ -165,6 +165,15 @@ class EmployeeAccountController extends Controller
 
         $myRank = $actor->role?->rank ?? 999;
 
+        // HR normally issues junior accounts only. The CEO account is the
+        // one explicit exception: HR owns employee onboarding, while the
+        // CEO remains a distinct senior role with its own permissions.
+        if ($actor->role?->code === 'hr-manager') {
+            return $roles->where(function ($query) use ($myRank) {
+                $query->where('rank', '>', $myRank)->orWhere('code', 'ceo');
+            })->get();
+        }
+
         return $roles->where('rank', '>', $myRank)->get();
     }
 

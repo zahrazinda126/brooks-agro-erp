@@ -501,6 +501,27 @@ body {
     color: rgba(255,255,255,.75);
 }
 
+/* HR uses a short, task-oriented menu.  These headings deliberately do not
+   collapse: the whole remit fits comfortably in the drawer and each item is
+   part of the daily HR workflow. */
+.hr-nav { padding-top: 4px; }
+
+.hr-nav-section {
+    margin: 12px 0 0;
+    padding: 10px 0 0;
+    border-top: 1px solid rgba(255, 255, 255, .13);
+}
+
+.hr-nav-section h2 {
+    margin: 0;
+    padding: 0 18px 7px;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--gold-500);
+}
+
 @media (prefers-reduced-motion: reduce) {
     .nav-group > summary::before { transition: none; }
 }
@@ -2699,4 +2720,3 @@ body {
 @media (prefers-reduced-motion: reduce) {
     .nav-sub > summary::after { transition: none; }
 }
-

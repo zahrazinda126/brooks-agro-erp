@@ -1,0 +1,3 @@
+<?php
+namespace App\Models; use Illuminate\Database\Eloquent\Model; use Illuminate\Database\Eloquent\Relations\MorphMany; use Illuminate\Database\Eloquent\Relations\BelongsTo;
+class Purchase extends Model { protected $fillable=['purchased_on','supplier_name','invoice_number','category','item','unit','quantity','unit_cost','total_cost','payment_status','status','notes','recorded_by']; protected function casts():array{return ['purchased_on'=>'date','quantity'=>'decimal:2','unit_cost'=>'decimal:2','total_cost'=>'decimal:2'];} public function recorder():BelongsTo{return $this->belongsTo(User::class,'recorded_by');} public function approvals():MorphMany{return $this->morphMany(Approval::class,'approvable');} }

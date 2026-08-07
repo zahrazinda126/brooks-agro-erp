@@ -1,0 +1,5 @@
+@extends('layouts.app')
+@section('title','Customer Balances')
+@section('content')
+<div class="page-head"><h2>Customer Balances</h2><p>Live view of money customers owe and credit they paid in advance. Record payments in the Transaction Register.</p></div><div class="summary-grid"><div class="summary-card"><span>Outstanding from customers</span><strong>UGX {{ number_format($outstanding) }}</strong></div></div><div class="card table-card"><table><thead><tr><th>Invoice date</th><th>Customer</th><th>Reference</th><th>Due date</th><th class="num">Balance</th><th>Status</th></tr></thead><tbody>@forelse($items as $item)<tr><td>{{ $item->invoice_date->format('d M Y') }}</td><td>{{ $item->customer_name }}</td><td>{{ $item->invoice_number ?: '—' }}</td><td>{{ $item->due_date?->format('d M Y') ?: '—' }}</td><td class="num">UGX {{ number_format((float)$item->amount-(float)$item->amount_paid) }}</td><td>{{ ucfirst($item->status) }}</td></tr>@empty<tr><td colspan="6" class="empty">No customer balances recorded yet.</td></tr>@endforelse</tbody></table></div>{{ $items->links() }}
+@endsection

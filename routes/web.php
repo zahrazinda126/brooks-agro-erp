@@ -5,6 +5,9 @@ use App\Http\Controllers\Auth\PasswordChangeController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HR\EmployeeAccountController;
 use App\Http\Controllers\HR\EmployeeController;
+use App\Http\Controllers\HR\EmployeeRecordController;
+use App\Http\Controllers\HR\HrReportController;
+use App\Http\Controllers\HR\PerformanceController;
 use App\Http\Controllers\Poultry\BatchController;
 use App\Http\Controllers\Poultry\BreedController;
 use Illuminate\Support\Facades\Route;
@@ -14,6 +17,13 @@ use App\Http\Controllers\Poultry\FeedTypeController;
 use App\Http\Controllers\Poultry\BirdConsumptionController;
 use App\Http\Controllers\Poultry\HealthController;
 use App\Http\Controllers\Poultry\CollectionController;
+use App\Http\Controllers\Finance\TransactionController;
+use App\Http\Controllers\Finance\ReceivableController;
+use App\Http\Controllers\Finance\AccountingController;
+use App\Http\Controllers\Poultry\PerformanceController as PoultryPerformanceController;
+use App\Http\Controllers\ApprovalController;
+use App\Http\Controllers\Finance\FarmOperationsController;
+use App\Http\Controllers\Finance\FinanceReportController;
 
 
 
@@ -60,6 +70,46 @@ Route::middleware('auth')->group(function () {
     Route::middleware('password.settled')->group(function () {
 
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('/approvals', [ApprovalController::class, 'index'])->name('approvals.index');
+        Route::get('/approvals/{approval}', [ApprovalController::class, 'show'])->name('approvals.show');
+        Route::post('/approvals/{approval}/decision', [ApprovalController::class, 'decide'])->name('approvals.decide');
+        Route::get('/finance/transactions', [TransactionController::class, 'index'])->name('finance.transactions.index');
+        Route::get('/finance/transactions/create', [TransactionController::class, 'create'])->name('finance.transactions.create');
+        Route::post('/finance/transactions', [TransactionController::class, 'store'])->name('finance.transactions.store');
+        Route::get('/finance/general-ledger', [TransactionController::class, 'generalLedger'])->name('finance.general-ledger.index');
+        Route::get('/finance/receivables', [ReceivableController::class, 'index'])->name('finance.receivables.index');
+        Route::post('/finance/receivables', [ReceivableController::class, 'store'])->name('finance.receivables.store');
+        Route::post('/finance/receivables/payment', [ReceivableController::class, 'recordPayment'])->name('finance.receivables.payment');
+        Route::post('/finance/receivables/prepayment', [ReceivableController::class, 'recordPrepayment'])->name('finance.receivables.prepayment');
+        Route::post('/finance/receivables/apply-prepayment', [ReceivableController::class, 'applyPrepayment'])->name('finance.receivables.apply-prepayment');
+        Route::get('/finance/payables', [AccountingController::class, 'payables'])->name('finance.payables.index');
+        Route::post('/finance/payables', [AccountingController::class, 'storePayable'])->name('finance.payables.store');
+        Route::get('/finance/budgets', [AccountingController::class, 'budgets'])->name('finance.budgets.index');
+        Route::post('/finance/budgets', [AccountingController::class, 'storeBudget'])->name('finance.budgets.store');
+        Route::put('/finance/budgets/{budget}', [AccountingController::class, 'updateBudget'])->name('finance.budgets.update');
+        Route::put('/finance/budgets', [AccountingController::class, 'updateWeeklyBudget'])->name('finance.budgets.update-weekly');
+        Route::post('/finance/budgets/submit', [AccountingController::class, 'submitBudget'])->name('finance.budgets.submit');
+        Route::post('/finance/budgets/weekly-template', [AccountingController::class, 'seedWeeklyBudget'])->name('finance.budgets.weekly-template');
+        Route::delete('/finance/budgets/{budget}', [AccountingController::class, 'destroyBudget'])->name('finance.budgets.destroy');
+        Route::get('/finance/assets', [AccountingController::class, 'assets'])->name('finance.assets.index');
+        Route::post('/finance/assets', [AccountingController::class, 'storeAsset'])->name('finance.assets.store');
+        Route::get('/finance/cash-book', [TransactionController::class, 'cashBook'])->name('finance.cash-book.index');
+        Route::get('/finance/bank-book', [TransactionController::class, 'bankBook'])->name('finance.bank-book.index');
+        Route::get('/finance/farm-operations/purchases', [FarmOperationsController::class, 'purchases'])->name('finance.farm.purchases');
+        Route::post('/finance/farm-operations/purchases', [FarmOperationsController::class, 'storePurchase'])->name('finance.farm.purchases.store');
+        Route::post('/finance/farm-operations/purchases/{purchase}/submit', [FarmOperationsController::class, 'submitPurchase'])->name('finance.farm.purchases.submit');
+        Route::get('/finance/farm-operations/production', [FarmOperationsController::class, 'production'])->name('finance.farm.production');
+        Route::get('/finance/farm-operations/veterinary', [FarmOperationsController::class, 'veterinary'])->name('finance.farm.veterinary');
+        Route::get('/finance/reports', [FinanceReportController::class, 'overview'])->name('finance.reports.index');
+        Route::get('/finance/reports/kpis', [FinanceReportController::class, 'kpis'])->name('finance.reports.kpis');
+        Route::get('/finance/reports/three-statement', [FinanceReportController::class, 'threeStatement'])->name('finance.reports.three-statement');
+        Route::get('/finance/reports/export/{report}', [FinanceReportController::class, 'export'])->name('finance.reports.export');
+        Route::get('/finance/reports/{report}', [FinanceReportController::class, 'statement'])->name('finance.reports.statement');
+
+        Route::get('/hr/reports', [HrReportController::class, 'index'])->name('hr.reports.index');
+        Route::get('/hr/reports/export', [HrReportController::class, 'export'])->name('hr.reports.export');
+        Route::get('/hr/kpi-dashboard', [HrReportController::class, 'kpis'])->name('hr.kpis.index');
+        Route::get('/hr/performance', [PerformanceController::class, 'index'])->name('hr.performance.index');
 
         /* ---------- Human Resources ---------- */
         Route::prefix('hr')->group(function () {
@@ -100,6 +150,17 @@ Route::middleware('auth')->group(function () {
 
             Route::post('/employees/{employee}/account/toggle', [EmployeeAccountController::class, 'toggle'])
                 ->middleware('module:hr,edit')->name('employees.account.toggle');
+
+            Route::get('/records/{module}', [EmployeeRecordController::class, 'index'])
+                ->name('hr.records.index');
+            Route::get('/records/{module}/create', [EmployeeRecordController::class, 'create'])
+                ->name('hr.records.create');
+            Route::post('/records/{module}', [EmployeeRecordController::class, 'store'])
+                ->name('hr.records.store');
+            Route::post('/records/{module}/{record}/approve', [EmployeeRecordController::class, 'approve'])
+                ->name('hr.records.approve');
+            Route::get('/records/{module}/{record}/attachments/{attachment}', [EmployeeRecordController::class, 'download'])
+                ->name('hr.records.attachments.download');
         });
 
         /* ---------- Poultry ---------- */
@@ -217,6 +278,8 @@ Route::middleware('auth')->group(function () {
                 ->middleware('module:health')->name('health.show');
             Route::get('/collections', [CollectionController::class, 'index'])
                 ->middleware('module:egg-inventory')->name('collections.index');
+            Route::get('/performance', [PoultryPerformanceController::class, 'index'])
+                ->middleware('module:staff-performance')->name('poultry.performance.index');
 
 
    
