@@ -183,8 +183,7 @@
             ['key'=>'attendance', 'label'=>'Attendance'],
             ['key'=>'assign-tasks', 'label'=>'Task Assignment'],
         ],
-        '✅ Workflow' => [
-            ['key'=>'approvals', 'label'=>'Approvals'],
+        'Communication' => [
             ['key'=>'messages', 'label'=>'Messages'],
         ],
     ];

@@ -177,7 +177,7 @@ class SpecSeeder extends Seeder
         ];
 
         // Read Only must never get a write bit anywhere.
-        $approvers = ['finance-manager', 'hr-manager', 'production-manager', 'daily-supervisor'];
+        $approvers = ['finance-manager', 'hr-manager', 'daily-supervisor'];
 
         foreach ($grants as $roleCode => $keys) {
             $roleId = DB::table('roles')->where('code', $roleCode)->value('id');

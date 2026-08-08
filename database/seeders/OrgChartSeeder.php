@@ -132,7 +132,7 @@ class OrgChartSeeder extends Seeder
             'casual-worker'      => ['feed-consumption'],
         ];
 
-        $approvers = ['finance-manager', 'hr-manager', 'production-manager', 'daily-supervisor'];
+        $approvers = ['finance-manager', 'hr-manager', 'daily-supervisor'];
 
         foreach ($roleGrants as $roleCode => $keys) {
             $roleId = DB::table('roles')->where('code', $roleCode)->value('id');

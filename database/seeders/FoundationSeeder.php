@@ -148,7 +148,7 @@ class FoundationSeeder extends Seeder
                 'data-entry', 'transactions',
             ],
             'daily-supervisor' => [
-                'dashboard', 'assign-tasks', 'approvals', 'messages',
+                'dashboard', 'assign-tasks', 'messages',
                 'poultry', 'production', 'veterinary', 'inventory',
                 'reports', 'vaccination',
             ],
@@ -188,7 +188,7 @@ class FoundationSeeder extends Seeder
         ];
 
         // Roles allowed to approve what workers submit.
-        $approvers = ['daily-supervisor', 'production-manager', 'finance-manager', 'hr-manager'];
+        $approvers = ['daily-supervisor', 'finance-manager', 'hr-manager'];
 
         foreach ($map as $roleCode => $keys) {
             $roleId = DB::table('roles')->where('code', $roleCode)->value('id');
