@@ -29,7 +29,8 @@ class StoreBatchRequest extends FormRequest
             // count as birds but never as cost.
             'quantity_free'       => ['nullable', 'integer', 'min:0', 'max:100000'],
 
-            'unit_cost'           => ['required', 'numeric', 'min:0', 'max:9999999'],
+            'unit_cost'           => ['nullable', 'required_without:total_cost', 'numeric', 'min:0', 'max:9999999'],
+            'total_cost'          => ['nullable', 'required_without:unit_cost', 'numeric', 'min:0'],
 
             'supplier_name' => ['nullable', 'string', 'max:160'],
             'invoice_no'    => ['nullable', 'string', 'max:60'],
@@ -52,7 +53,6 @@ class StoreBatchRequest extends FormRequest
         $this->merge([
             'age_days_on_arrival' => $this->input('age_days_on_arrival') ?: 0,
             'quantity_free'       => $this->input('quantity_free') ?: 0,
-            'unit_cost'           => $this->input('unit_cost') ?: 0,
             'purpose'             => $this->input('purpose', 'layer'),
         ]);
     }

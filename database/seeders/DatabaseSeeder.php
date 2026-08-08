@@ -12,7 +12,6 @@ class DatabaseSeeder extends Seeder
             FoundationSeeder::class,
             OrgChartSeeder::class,
             SpecSeeder::class,
-            AccessRefinementSeeder::class,
             PoultrySeeder::class,
             SpeciesScopeSeeder::class,
             DailyRecordsSeeder::class,

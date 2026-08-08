@@ -6,6 +6,7 @@ use App\Models\Approval;
 use App\Models\Budget;
 use App\Models\AuditLog;
 use App\Models\Purchase;
+use App\Models\PayrollRun;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,10 +18,12 @@ class ApprovalController extends Controller
     {
         abort_unless($request->user()->canAccess('approvals'), 403);
         $status = $request->string('status')->toString() ?: 'pending';
-        abort_unless(in_array($status, ['pending', 'approved', 'rejected'], true), 404);
+        abort_unless(in_array($status, ['pending', 'sent', 'approved', 'rejected'], true), 404);
 
         $query = Approval::with(['approvable', 'submitter', 'decisionMaker', 'steps.decisionMaker'])
-            ->where('status', $status)->latest('submitted_at');
+            ->when($status !== 'sent', fn($q) => $q->where('status', $status))
+            ->when($status === 'sent', fn($q) => $q->where('status','pending')->whereHas('steps', fn($s) => $s->where('stage',1)->where('status','approved')->where('decided_by',$request->user()->id)))
+            ->latest('submitted_at');
 
         if ($status === 'pending') {
             $roleCodes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique();
@@ -45,6 +48,9 @@ class ApprovalController extends Controller
             'decision' => ['required', 'in:approved,rejected'],
             'decision_note' => ['nullable', 'string', 'max:2000'],
         ]);
+        if ($data['decision'] === 'rejected' && blank($data['decision_note'] ?? null)) {
+            return back()->withErrors(['decision_note' => 'Explain what must be corrected before rejecting the budget.'])->withInput();
+        }
         abort_unless($approval->status === 'pending', 422, 'This request has already been decided.');
 
         DB::transaction(function () use ($approval, $data, $request) {
@@ -72,7 +78,22 @@ class ApprovalController extends Controller
                     ->update(['status' => $data['decision'] === 'rejected' ? 'rejected' : ($isFinalApproval ? 'approved' : 'submitted')]);
             }
             if ($approval->approvable instanceof Purchase) {
-                $approval->approvable->update(['status'=>$data['decision']==='rejected'?'rejected':($isFinalApproval?'approved':'ceo_approved')]);
+                $purchaseStatus = match (true) {
+                    $data['decision'] === 'rejected' => 'rejected',
+                    $isFinalApproval => 'approved',
+                    $step->role_code === 'finance-manager' => 'finance_reviewed',
+                    default => 'ceo_approved',
+                };
+                $approval->approvable->update(['status'=>$purchaseStatus]);
+            }
+            if ($approval->approvable instanceof PayrollRun) {
+                $payrollStatus = match (true) {
+                    $data['decision'] === 'rejected' => 'rejected',
+                    $isFinalApproval => 'approved',
+                    $step->role_code === 'finance-manager' => 'finance_reviewed',
+                    default => 'ceo_reviewed',
+                };
+                $approval->approvable->update(['status'=>$payrollStatus]);
             }
 
             AuditLog::record('approval_decided', $approval,
@@ -81,9 +102,16 @@ class ApprovalController extends Controller
         });
 
         $approval->refresh();
+        $nextStep = $approval->currentStep();
+        $nextRole = $nextStep ? match ($nextStep->role_code) {
+            'finance-manager' => 'Finance Manager',
+            'ceo' => 'CEO',
+            'director' => 'Director',
+            default => ucfirst(str_replace('-', ' ', $nextStep->role_code)),
+        } : null;
         $message = $data['decision'] === 'rejected'
             ? 'Request rejected.'
-            : ($approval->status === 'pending' ? 'Stage approved and sent to the Director for final approval.' : 'Final approval recorded.');
+            : ($nextRole ? "Stage approved and sent to the {$nextRole}." : 'Final approval recorded.');
 
         return back()->with('status', $message);
     }
@@ -91,7 +119,7 @@ class ApprovalController extends Controller
     public function show(Request $request, Approval $approval): View
     {
         abort_unless($request->user()->canAccess('approvals'), 403);
-        $approval->load(['approvable', 'submitter', 'decisionMaker', 'steps.decisionMaker']);
+        $approval->load(['approvable', 'submitter', 'decisionMaker', 'steps.decisionMaker', 'comments.user']);
 
         $budgetLines = collect();
         if ($approval->approvable instanceof Budget) {
@@ -100,5 +128,14 @@ class ApprovalController extends Controller
         }
 
         return view('approvals.show', compact('approval', 'budgetLines'));
+    }
+
+    public function comment(Request $request, Approval $approval): RedirectResponse
+    {
+        abort_unless($request->user()->canAccess('approvals'), 403);
+        $data=$request->validate(['comment'=>['required','string','max:3000']]);
+        $approval->comments()->create(['user_id'=>$request->user()->id,'comment'=>$data['comment']]);
+        AuditLog::record('approval_commented',$approval,$request->user()->displayName().' commented on '.$approval->label(),null,null,'approvals');
+        return back()->with('status','Comment added to the approval review.');
     }
 }

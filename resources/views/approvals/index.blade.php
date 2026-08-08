@@ -9,6 +9,7 @@
 <div class="card" style="margin-bottom:1rem">
     <a class="btn {{ $status === 'pending' ? '' : 'btn--ghost' }}" href="{{ route('approvals.index') }}">Pending</a>
     <a class="btn btn--ghost" href="{{ route('approvals.index', ['status' => 'approved']) }}">Approved</a>
+    <a class="btn btn--ghost" href="{{ route('approvals.index', ['status' => 'sent']) }}">Sent to Director</a>
     <a class="btn btn--ghost" href="{{ route('approvals.index', ['status' => 'rejected']) }}">Rejected</a>
 </div>
 

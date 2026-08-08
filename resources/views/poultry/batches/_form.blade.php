@@ -80,7 +80,7 @@
     </div>
 </div>
 
-<div class="card">
+<div class="card" data-cost-calculator>
     <p class="card-label">When and how many</p>
 
     <div class="form-grid">
@@ -107,7 +107,7 @@
         <div class="field @error('quantity_received') field--error @enderror">
             <label for="quantity_received">Birds paid for <span class="req">required</span></label>
             <input id="quantity_received" name="quantity_received" type="number"
-                   inputmode="numeric" min="1" data-paid
+                   inputmode="numeric" min="1" data-paid data-cost-quantity
                    value="{{ old('quantity_received', $batch->quantity_received ?? '') }}" required>
             @error('quantity_received')<p class="field-error">{{ $message }}</p>@enderror
             <p class="field-hint">The number on the invoice.</p>
@@ -137,10 +137,19 @@
         <div class="field @error('unit_cost') field--error @enderror">
             <label for="unit_cost">Cost per bird (UGX)</label>
             <input id="unit_cost" name="unit_cost" type="number"
-                   inputmode="numeric" min="0" step="1" data-cost
+                   inputmode="numeric" min="0" step="1" data-cost data-cost-unit
                    value="{{ old('unit_cost', isset($batch) ? (int) $batch->unit_cost : '') }}">
             @error('unit_cost')<p class="field-error">{{ $message }}</p>@enderror
             <p class="field-hint">What the invoice charges for each paid bird.</p>
+        </div>
+
+        <div class="field @error('total_cost') field--error @enderror">
+            <label for="total_cost">Total paid (UGX)</label>
+            <input id="total_cost" name="total_cost" type="number" inputmode="numeric"
+                   min="0" step="0.01" data-cost-total
+                   value="{{ old('total_cost', isset($batch) ? $batch->total_cost : '') }}">
+            @error('total_cost')<p class="field-error">{{ $message }}</p>@enderror
+            <p class="field-hint">Enter this instead of cost per bird to calculate the unit cost.</p>
         </div>
 
         {{-- Three figures, because the free birds change two of them. --}}

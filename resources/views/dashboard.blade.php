@@ -24,6 +24,14 @@
             </p>
         </div>
 
+    @elseif ($panel === 'production-overview')
+        @php $po=$data['productionOverview']; $unitMax=max(1,$po['units']->max('value')); @endphp
+        <section class="production-overview">
+            <div class="executive-brief__head"><div><p class="card-label">All farm units</p><h3>Production overview</h3></div><span>Updated from current registers</span></div>
+            <div class="production-unit-grid">@foreach($po['units'] as $unit)<a href="{{ $unit['code']==='poultry' ? route('batches.index') : route('operations.units.index',['unit'=>$unit['code']]) }}" class="production-unit-card"><span>{{ $unit['icon'] }}</span><div><small>{{ $unit['label'] }}</small><strong>{{ number_format($unit['value']) }}</strong><em>{{ $unit['measure'] }} · {{ $unit['activity'] }} records in 30 days</em></div></a>@endforeach</div>
+            <div class="exec-chart-grid"><div class="exec-panel"><p class="card-label">Registered stock and plots</p><h3>Unit comparison</h3><div class="unit-comparison">@foreach($po['units'] as $unit)<div class="unit-comparison__row"><span>{{ $unit['icon'] }} {{ $unit['label'] }}</span><div><i style="width:{{ max(2,round($unit['value']/$unitMax*100)) }}%"></i></div><strong>{{ number_format($unit['value']) }}</strong></div>@endforeach</div></div><div class="exec-panel"><p class="card-label">Last 30 days</p><h3>Management activity</h3><div class="approval-ring" style="--progress:{{ min(100,$po['activity']*5) }}"><strong>{{ $po['activity'] }}</strong><span>records</span></div><p class="exec-insight">{{ $po['needsAttention'] ? $po['needsAttention'].' unit record(s) need attention.' : 'No unit records are marked as needing attention.' }}</p></div></div>
+        </section>
+
     {{-- ============================================================
          Flocks. Trouble first, then the totals — a supervisor opening
          this at 6am wants to know what needs them, not the headline.
@@ -114,6 +122,26 @@
     {{-- ============================================================
          Approvals
          ============================================================ --}}
+    @elseif ($panel === 'executive')
+        @php($e=$data['executive'])
+        <section class="executive-brief">
+            <div class="executive-brief__head">
+                <div><p class="card-label">Executive briefing · {{ now()->format('F Y') }}</p><h3>What needs your attention</h3></div>
+                <a href="{{ route('executive.index',['screen'=>'kpis']) }}">View full analytics →</a>
+            </div>
+            <div class="exec-kpi-grid executive-brief__grid">
+                <article class="exec-kpi exec-kpi--positive"><span class="exec-kpi__icon">💵</span><div><small>Money received</small><strong>UGX {{ number_format($e['income']) }}</strong><em>This month</em></div></article>
+                <article class="exec-kpi exec-kpi--negative"><span class="exec-kpi__icon">💸</span><div><small>Money paid</small><strong>UGX {{ number_format($e['spending']) }}</strong><em>This month</em></div></article>
+                <article class="exec-kpi exec-kpi--{{ $e['pending'] ? 'warning' : 'positive' }}"><span class="exec-kpi__icon">✅</span><div><small>Waiting for your review</small><strong>{{ $e['pending'] }}</strong><em>{{ $e['overdue'] ? $e['overdue'].' overdue' : 'Nothing overdue' }}</em></div></article>
+                <article class="exec-kpi"><span class="exec-kpi__icon">📤</span><div><small>Sent to Director</small><strong>{{ $e['sent'] }}</strong><em>Awaiting final decision</em></div></article>
+                <article class="exec-kpi exec-kpi--warning"><span class="exec-kpi__icon">📋</span><div><small>Approval exposure</small><strong>UGX {{ number_format($e['purchaseExposure']) }}</strong><em>Submitted purchases</em></div></article>
+                <article class="exec-kpi exec-kpi--{{ $e['withdrawals'] ? 'danger' : 'positive' }}"><span class="exec-kpi__icon">🥚</span><div><small>Egg withdrawals</small><strong>{{ $e['withdrawals'] }}</strong><em>{{ $e['withdrawals'] ? 'Active restrictions' : 'No active restrictions' }}</em></div></article>
+            </div>
+            <div class="executive-brief__actions">
+                <div><strong>{{ $e['pending'] ? 'Decisions are waiting.' : 'Your approval queue is clear.' }}</strong><span>{{ $e['pending'] ? 'Review supporting details, comment, approve or reject.' : 'There are no items requiring CEO action right now.' }}</span></div>
+                <div class="form-actions"><a class="btn" href="{{ route('approvals.index') }}">Review approvals</a><a class="btn btn--quiet" href="{{ route('approvals.index',['status'=>'sent']) }}">Track Director queue</a></div>
+            </div>
+        </section>
     @elseif ($panel === 'approvals')
         <div class="card">
             <p class="card-label">Waiting for you</p>
@@ -127,27 +155,24 @@
          Staff
          ============================================================ --}}
     @elseif ($panel === 'staff')
-        @php
-            $s = $data['staff'];
-        @endphp
         <div class="grid">
             <div class="card">
                 <p class="card-label">Staff</p>
-                <span class="figure">{{ $s['active'] }}</span>
+                <span class="figure">{{ $data['staff']['active'] ?? 0 }}</span>
                 <span class="figure-unit">On the register</span>
             </div>
 
             <div class="card">
                 <p class="card-label">With a login</p>
-                <span class="figure">{{ $s['withLogin'] }}</span>
-                <span class="figure-unit">of {{ $s['active'] }} staff</span>
+                <span class="figure">{{ $data['staff']['withLogin'] ?? 0 }}</span>
+                <span class="figure-unit">of {{ $data['staff']['active'] ?? 0 }} staff</span>
             </div>
 
             <div class="card">
                 <p class="card-label">Never signed in</p>
-                <span class="figure {{ $s['neverSignedIn'] > 0 ? 'figure--alarm' : '' }}">{{ $s['neverSignedIn'] }}</span>
+                <span class="figure {{ ($data['staff']['neverSignedIn'] ?? 0) > 0 ? 'figure--alarm' : '' }}">{{ $data['staff']['neverSignedIn'] ?? 0 }}</span>
                 <span class="figure-unit">
-                    @if ($s['neverSignedIn'] > 0)
+                    @if (($data['staff']['neverSignedIn'] ?? 0) > 0)
                         May need their password again
                     @else
                         Everyone has signed in
@@ -230,9 +255,9 @@
 
         <div class="shortcut-grid">
             @foreach ($data['shortcuts'] as $m)
-                <a class="shortcut" href="{{ $m->url() }}">
+                <a class="shortcut" href="{{ $m->link ?? $m->url() }}">
                     <svg class="shortcut-icon" aria-hidden="true">
-                        <use href="#i-{{ $m->iconName() }}"></use>
+                        <use href="#i-{{ $m->icon ?? $m->iconName() }}"></use>
                     </svg>
                     <span>{{ $m->name }}</span>
                 </a>

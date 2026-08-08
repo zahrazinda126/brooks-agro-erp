@@ -20,6 +20,10 @@
     @elseif($budgetStatus==='rejected')
         <p>Rejected by <strong>{{ $approval?->decisionMaker?->displayName() ?? 'Authorised approver' }}</strong>@if($approval?->decided_at) on <strong>{{ $approval->decided_at->format('d M Y, H:i') }}</strong>@endif.</p>
         @if($approval?->decision_note)<p><strong>Reason:</strong> {{ $approval->decision_note }}</p>@endif
+        <p>The rejected submission remains in the approval history. A revision must pass through the CEO and Director again.</p>
+        @if(auth()->user()->canDo('budget','edit'))
+            <form method="POST" action="{{ route('finance.budgets.revise') }}" class="form-actions">@csrf<button class="btn">Open budget for revision</button></form>
+        @endif
     @endif
 </div>
 <nav class="form-actions" aria-label="Budget units"><a class="btn {{ $unit==='all'?'':'btn--quiet' }}" href="{{ route('finance.budgets.index') }}">All units</a>@foreach(['poultry'=>'Poultry','kituntu'=>'Kituntu Garden','goats'=>'Goats','rabbits'=>'Rabbits','dogs'=>'Dogs','administration'=>'Administration'] as $key=>$label)<a class="btn {{ $unit===$key?'':'btn--quiet' }}" href="{{ route('finance.budgets.index',['unit'=>$key]) }}">{{ $label }}</a>@endforeach</nav>

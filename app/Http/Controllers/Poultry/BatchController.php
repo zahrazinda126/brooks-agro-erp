@@ -94,7 +94,11 @@ class BatchController extends Controller
         $free = (int) ($data['quantity_free'] ?? 0);
 
         $data['current_quantity'] = $data['quantity_received'] + $free;
-        $data['total_cost']       = round($data['quantity_received'] * (float) $data['unit_cost'], 2);
+        if (isset($data['total_cost'])) {
+            $data['unit_cost'] = round((float) $data['total_cost'] / $data['quantity_received'], 2);
+        } else {
+            $data['total_cost'] = round($data['quantity_received'] * (float) $data['unit_cost'], 2);
+        }
         $data['created_by']       = $request->user()->id;
         $data['status']           = 'active';
 
@@ -149,7 +153,11 @@ class BatchController extends Controller
         $before = $batch->only(array_keys($data));
 
         // Only the paid birds carry cost. Free extras never do.
-        $data['total_cost'] = round($data['quantity_received'] * (float) $data['unit_cost'], 2);
+        if (isset($data['total_cost'])) {
+            $data['unit_cost'] = round((float) $data['total_cost'] / $data['quantity_received'], 2);
+        } else {
+            $data['total_cost'] = round($data['quantity_received'] * (float) $data['unit_cost'], 2);
+        }
 
         $data['expected_lay_date'] = $this->expectedLayDate(
             $data['breed_id'] ?? null,

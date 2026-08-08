@@ -12,7 +12,7 @@ class EmployeeRecord extends Model
         'employee_id', 'type', 'category', 'title', 'provider', 'recorded_on', 'ends_on', 'probation_ends_on',
         'notice_period_days', 'signed_on', 'status', 'amount', 'score',
         'is_payroll_deduction', 'payroll_deduction_status', 'details',
-        'created_by', 'approved_by', 'approved_at',
+        'created_by', 'approved_by', 'approved_at', 'payroll_run_id',
     ];
 
     protected function casts(): array

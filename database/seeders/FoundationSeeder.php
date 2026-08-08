@@ -169,7 +169,7 @@ class FoundationSeeder extends Seeder
                 'sales', 'customers', 'reports', 'analytics',
             ],
             'hr-manager' => [
-                'dashboard', 'hr', 'payroll', 'reports',
+                'dashboard', 'hr', 'payroll', 'fleet', 'reports',
             ],
             'sales-manager' => [
                 'dashboard', 'sales', 'customers',

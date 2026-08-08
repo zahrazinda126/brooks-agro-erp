@@ -1,0 +1,3 @@
+<?php
+use Illuminate\Database\Migrations\Migration;use Illuminate\Database\Schema\Blueprint;use Illuminate\Support\Facades\Schema;
+return new class extends Migration{public function up():void{Schema::create('feed_stock_movements',function(Blueprint $t){$t->id();$t->string('unit_code',20)->index();$t->date('movement_date')->index();$t->string('movement_type',20);$t->string('feed_name',160);$t->decimal('quantity_kg',14,2);$t->string('supplier',160)->nullable();$t->string('reference',100)->nullable();$t->decimal('unit_cost',14,2)->nullable();$t->text('notes')->nullable();$t->foreignId('recorded_by')->constrained('users')->restrictOnDelete();$t->timestamps();});}public function down():void{Schema::dropIfExists('feed_stock_movements');}};

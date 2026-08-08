@@ -31,8 +31,21 @@
     <div class="card"><h2>Submission note</h2><p>{{ $approval->submission_note }}</p></div>
 @endif
 @if($approval->approvable instanceof \App\Models\Purchase)
-    @php($purchase=$approval->approvable)
+    @php
+        $purchase = $approval->approvable;
+    @endphp
     <div class="card table-card"><table><tbody><tr><th>Purchase date</th><td>{{ $purchase->purchased_on->format('d M Y') }}</td></tr><tr><th>Supplier</th><td>{{ $purchase->supplier_name }}</td></tr><tr><th>Invoice/reference</th><td>{{ $purchase->invoice_number ?: '—' }}</td></tr><tr><th>Category</th><td>{{ $purchase->category }}</td></tr><tr><th>Item</th><td>{{ $purchase->item }}</td></tr><tr><th>Quantity</th><td>{{ $purchase->quantity }} {{ $purchase->unit }}</td></tr><tr><th>Unit cost</th><td>UGX {{ number_format($purchase->unit_cost,2) }}</td></tr><tr><th>Total cost</th><td><strong>UGX {{ number_format($purchase->total_cost,2) }}</strong></td></tr><tr><th>Payment status</th><td>{{ ucfirst(str_replace('_',' ',$purchase->payment_status)) }}</td></tr><tr><th>Notes</th><td>{{ $purchase->notes ?: '—' }}</td></tr></tbody></table></div>
+@endif
+
+@if($approval->approvable instanceof \App\Models\PayrollRun)
+    @php $payroll = $approval->approvable->loadMissing('lines.employee'); @endphp
+    <div class="card table-card">
+        <h2>Payroll details</h2><p><strong>{{ $payroll->payroll_number }}</strong> · {{ $payroll->period_start->format('d M Y') }} – {{ $payroll->period_end->format('d M Y') }}</p>
+        <table><thead><tr><th>Employee</th><th>Gross</th><th>NSSF</th><th>PAYE</th><th>Advance</th><th>Penalties</th><th>Other</th><th>Net</th></tr></thead><tbody>
+        @foreach($payroll->lines as $line)<tr><td>{{ $line->employee->fullName() }}</td><td>UGX {{ number_format($line->gross_pay,2) }}</td><td>{{ number_format($line->nssf_employee,2) }}</td><td>{{ number_format($line->paye,2) }}</td><td>{{ number_format($line->salary_advance,2) }}</td><td>{{ number_format($line->penalties,2) }}</td><td>{{ number_format($line->other_deductions,2) }}</td><td><strong>UGX {{ number_format($line->net_pay,2) }}</strong></td></tr>@endforeach
+        </tbody><tfoot><tr><th>Total</th><th>UGX {{ number_format($payroll->gross_total,2) }}</th><th colspan="5">Deductions: UGX {{ number_format($payroll->deduction_total,2) }}</th><th>UGX {{ number_format($payroll->net_total,2) }}</th></tr></tfoot></table>
+        <a class="btn btn--ghost" href="{{ route('payroll.show',$payroll) }}">Open full payroll</a>
+    </div>
 @endif
 
 @if($budgetLines->isNotEmpty())
@@ -55,6 +68,8 @@
     </div>
 @endif
 
+<div class="card"><h2>Review discussion</h2><form method="POST" action="{{ route('approvals.comments.store',$approval) }}">@csrf<div class="field"><label for="comment">Add comment or question</label><textarea id="comment" name="comment" rows="3" required placeholder="Ask for clarification or record an observation."></textarea></div><button class="btn">Post comment</button></form>@forelse($approval->comments as $comment)<div style="border-top:1px solid #ddd;margin-top:1rem;padding-top:1rem"><strong>{{ $comment->user->displayName() }}</strong> <span class="muted">{{ $comment->created_at->format('d M Y, H:i') }}</span><p>{{ $comment->comment }}</p></div>@empty<p class="muted">No review comments yet.</p>@endforelse</div>
+
 @php
     $myRoleCodes = auth()->user()->roles->pluck('code')->push(auth()->user()->role?->code)->filter();
     $canActAtThisStage = $approval->currentStep() && $myRoleCodes->contains($approval->currentStep()->role_code);
@@ -66,8 +81,15 @@
         <div class="field"><label for="decision_note">Decision note</label><textarea id="decision_note" name="decision_note" rows="3" placeholder="Explain any conditions or reason for rejection.">{{ old('decision_note') }}</textarea></div>
         @error('decision_note')<p class="error">{{ $message }}</p>@enderror
         <div class="form-actions">
-            <button class="btn" name="decision" value="approved">{{ $approval->level < $approval->required_levels ? 'Approve and send to Director' : 'Give final approval' }}</button>
-            <button class="btn btn--ghost" name="decision" value="rejected">Reject budget</button>
+            @php
+                $nextApprovalStep = $approval->steps->firstWhere('stage', $approval->level + 1);
+                $nextApprovalRole = $nextApprovalStep ? match($nextApprovalStep->role_code) {
+                    'finance-manager' => 'Finance Manager', 'ceo' => 'CEO', 'director' => 'Director',
+                    default => ucfirst(str_replace('-', ' ', $nextApprovalStep->role_code)),
+                } : null;
+            @endphp
+            <button class="btn" name="decision" value="approved">{{ $nextApprovalRole ? 'Approve and send to '.$nextApprovalRole : 'Give final approval' }}</button>
+            <button class="btn btn--ghost" name="decision" value="rejected">Reject request</button>
         </div>
     </form>
 @elseif($approval->decisionMaker)

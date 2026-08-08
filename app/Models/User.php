@@ -204,6 +204,26 @@ class User extends Authenticatable
         return (bool) ($this->abilities()[$moduleKey][$action] ?? false);
     }
 
+    /** Casual workers are restricted to the farm units HR explicitly posts them to. */
+    public function assignedFarmUnits(): array
+    {
+        $codes = $this->departments->pluck('code')->all();
+        if ($this->department?->code) {
+            $codes[] = $this->department->code;
+        }
+
+        return array_values(array_intersect(array_unique($codes), ['poultry', 'goats', 'rabbits', 'dogs', 'garden']));
+    }
+
+    public function canAccessFarmUnit(string $unit): bool
+    {
+        if ($this->isDataEntryOnly()) {
+            return in_array($unit, $this->assignedFarmUnits(), true);
+        }
+
+        return $this->canAccess($unit);
+    }
+
     public function sidebarModules(): Collection
     {
         $allowed = array_keys(array_filter(

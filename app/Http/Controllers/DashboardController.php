@@ -7,6 +7,11 @@ use App\Models\Employee;
 use App\Models\Module;
 use App\Models\User;
 use App\Models\Approval;
+use App\Models\FinancialTransaction;
+use App\Models\Purchase;
+use App\Models\HealthEvent;
+use App\Models\LivestockAnimal;
+use App\Models\FarmUnitRecord;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -50,15 +55,19 @@ class DashboardController extends Controller
     private function panelsFor(User $user): array
     {
         $panels = [];
+        $isCeo = $user->role?->code === 'ceo' || $user->roles->contains('code','ceo');
         $isHrManager = $user->role?->code === 'hr-manager'
             || $user->roles->contains('code', 'hr-manager');
+        $isProductionManager = $this->isProductionManager($user);
+        if ($isCeo) $panels[] = 'executive';
+        if ($isProductionManager) $panels[] = 'production-overview';
 
         // A worker's own tasks come before anything else on the farm.
         if ($user->canAccess('my-tasks') || $user->canAccess('my-work')) {
             $panels[] = 'my-work';
         }
 
-        if ($user->canAccess('batches')) {
+        if ($user->canAccess('batches') && ! $isProductionManager) {
             $panels[] = 'flocks';
         }
 
@@ -68,13 +77,6 @@ class DashboardController extends Controller
 
         if ($user->canAccess('hr')) {
             $panels[] = 'staff';
-        }
-
-        if ($user->canAccess('approvals')) {
-            $data['approvals'] = [
-                'pending' => Approval::where('status', 'pending')->count(),
-                'overdue' => Approval::where('status', 'pending')->where('due_at', '<', now())->count(),
-            ];
         }
 
         if ($isHrManager && $user->canAccess('kpi-dashboards')) {
@@ -106,6 +108,14 @@ class DashboardController extends Controller
     private function dataFor(User $user): array
     {
         $data = [];
+        $isCeo = $user->role?->code === 'ceo' || $user->roles->contains('code','ceo');
+        if ($isCeo) {
+            $month=FinancialTransaction::whereBetween('transaction_date',[now()->startOfMonth(),now()->endOfMonth()])->get();
+            $data['executive']=['income'=>(float)$month->where('type','money_received')->sum('amount'),'spending'=>(float)$month->where('type','money_paid')->sum('amount'),'pending'=>Approval::where('status','pending')->whereHas('steps',fn($q)=>$q->where('status','pending')->where('role_code','ceo'))->count(),'sent'=>Approval::where('status','pending')->whereHas('steps',fn($q)=>$q->where('role_code','ceo')->where('status','approved')->where('decided_by',$user->id))->count(),'overdue'=>Approval::where('status','pending')->where('due_at','<',now())->count(),'purchaseExposure'=>(float)Purchase::whereIn('status',['submitted','finance_reviewed','ceo_approved'])->sum('total_cost'),'withdrawals'=>HealthEvent::where('withdrawal_ends_eggs','>=',now()->toDateString())->count()];
+        }
+        if ($this->isProductionManager($user)) $data['productionOverview']=$this->productionOverview();
+
+        if ($user->canAccess('approvals')) $data['approvals']=['pending'=>Approval::where('status','pending')->count(),'overdue'=>Approval::where('status','pending')->where('due_at','<',now())->count()];
 
         if ($user->canAccess('batches')) {
             $data['flocks'] = $this->flockData($user);
@@ -172,6 +182,16 @@ class DashboardController extends Controller
      */
    private function shortcuts(User $user): \Illuminate\Support\Collection
     {
+        if ($this->isProductionManager($user)) {
+            return collect([
+                (object)['name'=>'Overall Production Report','link'=>route('operations.reports'),'icon'=>'chart'],
+                (object)['name'=>'Livestock Overview','link'=>route('operations.reports',['view'=>'livestock']),'icon'=>'paw'],
+                (object)['name'=>'Health & Losses','link'=>route('operations.reports',['view'=>'health']),'icon'=>'vet'],
+                (object)['name'=>'Feeding & Inputs','link'=>route('operations.reports',['view'=>'inputs']),'icon'=>'grain'],
+                (object)['name'=>'Production & Harvest','link'=>route('operations.reports',['view'=>'production']),'icon'=>'factory'],
+                (object)['name'=>'Approval Queue','link'=>route('approvals.index'),'icon'=>'check-circle'],
+            ]);
+        }
         $wanted = [
             'egg-entry', 'mortality-entry', 'feed-consumption',
             'batches', 'my-tasks', 'approvals', 'hr', 'payroll',
@@ -202,6 +222,27 @@ class DashboardController extends Controller
             $hour < 17 => 'Good afternoon',
             default    => 'Good evening',
         };
+    }
+
+    private function isProductionManager(User $user): bool
+    {
+        return $user->role?->code === 'production-manager'
+            || $user->roles->contains('code','production-manager')
+            || (($user->role?->code === 'department-manager' || $user->roles->contains('code','department-manager'))
+                && ($user->department?->code === 'production' || $user->departments->contains('code','production')));
+    }
+
+    private function productionOverview(): array
+    {
+        $activityStart=now()->subDays(30)->toDateString();
+        $units=collect([
+            ['code'=>'poultry','label'=>'Poultry','icon'=>'🐔','value'=>(int)AnimalGroup::where('status','active')->sum('current_quantity'),'measure'=>'birds','activity'=>HealthEvent::where('occurred_on','>=',$activityStart)->count()],
+            ['code'=>'goats','label'=>'Goats','icon'=>'🐐','value'=>LivestockAnimal::where('unit_code','goats')->where('status','active')->count(),'measure'=>'animals','activity'=>FarmUnitRecord::where('unit_code','goats')->where('record_date','>=',$activityStart)->count()],
+            ['code'=>'rabbits','label'=>'Rabbits','icon'=>'🐇','value'=>LivestockAnimal::where('unit_code','rabbits')->where('status','active')->count(),'measure'=>'animals','activity'=>FarmUnitRecord::where('unit_code','rabbits')->where('record_date','>=',$activityStart)->count()],
+            ['code'=>'dogs','label'=>'Dogs','icon'=>'🐕','value'=>LivestockAnimal::where('unit_code','dogs')->where('status','active')->count(),'measure'=>'animals','activity'=>FarmUnitRecord::where('unit_code','dogs')->where('record_date','>=',$activityStart)->count()],
+            ['code'=>'garden','label'=>'Garden','icon'=>'🌱','value'=>FarmUnitRecord::where('unit_code','garden')->where('record_type','plot')->distinct('subject')->count('subject'),'measure'=>'plots','activity'=>FarmUnitRecord::where('unit_code','garden')->where('record_date','>=',$activityStart)->count()],
+        ]);
+        return ['units'=>$units,'needsAttention'=>FarmUnitRecord::where('status','needs_attention')->count(),'activity'=>$units->sum('activity')];
     }
 
     /**

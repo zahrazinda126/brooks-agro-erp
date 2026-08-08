@@ -1,0 +1,19 @@
+@extends('layouts.app')
+@section('title',$config['name'].' Report')
+@section('content')
+<div class="page-head page-head--split"><div><p class="eyebrow">📊 Unit report</p><h2>{{ $config['name'] }} Report</h2><p>View operational records before downloading them.</p></div><div class="form-actions"><a class="btn btn--quiet" href="{{ route('operations.units.index',['unit'=>$unit]) }}">Unit overview</a><a class="btn" href="{{ route('operations.units.export',['unit'=>$unit,'from'=>$from->toDateString(),'to'=>$to->toDateString()]) }}">Download CSV</a></div></div>
+<form class="exec-panel form-grid" method="GET"><div class="field"><label>From</label><input type="date" name="from" value="{{ $from->toDateString() }}"></div><div class="field"><label>To</label><input type="date" name="to" value="{{ $to->toDateString() }}"></div><div class="form-actions"><button class="btn">View report</button></div></form>
+
+@if(isset($groups))
+<div class="exec-kpi-grid exec-kpi-grid--compact"><article class="exec-kpi"><div><small>Active groups</small><strong>{{ $groups->where('status','active')->count() }}</strong></div></article><article class="exec-kpi exec-kpi--positive"><div><small>Current animals</small><strong>{{ number_format($groups->where('status','active')->sum('current_quantity')) }}</strong></div></article><article class="exec-kpi exec-kpi--warning"><div><small>Feed issued / consumed</small><strong>{{ number_format($feed->whereIn('action',['issued','fed'])->sum('quantity_kg'),2) }} kg</strong></div></article><article class="exec-kpi exec-kpi--danger"><div><small>Mortality</small><strong>{{ number_format($mortality->sum('quantity')) }}</strong></div></article></div>
+@php $tables=[
+ ['title'=>'Feed records','rows'=>$feed,'date'=>'recorded_on','columns'=>['group_code'=>'Group','action'=>'Movement','feed_name'=>'Feed','quantity_kg'=>'Quantity (kg)','cost'=>'Cost (UGX)']],
+ ['title'=>'Vaccination, treatment & health','rows'=>$health,'date'=>'recorded_on','columns'=>['group_code'=>'Group','event_type'=>'Event','condition_or_vaccine'=>'Condition / vaccine','medicine'=>'Medicine','animals_affected'=>'Animals','cost'=>'Cost (UGX)']],
+ ['title'=>'Mortality records','rows'=>$mortality,'date'=>'occurred_on','columns'=>['group_code'=>'Group','quantity'=>'Number lost','suspected_cause'=>'Suspected cause','disposal_method'=>'Disposal']],
+ ['title'=>'Production & births','rows'=>$production,'date'=>'recorded_on','columns'=>['group_code'=>'Group','production_type'=>'Output','quantity'=>'Quantity','measure_unit'=>'Unit','value'=>'Value (UGX)']],
+]; @endphp
+@foreach($tables as $table)<section class="exec-panel table-wrap"><h3>{{ $table['title'] }}</h3><table class="exec-table"><thead><tr><th>Date</th>@foreach($table['columns'] as $label)<th>{{ $label }}</th>@endforeach</tr></thead><tbody>@forelse($table['rows'] as $row)<tr><td>{{ \Carbon\Carbon::parse($row->{$table['date']})->format('d M Y') }}</td>@foreach($table['columns'] as $field=>$label)<td>{{ $row->{$field} ?? '—' }}</td>@endforeach</tr>@empty<tr><td colspan="{{ count($table['columns'])+1 }}">No {{ strtolower($table['title']) }} in this period.</td></tr>@endforelse</tbody></table></section>@endforeach
+@else
+<section class="exec-panel table-wrap"><h3>Garden activity</h3><table class="exec-table"><thead><tr><th>Date</th><th>Record</th><th>Subject</th><th>Quantity</th><th>Value / Cost</th><th>Status</th></tr></thead><tbody>@forelse($records as $row)<tr><td>{{ $row->record_date->format('d M Y') }}</td><td>{{ $config['types'][$row->record_type] ?? $row->record_type }}</td><td>{{ $row->subject }}</td><td>{{ $row->quantity }} {{ $row->measure_unit }}</td><td>{{ $row->amount!==null?'UGX '.number_format($row->amount):'—' }}</td><td>{{ str_replace('_',' ',$row->status) }}</td></tr>@empty<tr><td colspan="6">No Garden records in this period.</td></tr>@endforelse</tbody></table></section>
+@endif
+@endsection

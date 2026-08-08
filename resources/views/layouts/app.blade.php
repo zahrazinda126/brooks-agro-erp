@@ -95,7 +95,27 @@
             var drawer = document.getElementById('drawer');
             var scrim  = document.getElementById('drawerScrim');
 
-            if (!button || !drawer || !scrim) return;
+            if (!drawer) return;
+
+            /* A full page navigation rebuilds the fixed drawer. Remember its
+               position per signed-in user so lower menu items stay in view. */
+            var scrollKey = 'brooks.drawer.scroll.{{ auth()->id() }}';
+            try {
+                var savedScroll = parseInt(sessionStorage.getItem(scrollKey) || '0', 10);
+                if (Number.isFinite(savedScroll)) drawer.scrollTop = savedScroll;
+            } catch (e) {}
+
+            function rememberDrawerPosition() {
+                try { sessionStorage.setItem(scrollKey, String(drawer.scrollTop)); } catch (e) {}
+            }
+
+            drawer.addEventListener('scroll', rememberDrawerPosition, { passive: true });
+            drawer.querySelectorAll('a[href], form').forEach(function (item) {
+                item.addEventListener(item.tagName === 'FORM' ? 'submit' : 'click', rememberDrawerPosition);
+            });
+            window.addEventListener('pagehide', rememberDrawerPosition);
+
+            if (!button || !scrim) return;
 
             function setOpen(open) {
                 drawer.dataset.open = open ? 'true' : 'false';
@@ -117,5 +137,6 @@
     </script>
 @endunless
 
+<script src="{{ asset('js/cost-calculator.js') }}?v={{ filemtime(public_path('js/cost-calculator.js')) }}"></script>
 </body>
 </html>

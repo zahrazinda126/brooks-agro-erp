@@ -96,11 +96,16 @@ class Module extends Model
      */
     public function url(): string
     {
-        $builtRoutes = ['reports'=>'finance.reports.index', 'kpi-dashboards'=>'finance.reports.kpis', 'purchases'=>'finance.farm.purchases', 'production'=>'finance.farm.production', 'veterinary'=>'finance.farm.veterinary', 'approvals' => 'approvals.index', 'transactions' => 'finance.transactions.index', 'general-ledger' => 'finance.general-ledger.index', 'receivables' => 'finance.receivables.index', 'payables' => 'finance.payables.index', 'budget' => 'finance.budgets.index', 'assets' => 'finance.assets.index', 'cash-book' => 'finance.cash-book.index', 'bank-book' => 'finance.bank-book.index'];
+        $builtRoutes = ['payroll'=>'payroll.index', 'sales'=>'sales.index', 'customers'=>'sales.index', 'invoices'=>'sales.index', 'receipts'=>'sales.index', 'returns'=>'sales.index', 'customer-ledger'=>'sales.index', 'feed-received'=>'operations.feed-stock.index', 'reports'=>'finance.reports.index', 'kpi-dashboards'=>'finance.reports.kpis', 'purchases'=>'finance.farm.purchases', 'production'=>'finance.farm.production', 'veterinary'=>'finance.farm.veterinary', 'approvals' => 'approvals.index', 'transactions' => 'finance.transactions.index', 'general-ledger' => 'finance.general-ledger.index', 'receivables' => 'finance.receivables.index', 'payables' => 'finance.payables.index', 'budget' => 'finance.budgets.index', 'assets' => 'finance.assets.index', 'cash-book' => 'finance.cash-book.index', 'bank-book' => 'finance.bank-book.index'];
+        $builtRoutes['visitors'] = 'visitors.index';
         if (isset($builtRoutes[$this->key]) && Route::has($builtRoutes[$this->key])) {
             return route($builtRoutes[$this->key]);
         }
         if (in_array($this->key, ['profit-loss','balance-sheet','cash-flow','trial-balance'], true)) return route('finance.reports.statement', ['report'=>$this->key]);
+        if (in_array($this->key, ['goats','rabbits','dogs','garden'], true) && Route::has('operations.units.index')) return route('operations.units.index', ['unit'=>$this->key]);
+        if (in_array($this->key, ['audit','chart-of-accounts','finance-periods','finance-accounts','payment-methods','document-numbering','tax-settings','budget-settings','finance-imports'], true) && Route::has('finance.admin.index')) {
+            return route('finance.admin.index', ['screen' => $this->key]);
+        }
         if ($this->key === 'staff-performance' && Route::has('poultry.performance.index')) {
             return route('poultry.performance.index');
         }

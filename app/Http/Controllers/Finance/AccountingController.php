@@ -7,6 +7,7 @@ use App\Models\Budget;
 use App\Models\FixedAsset;
 use App\Models\Payable;
 use App\Models\Approval;
+use App\Models\AuditLog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -71,8 +72,9 @@ class AccountingController extends Controller
     {
         abort_unless($request->user()->canDo('budget', 'edit'), 403);
         $budgets = Budget::where('period_start', now()->startOfWeek()->toDateString())->where('status', 'draft')->get();
+        $submissionNumber = $budgets->isEmpty() ? 1 : Approval::where('approvable_type', Budget::class)->whereIn('approvable_id', $budgets->pluck('id'))->count() + 1;
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($budgets, $request) {
+        \Illuminate\Support\Facades\DB::transaction(function () use ($budgets, $request, $submissionNumber) {
             foreach ($budgets as $budget) {
                 $budget->update(['status' => 'submitted', 'submitted_at' => now()]);
             }
@@ -81,17 +83,31 @@ class AccountingController extends Controller
                 $approval = $budgets->first()->approvals()->create([
                     'module_key' => 'budget', 'department_id' => $request->user()->department_id,
                     'submitted_by' => $request->user()->id, 'submitted_at' => now(),
-                    'submission_note' => $budgets->count().' budget lines submitted for executive review.',
-                    'due_at' => now()->addDays(2), 'required_levels' => 2,
+                    'submission_note' => 'Submission '.$submissionNumber.': '.$budgets->count().' budget lines submitted for executive review.',
+                    'due_at' => now()->addDays(2), 'required_levels' => 3,
                 ]);
                 $approval->steps()->createMany([
-                    ['stage'=>1, 'role_code'=>'ceo', 'status'=>'pending'],
-                    ['stage'=>2, 'role_code'=>'director', 'status'=>'waiting'],
+                    ['stage'=>1, 'role_code'=>'finance-manager', 'status'=>'pending'],
+                    ['stage'=>2, 'role_code'=>'ceo', 'status'=>'waiting'],
+                    ['stage'=>3, 'role_code'=>'director', 'status'=>'waiting'],
                 ]);
             }
         });
 
-        return back()->with('status', $budgets->isNotEmpty() ? 'Weekly budget submitted for approval.' : 'There is no draft budget to submit.');
+        return back()->with('status', $budgets->isNotEmpty() ? 'Weekly budget sent to the Finance Manager for review.' : 'There is no draft budget to submit.');
+    }
+
+    public function reviseBudget(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('budget', 'edit'), 403);
+        $start = now()->startOfWeek()->toDateString();
+        $budgets = Budget::where('period_start', $start)->where('status', 'rejected')->get();
+        abort_if($budgets->isEmpty(), 422, 'There is no rejected budget to revise.');
+
+        Budget::whereIn('id', $budgets->pluck('id'))->update(['status'=>'draft', 'submitted_at'=>null, 'updated_at'=>now()]);
+        AuditLog::record('budget_revision_opened', $budgets->first(), 'Rejected weekly budget reopened as a draft for correction.', ['status'=>'rejected'], ['status'=>'draft'], 'budget');
+
+        return back()->with('status', 'Budget reopened as a draft. Correct the rejected items, save, and submit it for both approval stages again.');
     }
 
     public function seedWeeklyBudget(Request $request): RedirectResponse

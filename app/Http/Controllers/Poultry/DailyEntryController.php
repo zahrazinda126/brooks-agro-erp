@@ -41,6 +41,7 @@ class DailyEntryController extends Controller
 
         $batches = AnimalGroup::with('breed')
             ->visibleTo($user)
+            ->when(! $user->canAccessFarmUnit('poultry'), fn ($query) => $query->whereRaw('1 = 0'))
             ->where('status', 'active')
             ->orderBy('code')
             ->get();
@@ -56,11 +57,30 @@ class DailyEntryController extends Controller
             ->whereIn('animal_group_id', $batches->pluck('id'))
             ->pluck('animal_group_id')
             ->unique();
+        $visibleLivestockUnits = collect(['goats','rabbits','dogs'])->filter(fn ($unit) => $user->canAccessFarmUnit($unit))->values();
+        $livestockGroups = DB::table('livestock_groups')->whereIn('unit_code',$visibleLivestockUnits)->where('status','active')->orderBy('unit_code')->orderBy('group_code')->get()->groupBy('unit_code');
+        $dailyLivestock = [
+            'feed' => DB::table('livestock_feed_records')->whereDate('recorded_on', $today)->pluck('livestock_group_id')->unique(),
+            'vaccination' => DB::table('livestock_health_records')->whereDate('recorded_on', $today)->where('event_type', 'vaccination')->pluck('livestock_group_id')->unique(),
+            'treatment' => DB::table('livestock_health_records')->whereDate('recorded_on', $today)->where('event_type', 'treatment')->pluck('livestock_group_id')->unique(),
+            'mortality' => DB::table('livestock_mortality_records')->whereDate('occurred_on', $today)->pluck('livestock_group_id')->unique(),
+            'production' => DB::table('livestock_production_records')->whereDate('recorded_on', $today)->pluck('livestock_group_id')->unique(),
+        ];
+        $gardenActivity = DB::table('farm_unit_records')->where('unit_code','garden')->whereDate('record_date',$today)->count();
+        $productionDraftTotal = \App\Models\Budget::where('period_start',now()->startOfWeek()->toDateString())->where('status','draft')->where(function($q){foreach(['poultry','goat','rabbit','dog','garden','kituntu'] as $word)$q->orWhereRaw('lower(category) like ?', ['%'.$word.'%']);})->sum('planned_amount');
+        $feedBalances = DB::table('feed_stock_movements')->whereIn('unit_code',collect(['poultry','goats','rabbits','dogs'])->filter(fn($unit)=>$user->canAccessFarmUnit($unit)))->select('unit_code','feed_name',DB::raw("sum(case when movement_type='received' then quantity_kg else -quantity_kg end) as balance_kg"))->groupBy('unit_code','feed_name')->havingRaw("sum(case when movement_type='received' then quantity_kg else -quantity_kg end) > 0")->orderBy('unit_code')->orderBy('feed_name')->get();
 
         return view('poultry.daily.index', [
             'batches'  => $batches,
             'doneEggs' => $doneEggs,
             'doneFeed' => $doneFeed,
+            'livestockGroups'=>$livestockGroups,
+            'dailyLivestock'=>$dailyLivestock,
+            'gardenActivity'=>$gardenActivity,
+            'productionDraftTotal'=>$productionDraftTotal,
+            'visibleFarmUnits'=>collect(['poultry','goats','rabbits','dogs','garden'])->filter(fn ($unit) => $user->canAccessFarmUnit($unit))->values(),
+            'showProductionPlanning'=>! $user->isDataEntryOnly() && $user->canAccess('budget'),
+            'feedBalances'=>$feedBalances,
         ]);
     }
 
@@ -395,6 +415,8 @@ class DailyEntryController extends Controller
             FeedConsumption::where('animal_group_id', $batch->id)
                 ->whereDate('used_on', now()->toDateString())
                 ->delete();
+            $stockReference = 'poultry-feed:'.$batch->id.':'.now()->toDateString();
+            DB::table('feed_stock_movements')->where('reference', $stockReference)->delete();
 
             foreach ($lines as $line) {
                 FeedConsumption::create([
@@ -410,6 +432,11 @@ class DailyEntryController extends Controller
                     'recorded_at'     => now(),
                     'worker_note'     => $data['worker_note'] ?? null,
                     'status'          => 'submitted',
+                ]);
+                DB::table('feed_stock_movements')->insert([
+                    'unit_code'=>'poultry','movement_date'=>now()->toDateString(),'movement_type'=>'consumed',
+                    'feed_name'=>$line['type']->name,'quantity_kg'=>$line['quantity'],'reference'=>$stockReference,
+                    'notes'=>$data['worker_note']??null,'recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now(),
                 ]);
             }
         });
