@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\FinancialTransaction;
 use App\Models\User;
+use App\Models\Communication;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -67,9 +68,10 @@ class ExecutiveController extends Controller
             'kind' => ['required', 'in:message,announcement'],
             'subject' => ['required', 'string', 'max:180'],
             'body' => ['required', 'string', 'max:5000'],
-            'audience' => ['required', 'in:management,all_staff,finance,hr,production'],
+            'audience' => ['required', 'in:management,all_staff,finance,hr,production,sales,individual'],
+            'recipient_id' => ['nullable', 'required_if:audience,individual', 'exists:users,id'],
         ]);
-        DB::table('executive_communications')->insert($data + ['created_by'=>$request->user()->id, 'created_at'=>now(), 'updated_at'=>now()]);
+        Communication::create($data + ['created_by'=>$request->user()->id]);
         AuditLog::record('executive_communication_sent', null, $data['subject'], null, ['audience'=>$data['audience']], 'messages');
         return back()->with('status', ucfirst($data['kind']).' published.');
     }

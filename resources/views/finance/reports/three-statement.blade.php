@@ -1,8 +1,16 @@
 @extends('layouts.app')
 @section('title','Three-Statement Model')
 @section('content')
-<div class="page-head"><div><h2>Three-Statement Model</h2><p>Income Statement, Balance Sheet and Cash Flow in the workbook’s July–June format.</p></div><a class="btn" href="{{ route('finance.reports.export',['report'=>'three-statement','year'=>$year]) }}">Export CSV</a></div>
+<div class="page-head page-head--split"><div><h2>Three-Statement Model</h2><p>Income Statement, Balance Sheet and Cash Flow in the workbook’s July–June format.</p></div><a class="btn btn--inline" href="{{ route('finance.reports.export',['report'=>'three-statement','year'=>$year]) }}">Export CSV</a></div>
 <form class="card filters"><div class="field"><label>Financial year beginning</label><input type="number" name="year" min="2000" max="2100" value="{{ $year }}"></div><div class="field field--actions"><button class="btn">Run model</button></div></form>
-<div class="card table-card"><table><thead><tr><th>Account</th>@foreach($model['columns'] as $column)<th class="num">{{ $column }}</th>@endforeach<th class="num">Annual total</th></tr></thead><tbody>@php($section=null)@foreach($model['rows'] as $row)@if($section!==$row['section'])@php($section=$row['section'])<tr style="background:#071d4b;color:#fff"><th colspan="14">{{ $section }}</th></tr>@endif<tr @style([$row['style']==='heading'?'background:#e8eadc;font-weight:700':null,$row['style']==='subtotal'?'background:#eee9d8;font-weight:700;border-top:2px solid #111':null,$row['style']==='total'?'background:#111f5a;color:#fff;font-weight:700':null,$row['style']==='final'?'background:#d60000;color:#fff;font-weight:800':null])><td>{{ $row['label'] }}</td>@foreach($row['values'] as $value)<td class="num">{{ $value ? number_format($value) : '—' }}</td>@endforeach<td class="num"><strong>{{ number_format($row['total']) }}</strong></td></tr>@endforeach</tbody></table></div>
+<p class="model-scroll-hint">Scroll sideways to view February through June and the annual total.</p>
+<div class="three-statement-scroll" tabindex="0" aria-label="Three-statement model; scroll horizontally for all months">
+<table><thead><tr><th>Account</th>@foreach($model['columns'] as $column)<th class="num">{{ $column }}</th>@endforeach<th class="num">Annual total</th></tr></thead><tbody>
+@php $section = null; @endphp
+@foreach($model['rows'] as $row)
+    @if($section !== $row['section']) @php $section = $row['section']; @endphp <tr class="statement-section"><th colspan="14">{{ $section }}</th></tr> @endif
+    <tr @style([$row['style']==='heading'?'background:#e8eadc;font-weight:700':null,$row['style']==='subtotal'?'background:#eee9d8;font-weight:700;border-top:2px solid #111':null,$row['style']==='total'?'background:#111f5a;color:#fff;font-weight:700':null,$row['style']==='final'?'background:#d60000;color:#fff;font-weight:800':null])><td>{{ $row['label'] }}</td>@foreach($row['values'] as $value)<td class="num">{{ $value ? number_format($value) : '—' }}</td>@endforeach<td class="num"><strong>{{ number_format($row['total']) }}</strong></td></tr>
+@endforeach
+</tbody></table></div>
 <p class="muted">The structure matches the management workbook. Zero rows indicate that the supporting loan, lease, inventory, tax, depreciation or equity ledger has not yet been imported. Shareholder funds currently acts as the disclosed Balance Sheet balancing figure until verified opening equity is loaded.</p>
 @endsection

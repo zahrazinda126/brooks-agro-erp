@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Finance;
 
+use App\Services\CommunicationService;
+
 use App\Http\Controllers\Controller;
 use App\Models\Budget;
 use App\Models\FixedAsset;
@@ -33,10 +35,17 @@ class AccountingController extends Controller
     public function budgets(Request $request): View
     {
         abort_unless($request->user()->canAccess('budget'), 403);
-        $start=now()->startOfWeek()->toDateString();
-        $allItems=Budget::where('period_start',$start)->orderBy('category')->orderBy('id')->get();
+        $availablePeriods = Budget::query()
+            ->select('period_start', 'period_end', 'status')
+            ->selectRaw('count(*) as line_count, sum(planned_amount) as planned_total')
+            ->groupBy('period_start', 'period_end', 'status')
+            ->orderByDesc('period_start')
+            ->get();
+        $start = $request->date('week')?->startOfWeek()->toDateString()
+            ?? now()->startOfWeek()->toDateString();
+        $allItems=Budget::whereDate('period_start',$start)->orderBy('category')->orderBy('id')->get();
         $unit=$request->query('unit','all');
-        $needles=['poultry'=>'Poultry','kituntu'=>'Kituntu','goats'=>'Goat','rabbits'=>'Rabbit','dogs'=>'Dog','administration'=>'Administration'];
+        $needles=['poultry'=>'Poultry','kituntu'=>'Kituntu','goats'=>'Goat','rabbits'=>'Rabbit','dogs'=>'Dog','staff-welfare'=>'Staff Welfare','administration'=>'Administration'];
         $items=isset($needles[$unit])?$allItems->filter(fn($item)=>str_contains(strtolower($item->category),strtolower($needles[$unit])))->values():$allItems;
         $approval = $allItems->isEmpty() ? null : Approval::with(['submitter', 'decisionMaker', 'steps.decisionMaker'])
             ->where('approvable_type', Budget::class)
@@ -47,6 +56,8 @@ class AccountingController extends Controller
             'items'=>$items, 'plannedTotal'=>$items->sum('planned_amount'), 'allTotal'=>$allItems->sum('planned_amount'),
             'unit'=>$unit, 'budgetStatus'=>$allItems->first()?->status ?? 'draft', 'approval'=>$approval,
             'periodStart'=>$allItems->first()?->period_start, 'periodEnd'=>$allItems->first()?->period_end,
+            'selectedWeek'=>$start, 'availablePeriods'=>$availablePeriods,
+            'isCurrentWeek'=>$start === now()->startOfWeek()->toDateString(),
         ]);
     }
 
@@ -65,16 +76,25 @@ class AccountingController extends Controller
 
     public function updateWeeklyBudget(Request $request): RedirectResponse
     {
-        abort_unless($request->user()->canDo('budget', 'edit'), 403); if(Budget::where('period_start',now()->startOfWeek()->toDateString())->where('status','!=','draft')->exists()) return back()->withErrors(['budget'=>'Only a draft budget can be edited.']); $data=$request->validate(['lines'=>['required','array'],'lines.*.quantity'=>['required','numeric','min:0'],'lines.*.unit_price'=>['required','numeric','min:0']]);
-        foreach($data['lines'] as $id=>$line) { $budget=Budget::find($id); if($budget) $budget->update(['quantity'=>$line['quantity'],'unit_price'=>$line['unit_price'],'planned_amount'=>(float)$line['quantity']*(float)$line['unit_price']]); } return back()->with('status','Weekly budget saved.');
+        abort_unless($request->user()->canDo('budget', 'edit'), 403);
+        $data=$request->validate(['lines'=>['required','array'],'lines.*.quantity'=>['required','numeric','min:0'],'lines.*.unit_price'=>['required','numeric','min:0']]);
+        $budgets = Budget::whereIn('id', array_keys($data['lines']))->get()->keyBy('id');
+        if ($budgets->count() !== count($data['lines']) || $budgets->contains(fn (Budget $budget) => $budget->status !== 'draft')) {
+            return back()->withErrors(['budget'=>'Only draft budget lines can be edited.']);
+        }
+        foreach($data['lines'] as $id=>$line) { $budgets[$id]->update(['quantity'=>$line['quantity'],'unit_price'=>$line['unit_price'],'planned_amount'=>(float)$line['quantity']*(float)$line['unit_price']]); }
+        return back()->with('status','Weekly budget saved.');
     }
     public function submitBudget(Request $request): RedirectResponse
     {
         abort_unless($request->user()->canDo('budget', 'edit'), 403);
-        $budgets = Budget::where('period_start', now()->startOfWeek()->toDateString())->where('status', 'draft')->get();
+        $start = $request->validate(['week'=>['nullable','date']])['week'] ?? now()->startOfWeek()->toDateString();
+        $budgets = Budget::whereDate('period_start', $start)->where('status', 'draft')->get();
         $submissionNumber = $budgets->isEmpty() ? 1 : Approval::where('approvable_type', Budget::class)->whereIn('approvable_id', $budgets->pluck('id'))->count() + 1;
+        $roleCodes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique();
+        $submittedByFinanceManager = $roleCodes->contains('finance-manager');
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($budgets, $request, $submissionNumber) {
+        \Illuminate\Support\Facades\DB::transaction(function () use ($budgets, $request, $submissionNumber, $submittedByFinanceManager) {
             foreach ($budgets as $budget) {
                 $budget->update(['status' => 'submitted', 'submitted_at' => now()]);
             }
@@ -84,30 +104,40 @@ class AccountingController extends Controller
                     'module_key' => 'budget', 'department_id' => $request->user()->department_id,
                     'submitted_by' => $request->user()->id, 'submitted_at' => now(),
                     'submission_note' => 'Submission '.$submissionNumber.': '.$budgets->count().' budget lines submitted for executive review.',
-                    'due_at' => now()->addDays(2), 'required_levels' => 3,
+                    'due_at' => now()->addDays(2), 'required_levels' => 3, 'level'=>$submittedByFinanceManager ? 2 : 1,
                 ]);
                 $approval->steps()->createMany([
-                    ['stage'=>1, 'role_code'=>'finance-manager', 'status'=>'pending'],
-                    ['stage'=>2, 'role_code'=>'ceo', 'status'=>'waiting'],
+                    ['stage'=>1, 'role_code'=>'finance-manager', 'status'=>$submittedByFinanceManager ? 'approved' : 'pending', 'decided_by'=>$submittedByFinanceManager ? $request->user()->id : null, 'decided_at'=>$submittedByFinanceManager ? now() : null, 'decision_note'=>$submittedByFinanceManager ? 'Finance Manager submitted and confirmed the weekly budget.' : null],
+                    ['stage'=>2, 'role_code'=>'ceo', 'status'=>$submittedByFinanceManager ? 'pending' : 'waiting'],
                     ['stage'=>3, 'role_code'=>'director', 'status'=>'waiting'],
                 ]);
+                app(CommunicationService::class)->toRole(
+                    $submittedByFinanceManager ? 'ceo' : 'finance-manager',
+                    'Weekly budget awaiting your review',
+                    'Submission '.$submissionNumber.' contains '.$budgets->count().' budget lines and is ready for your decision.',
+                    $request->user()->id
+                );
             }
         });
 
-        return back()->with('status', $budgets->isNotEmpty() ? 'Weekly budget sent to the Finance Manager for review.' : 'There is no draft budget to submit.');
+        return back()->with('status', $budgets->isNotEmpty() ? ($submittedByFinanceManager ? 'Weekly budget sent to the CEO for review.' : 'Weekly budget sent to the Finance Manager for review.') : 'There is no draft budget to submit.');
     }
 
     public function reviseBudget(Request $request): RedirectResponse
     {
         abort_unless($request->user()->canDo('budget', 'edit'), 403);
-        $start = now()->startOfWeek()->toDateString();
-        $budgets = Budget::where('period_start', $start)->where('status', 'rejected')->get();
-        abort_if($budgets->isEmpty(), 422, 'There is no rejected budget to revise.');
+        $start = $request->validate(['week'=>['required','date']])['week'];
+        $budgets = Budget::whereDate('period_start', $start)->where('status', 'rejected')->get();
+        if ($budgets->isEmpty()) {
+            return redirect()->route('finance.budgets.index', ['week'=>$start])
+                ->withErrors(['budget'=>'This budget is no longer rejected and cannot be reopened for revision.']);
+        }
 
-        Budget::whereIn('id', $budgets->pluck('id'))->update(['status'=>'draft', 'submitted_at'=>null, 'updated_at'=>now()]);
+        Budget::whereIn('id', $budgets->pluck('id'))->update(['status'=>'draft', 'submitted_at'=>null, 'funding_status'=>'pending', 'funded_amount'=>null, 'funding_note'=>null, 'funding_decided_by'=>null, 'funding_decided_at'=>null, 'updated_at'=>now()]);
         AuditLog::record('budget_revision_opened', $budgets->first(), 'Rejected weekly budget reopened as a draft for correction.', ['status'=>'rejected'], ['status'=>'draft'], 'budget');
 
-        return back()->with('status', 'Budget reopened as a draft. Correct the rejected items, save, and submit it for both approval stages again.');
+        return redirect()->route('finance.budgets.index', ['week'=>$start])
+            ->with('status', 'Budget reopened as a draft. Correct the rejected items, save, and submit it for approval again.');
     }
 
     public function seedWeeklyBudget(Request $request): RedirectResponse

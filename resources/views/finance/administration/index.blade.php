@@ -6,6 +6,12 @@
     <p>Finance administration and control settings.</p>
 </div>
 
+<nav class="unit-tabs" aria-label="Finance setup sections">
+@foreach(['chart-of-accounts'=>'Accounts','finance-periods'=>'Periods','finance-accounts'=>'Cash & Banks','payment-methods'=>'Payment Methods','document-numbering'=>'Numbering','tax-settings'=>'Tax','budget-settings'=>'Budget','finance-imports'=>'Import','audit'=>'Audit Trail'] as $key=>$label)
+    @if(auth()->user()->canAccess($key) || ($key==='audit' && auth()->user()->canAccess('audit')))<a class="{{ $screen===$key?'active':'' }}" href="{{ route('finance.admin.index',['screen'=>$key]) }}">{{ $label }}</a>@endif
+@endforeach
+</nav>
+
 @if(session('status')) <div class="alert alert--success">{{ session('status') }}</div> @endif
 @if($errors->any()) <div class="alert alert--danger">{{ $errors->first() }}</div> @endif
 

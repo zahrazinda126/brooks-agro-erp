@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
             HealthSeeder::class,
             EggGradeSimplificationSeeder::class,
             FinanceStructureSeeder::class,
+            OperationalProtocolSeeder::class,
         ]);
     }
 }

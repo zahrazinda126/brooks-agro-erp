@@ -67,7 +67,7 @@ class WorkerHomeSeeder extends Seeder
             return;
         }
 
-        foreach (['my-work', 'my-tasks', 'notifications', 'messages'] as $key) {
+        foreach (['my-work', 'notifications', 'messages'] as $key) {
             $moduleId = DB::table('modules')->where('key', $key)->value('id');
 
             if (! $moduleId) {

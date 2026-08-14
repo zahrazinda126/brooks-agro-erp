@@ -96,8 +96,12 @@ class Module extends Model
      */
     public function url(): string
     {
-        $builtRoutes = ['payroll'=>'payroll.index', 'sales'=>'sales.index', 'customers'=>'sales.index', 'invoices'=>'sales.index', 'receipts'=>'sales.index', 'returns'=>'sales.index', 'customer-ledger'=>'sales.index', 'feed-received'=>'operations.feed-stock.index', 'reports'=>'finance.reports.index', 'kpi-dashboards'=>'finance.reports.kpis', 'purchases'=>'finance.farm.purchases', 'production'=>'finance.farm.production', 'veterinary'=>'finance.farm.veterinary', 'approvals' => 'approvals.index', 'transactions' => 'finance.transactions.index', 'general-ledger' => 'finance.general-ledger.index', 'receivables' => 'finance.receivables.index', 'payables' => 'finance.payables.index', 'budget' => 'finance.budgets.index', 'assets' => 'finance.assets.index', 'cash-book' => 'finance.cash-book.index', 'bank-book' => 'finance.bank-book.index'];
+        $builtRoutes = ['payroll'=>'payroll.index', 'sales'=>'sales.index', 'customers'=>'sales.index', 'invoices'=>'sales.index', 'receipts'=>'sales.index', 'returns'=>'sales.index', 'customer-ledger'=>'sales.index', 'feed-received'=>'operations.feed-stock.index', 'reports'=>'finance.reports.index', 'kpi-dashboards'=>'finance.reports.kpis', 'purchases'=>'finance.farm.purchases', 'production'=>'finance.farm.production', 'veterinary'=>'finance.farm.veterinary', 'approvals' => 'approvals.index', 'messages' => 'communications.index', 'transactions' => 'finance.transactions.index', 'general-ledger' => 'finance.general-ledger.index', 'receivables' => 'finance.receivables.index', 'payables' => 'finance.payables.index', 'budget' => 'finance.budgets.index', 'assets' => 'finance.assets.index', 'cash-book' => 'finance.cash-book.index', 'bank-book' => 'finance.bank-book.index'];
+        foreach (['inventory','goods-received','goods-issued','stock-transfers','stock-adjustments','reorder-levels'] as $inventoryKey) {
+            $builtRoutes[$inventoryKey] = 'inventory.index';
+        }
         $builtRoutes['visitors'] = 'visitors.index';
+        $builtRoutes['assign-supervisors'] = 'supervision.index';
         if (isset($builtRoutes[$this->key]) && Route::has($builtRoutes[$this->key])) {
             return route($builtRoutes[$this->key]);
         }

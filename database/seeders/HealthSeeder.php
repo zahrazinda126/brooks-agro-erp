@@ -205,7 +205,7 @@ class HealthSeeder extends Seeder
 
         // Who may see and record health.
         $grants = [
-            'production-manager' => true,
+            'production-manager' => false,
             'veterinary-officer' => true,
             'department-manager' => true,
             'daily-supervisor'   => false,   // records, does not approve

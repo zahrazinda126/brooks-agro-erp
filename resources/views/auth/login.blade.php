@@ -12,6 +12,7 @@
         <div class="auth-card">
 
             <div class="auth-mark">
+                <img class="auth-logo" src="{{ asset('images/logo.png') }}" alt="Brooks Agro Farm logo">
                 <h1>Brooks Agro</h1>
                 <p>Farm Management</p>
             </div>

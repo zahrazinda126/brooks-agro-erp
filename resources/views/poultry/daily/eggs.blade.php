@@ -38,39 +38,21 @@
     <div class="notice notice--alarm">{{ $errors->first() }}</div>
 @endif
 
-@if ($existing)
-    <div class="notice">
-        You already entered eggs for this round. Saving again will replace it.
-    </div>
-@endif
-
 <form method="POST" action="{{ route('daily.eggs.store', $batch) }}" id="eggForm">
     @csrf
 
     {{-- Which round --}}
     <div class="ask">
-        <p class="ask-q">Which collection?</p>
+        <p class="ask-q">Collection period</p>
+        <p class="ask-hint">Detected automatically from the current time.</p>
         <div class="choice-row">
-            @foreach (['morning' => 'Morning', 'midday' => 'Midday', 'evening' => 'Evening'] as $v => $label)
+            @foreach (['morning' => 'Morning', 'afternoon' => 'Afternoon', 'evening' => 'Evening'] as $v => $label)
                 <label class="choice">
-                    <input type="radio" name="session" value="{{ $v }}"
-                           @checked(old('session', $session) === $v)>
+                    <input type="radio" value="{{ $v }}" @checked($session === $v) disabled>
                     <span>{{ $label }}</span>
                 </label>
             @endforeach
         </div>
-    </div>
-
-    {{-- The exact time it was actually done. --}}
-    <div class="ask">
-        <p class="ask-q">What time did you collect?</p>
-        <p class="ask-hint">
-            Set to now. Change it if you are entering this later.
-        </p>
-
-        <input type="time" name="collected_at" class="time-input"
-               value="{{ old('collected_at', optional($existing)->collected_at ? \Illuminate\Support\Carbon::parse($existing->collected_at)->format('H:i') : now()->format('H:i')) }}"
-               required>
     </div>
 
     {{-- Running total, always visible --}}
@@ -83,9 +65,6 @@
     <p class="ask-hint">Count full trays first, then the loose eggs left over.</p>
 
     @foreach ($likely as $grade)
-        @php
-            $line = $existing?->lines->firstWhere('egg_grade_id', $grade->id);
-        @endphp
         <div class="counter-card">
             <div class="counter-head">
                 <strong>{{ $grade->name }}</strong>
@@ -99,7 +78,7 @@
                 <div class="stepper">
                     <button type="button" class="step" data-step="-1" aria-label="One less tray">−</button>
                     <input type="number" name="trays[{{ $grade->id }}]" class="step-val"
-                           value="{{ old('trays.'.$grade->id, $line->trays ?? 0) }}"
+                           value="{{ old('trays.'.$grade->id, 0) }}"
                            min="0" max="2000" inputmode="numeric" data-eggs="{{ $grade->eggs_per_tray }}">
                     <button type="button" class="step" data-step="1" aria-label="One more tray">+</button>
                 </div>
@@ -110,7 +89,7 @@
                 <div class="stepper">
                     <button type="button" class="step" data-step="-1" aria-label="One less egg">−</button>
                     <input type="number" name="loose[{{ $grade->id }}]" class="step-val"
-                           value="{{ old('loose.'.$grade->id, $line->loose_eggs ?? 0) }}"
+                           value="{{ old('loose.'.$grade->id, 0) }}"
                            min="0" max="29" inputmode="numeric" data-eggs="1">
                     <button type="button" class="step" data-step="1" aria-label="One more egg">+</button>
                 </div>
@@ -124,9 +103,6 @@
         <summary>Any broken, cracked or dirty eggs?</summary>
 
         @foreach ($defects as $grade)
-            @php
-                $line = $existing?->lines->firstWhere('egg_grade_id', $grade->id);
-            @endphp
             <div class="counter-card counter-card--defect">
                 <div class="counter-head"><strong>{{ $grade->name }}</strong></div>
 
@@ -135,7 +111,7 @@
                     <div class="stepper">
                         <button type="button" class="step" data-step="-1" aria-label="One less">−</button>
                         <input type="number" name="trays[{{ $grade->id }}]" class="step-val"
-                               value="{{ old('trays.'.$grade->id, $line->trays ?? 0) }}"
+                               value="{{ old('trays.'.$grade->id, 0) }}"
                                min="0" max="2000" inputmode="numeric" data-eggs="{{ $grade->eggs_per_tray }}">
                         <button type="button" class="step" data-step="1" aria-label="One more">+</button>
                     </div>
@@ -146,7 +122,7 @@
                     <div class="stepper">
                         <button type="button" class="step" data-step="-1" aria-label="One less">−</button>
                         <input type="number" name="loose[{{ $grade->id }}]" class="step-val"
-                               value="{{ old('loose.'.$grade->id, $line->loose_eggs ?? 0) }}"
+                               value="{{ old('loose.'.$grade->id, 0) }}"
                                min="0" max="29" inputmode="numeric" data-eggs="1">
                         <button type="button" class="step" data-step="1" aria-label="One more">+</button>
                     </div>
@@ -154,6 +130,17 @@
             </div>
         @endforeach
     </details>
+
+    <div class="ask">
+        <p class="ask-q">House daily measurements</p>
+        <p class="ask-hint">House: {{ $batch->house ?: $batch->code }}. Leave a measurement empty when it was not taken.</p>
+        <div class="form-grid">
+            <div class="field"><label>Egg mass (g)</label><input type="number" name="egg_mass_g" value="{{ old('egg_mass_g') }}" min="0" step="0.01" inputmode="decimal"></div>
+            <div class="field"><label>Number of damaged eggs</label><input type="number" name="damaged_eggs" value="{{ old('damaged_eggs',0) }}" min="0" inputmode="numeric" required></div>
+            <div class="field"><label>Bird weight (kg)</label><input type="number" name="bird_weight_kg" value="{{ old('bird_weight_kg') }}" min="0" step="0.01" inputmode="decimal"></div>
+            <div class="field"><label>Amount of feed (kg)</label><input type="number" name="feed_amount_kg" value="{{ old('feed_amount_kg') }}" min="0" step="0.01" inputmode="decimal"><span class="field-hint">Also appears in the daily feed record for stock verification.</span></div>
+        </div>
+    </div>
 
     <div class="ask">
         <p class="ask-q">Anything to tell the supervisor?</p>

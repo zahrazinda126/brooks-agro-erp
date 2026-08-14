@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\Breed;
 use App\Models\FarmUnitRecord;
 use App\Models\LivestockAnimal;
+use App\Models\EggCollection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -54,7 +55,7 @@ class FarmUnitController extends Controller
             $period = fn ($query, string $column) => $query
                 ->when($from, fn ($q) => $q->whereDate($column, '>=', $from->toDateString()))
                 ->when($to, fn ($q) => $q->whereDate($column, '<=', $to->toDateString()));
-            $base = fn (string $table) => DB::table($table)->join('livestock_groups','livestock_groups.id','=',$table.'.livestock_group_id')->where('livestock_groups.unit_code',$unit);
+            $base = fn (string $table) => DB::table($table)->join('livestock_groups','livestock_groups.id','=',$table.'.livestock_group_id')->where($table.'.verification_status','approved')->where('livestock_groups.unit_code',$unit);
             $rows = collect()
                 ->merge($period($base('livestock_feed_records'),'recorded_on')->selectRaw("recorded_on as report_date, group_code, 'Feed' as section, feed_name as subject, quantity_kg as quantity, 'kg' as measure_unit, cost as amount, action as detail")->get())
                 ->merge($period($base('livestock_health_records'),'recorded_on')->selectRaw("recorded_on as report_date, group_code, 'Health' as section, condition_or_vaccine as subject, animals_affected as quantity, 'animals' as measure_unit, cost as amount, event_type as detail")->get())
@@ -69,7 +70,7 @@ class FarmUnitController extends Controller
             },$unit.'-unit-report-'.now()->format('Y-m-d').'.csv',['Content-Type'=>'text/csv']);
         }
 
-        $query = FarmUnitRecord::with('recorder')->where('unit_code',$unit)->orderBy('record_date')->orderBy('id');
+        $query = FarmUnitRecord::with('recorder')->where('verification_status','approved')->where('unit_code',$unit)->orderBy('record_date')->orderBy('id');
         $query->when($from,fn($q)=>$q->whereDate('record_date','>=',$from->toDateString()))->when($to,fn($q)=>$q->whereDate('record_date','<=',$to->toDateString()));
         if ($request->filled('type') && isset($config['types'][$request->string('type')->toString()])) $query->where('record_type',$request->string('type')->toString());
         if ($request->filled('view')) $query->whereIn('record_type',$this->viewTypes($unit,$request->string('view')->toString()));
@@ -94,15 +95,15 @@ class FarmUnitController extends Controller
         if (in_array($unit, ['goats', 'rabbits', 'dogs'], true)) {
             $groups = DB::table('livestock_groups')->where('unit_code', $unit)->orderBy('group_code')->get();
             $ids = $groups->pluck('id');
-            $feed = DB::table('livestock_feed_records')->join('livestock_groups','livestock_groups.id','=','livestock_feed_records.livestock_group_id')->where('livestock_groups.unit_code',$unit)->whereBetween('recorded_on',[$from->toDateString(),$to->toDateString()])->select('livestock_feed_records.*','livestock_groups.group_code')->latest('recorded_on')->get();
-            $health = DB::table('livestock_health_records')->join('livestock_groups','livestock_groups.id','=','livestock_health_records.livestock_group_id')->where('livestock_groups.unit_code',$unit)->whereBetween('recorded_on',[$from->toDateString(),$to->toDateString()])->select('livestock_health_records.*','livestock_groups.group_code')->latest('recorded_on')->get();
-            $mortality = DB::table('livestock_mortality_records')->join('livestock_groups','livestock_groups.id','=','livestock_mortality_records.livestock_group_id')->where('livestock_groups.unit_code',$unit)->whereBetween('occurred_on',[$from->toDateString(),$to->toDateString()])->select('livestock_mortality_records.*','livestock_groups.group_code')->latest('occurred_on')->get();
-            $production = DB::table('livestock_production_records')->join('livestock_groups','livestock_groups.id','=','livestock_production_records.livestock_group_id')->where('livestock_groups.unit_code',$unit)->whereBetween('recorded_on',[$from->toDateString(),$to->toDateString()])->select('livestock_production_records.*','livestock_groups.group_code')->latest('recorded_on')->get();
+            $feed = DB::table('livestock_feed_records')->join('livestock_groups','livestock_groups.id','=','livestock_feed_records.livestock_group_id')->where('livestock_feed_records.verification_status','approved')->where('livestock_groups.unit_code',$unit)->whereBetween('recorded_on',[$from->toDateString(),$to->toDateString()])->select('livestock_feed_records.*','livestock_groups.group_code')->latest('recorded_on')->get();
+            $health = DB::table('livestock_health_records')->join('livestock_groups','livestock_groups.id','=','livestock_health_records.livestock_group_id')->where('livestock_health_records.verification_status','approved')->where('livestock_groups.unit_code',$unit)->whereBetween('recorded_on',[$from->toDateString(),$to->toDateString()])->select('livestock_health_records.*','livestock_groups.group_code')->latest('recorded_on')->get();
+            $mortality = DB::table('livestock_mortality_records')->join('livestock_groups','livestock_groups.id','=','livestock_mortality_records.livestock_group_id')->where('livestock_mortality_records.verification_status','approved')->where('livestock_groups.unit_code',$unit)->whereBetween('occurred_on',[$from->toDateString(),$to->toDateString()])->select('livestock_mortality_records.*','livestock_groups.group_code')->latest('occurred_on')->get();
+            $production = DB::table('livestock_production_records')->join('livestock_groups','livestock_groups.id','=','livestock_production_records.livestock_group_id')->where('livestock_production_records.verification_status','approved')->where('livestock_groups.unit_code',$unit)->whereBetween('recorded_on',[$from->toDateString(),$to->toDateString()])->select('livestock_production_records.*','livestock_groups.group_code')->latest('recorded_on')->get();
 
             return view('operations.units.report', compact('unit','config','from','to','groups','feed','health','mortality','production'));
         }
 
-        $records = FarmUnitRecord::where('unit_code',$unit)->whereBetween('record_date',[$from->toDateString(),$to->toDateString()])->latest('record_date')->get();
+        $records = FarmUnitRecord::where('verification_status','approved')->where('unit_code',$unit)->whereBetween('record_date',[$from->toDateString(),$to->toDateString()])->latest('record_date')->get();
         return view('operations.units.report', compact('unit','config','from','to','records'));
     }
 
@@ -111,7 +112,7 @@ class FarmUnitController extends Controller
         abort_unless($request->user()->canAccess('production') || $request->user()->canAccess('reports'),403);
         $view=$request->string('view')->toString() ?: 'overall';
         abort_unless(in_array($view,['overall','livestock','health','inputs','production'],true),404);
-        $query=FarmUnitRecord::with('recorder')->latest('record_date')->latest('id');
+        $query=FarmUnitRecord::with('recorder')->where('verification_status','approved')->latest('record_date')->latest('id');
         if($view==='livestock') $query->whereIn('unit_code',['goats','rabbits','dogs']);
         if($view==='health') $query->whereIn('record_type',['treatment','vaccination','weight','mortality','incident','loss']);
         if($view==='inputs') $query->whereIn('record_type',['feeding','input_application','irrigation']);
@@ -123,7 +124,11 @@ class FarmUnitController extends Controller
             ['label'=>'Dogs','icon'=>'🐕','value'=>LivestockAnimal::where('unit_code','dogs')->where('status','active')->count(),'measure'=>'animals'],
             ['label'=>'Garden','icon'=>'🌱','value'=>FarmUnitRecord::where('unit_code','garden')->where('record_type','plot')->distinct('subject')->count('subject'),'measure'=>'plots'],
         ]);
-        return view('operations.reports.index',['view'=>$view,'units'=>$units,'rows'=>$query->paginate(40)->withQueryString(),'activity30'=>FarmUnitRecord::where('record_date','>=',now()->subDays(30))->count(),'attention'=>FarmUnitRecord::where('status','needs_attention')->count(),'recordedValue'=>(float)FarmUnitRecord::sum('amount')]);
+        $showEggs=in_array($view,['overall','production'],true);
+        $eggs=$showEggs?EggCollection::with(['batch','lines.grade','recorder'])->where('status','approved')->latest('collected_on')->latest('collected_at')->limit(100)->get():collect();
+        $pendingEggs=$showEggs?EggCollection::where('status','submitted')->count():0;
+        $activity30=FarmUnitRecord::where('verification_status','approved')->where('record_date','>=',now()->subDays(30))->count()+($showEggs?EggCollection::where('status','approved')->where('collected_on','>=',now()->subDays(30)->toDateString())->count():0);
+        return view('operations.reports.index',['view'=>$view,'units'=>$units,'rows'=>$query->paginate(40)->withQueryString(),'eggs'=>$eggs,'pendingEggs'=>$pendingEggs,'activity30'=>$activity30,'attention'=>FarmUnitRecord::where('verification_status','approved')->where('status','needs_attention')->count(),'recordedValue'=>(float)FarmUnitRecord::where('verification_status','approved')->sum('amount')]);
     }
 
     public function reportExport(Request $request): StreamedResponse
@@ -131,22 +136,23 @@ class FarmUnitController extends Controller
         abort_unless($request->user()->canAccess('production') || $request->user()->canAccess('reports'),403);
         $view=$request->string('view')->toString() ?: 'overall';
         abort_unless(in_array($view,['overall','livestock','health','inputs','production'],true),404);
-        $farm=FarmUnitRecord::query()->orderBy('record_date')->orderBy('id');
+        $farm=FarmUnitRecord::query()->where('verification_status','approved')->orderBy('record_date')->orderBy('id');
         if($view==='livestock')$farm->whereIn('unit_code',['goats','rabbits','dogs']);
         if($view==='health')$farm->whereIn('record_type',['treatment','vaccination','weight','mortality','incident','loss']);
         if($view==='inputs')$farm->whereIn('record_type',['feeding','input_application','irrigation']);
         if($view==='production')$farm->whereIn('record_type',['milk','kidding','kindling','whelping','breeding','harvest','sale']);
-        $include=match($view){'health'=>['health','mortality'],'inputs'=>['feed'],'production'=>['production'],default=>['feed','health','mortality','production']};
+        $include=match($view){'health'=>['health','mortality'],'inputs'=>['feed'],'production'=>['production','eggs'],default=>['feed','health','mortality','production','eggs']};
         return response()->streamDownload(function()use($farm,$include,$view){
             $out=fopen('php://output','w');fwrite($out,"\xEF\xBB\xBF");
             fputcsv($out,['BROOKS AGRO FARM LTD.']);fputcsv($out,['Overall Production Report',ucfirst($view),'Exported',now()->format('d M Y H:i')]);fputcsv($out,[]);
             fputcsv($out,['Date','Unit','Category','Group / subject','Description','Quantity','Measure','Value / cost (UGX)','Status / details']);
             foreach($farm->cursor() as $r)fputcsv($out,[$r->record_date->format('Y-m-d'),ucfirst($r->unit_code),str_replace('_',' ',$r->record_type),$r->subject,$r->notes,$r->quantity,$r->measure_unit,$r->amount,str_replace('_',' ',$r->status)]);
+            if(in_array('eggs',$include,true))foreach(EggCollection::with(['batch','lines.grade'])->where('status','approved')->orderBy('collected_on')->orderBy('collected_at')->get() as $r){$breakdown=$r->lines->map(fn($line)=>($line->grade?->name??'Grade').': '.$line->total_eggs)->implode('; ');fputcsv($out,[$r->collected_on->format('Y-m-d'),'Poultry','Egg collection',$r->batch?->code??'Flock',ucfirst($r->session).' - '.$breakdown,$r->total_eggs,'eggs',null,'Approved']);}
             $units=['goats','rabbits','dogs'];
-            if(in_array('feed',$include,true))foreach(DB::table('livestock_feed_records')->join('livestock_groups','livestock_groups.id','=','livestock_feed_records.livestock_group_id')->whereIn('livestock_groups.unit_code',$units)->select('livestock_feed_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)fputcsv($out,[$r->recorded_on,ucfirst($r->unit_code),'Feed',$r->group_code,$r->feed_name,$r->quantity_kg,'kg',$r->cost,$r->action]);
-            if(in_array('health',$include,true))foreach(DB::table('livestock_health_records')->join('livestock_groups','livestock_groups.id','=','livestock_health_records.livestock_group_id')->whereIn('livestock_groups.unit_code',$units)->select('livestock_health_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)fputcsv($out,[$r->recorded_on,ucfirst($r->unit_code),ucfirst($r->event_type),$r->group_code,$r->condition_or_vaccine,$r->animals_affected,'animals',$r->cost,$r->medicine]);
-            if(in_array('mortality',$include,true))foreach(DB::table('livestock_mortality_records')->join('livestock_groups','livestock_groups.id','=','livestock_mortality_records.livestock_group_id')->whereIn('livestock_groups.unit_code',$units)->select('livestock_mortality_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('occurred_on')->cursor() as $r)fputcsv($out,[$r->occurred_on,ucfirst($r->unit_code),'Mortality',$r->group_code,$r->suspected_cause,$r->quantity,'animals',null,$r->disposal_method]);
-            if(in_array('production',$include,true))foreach(DB::table('livestock_production_records')->join('livestock_groups','livestock_groups.id','=','livestock_production_records.livestock_group_id')->whereIn('livestock_groups.unit_code',$units)->select('livestock_production_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)fputcsv($out,[$r->recorded_on,ucfirst($r->unit_code),'Production',$r->group_code,$r->production_type,$r->quantity,$r->measure_unit,$r->value,$r->notes]);
+            if(in_array('feed',$include,true))foreach(DB::table('livestock_feed_records')->join('livestock_groups','livestock_groups.id','=','livestock_feed_records.livestock_group_id')->where('livestock_feed_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_feed_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)fputcsv($out,[$r->recorded_on,ucfirst($r->unit_code),'Feed',$r->group_code,$r->feed_name,$r->quantity_kg,'kg',$r->cost,$r->action]);
+            if(in_array('health',$include,true))foreach(DB::table('livestock_health_records')->join('livestock_groups','livestock_groups.id','=','livestock_health_records.livestock_group_id')->where('livestock_health_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_health_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)fputcsv($out,[$r->recorded_on,ucfirst($r->unit_code),ucfirst($r->event_type),$r->group_code,$r->condition_or_vaccine,$r->animals_affected,'animals',$r->cost,$r->medicine]);
+            if(in_array('mortality',$include,true))foreach(DB::table('livestock_mortality_records')->join('livestock_groups','livestock_groups.id','=','livestock_mortality_records.livestock_group_id')->where('livestock_mortality_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_mortality_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('occurred_on')->cursor() as $r)fputcsv($out,[$r->occurred_on,ucfirst($r->unit_code),'Mortality',$r->group_code,$r->suspected_cause,$r->quantity,'animals',null,$r->disposal_method]);
+            if(in_array('production',$include,true))foreach(DB::table('livestock_production_records')->join('livestock_groups','livestock_groups.id','=','livestock_production_records.livestock_group_id')->where('livestock_production_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_production_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)fputcsv($out,[$r->recorded_on,ucfirst($r->unit_code),'Production',$r->group_code,$r->production_type,$r->quantity,$r->measure_unit,$r->value,$r->notes]);
             fclose($out);
         },'overall-production-'.$view.'-'.now()->format('Y-m-d').'.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
     }
@@ -187,11 +193,11 @@ class FarmUnitController extends Controller
     public function livestock(Request $request, string $unit, string $section): View
     {
         abort_unless(in_array($unit,['goats','rabbits','dogs'],true),404);
-        abort_unless(in_array($section,['register','feed','vaccination','treatment','mortality','production'],true),404);
+        abort_unless(in_array($section,['register','feed','breeding','vaccination','deworming','spraying','treatment','mortality','production'],true),404);
         abort_unless($request->user()->canAccessFarmUnit($unit),403);
         $groups=DB::table('livestock_groups')->where('unit_code',$unit)->orderBy('group_code')->get();
-        $table=match($section){'register'=>'livestock_groups','feed'=>'livestock_feed_records','vaccination','treatment'=>'livestock_health_records','mortality'=>'livestock_mortality_records','production'=>'livestock_production_records'};
-        $rows=DB::table($table)->when($section!=='register',fn($q)=>$q->join('livestock_groups','livestock_groups.id','=',$table.'.livestock_group_id')->where('livestock_groups.unit_code',$unit))->when($section==='register',fn($q)=>$q->where('unit_code',$unit))->when(in_array($section,['vaccination','treatment']),fn($q)=>$q->where('event_type',$section))->select($table.'.*',...($section==='register'?[]:['livestock_groups.group_code']))->orderByDesc($section==='mortality'?'occurred_on':($section==='register'?'acquired_on':'recorded_on'))->paginate(30);
+        $table=match($section){'register'=>'livestock_groups','feed'=>'livestock_feed_records','breeding'=>'livestock_breeding_records','vaccination','deworming','spraying','treatment'=>'livestock_health_records','mortality'=>'livestock_mortality_records','production'=>'livestock_production_records'};
+        $rows=DB::table($table)->when($section!=='register',fn($q)=>$q->join('livestock_groups','livestock_groups.id','=',$table.'.livestock_group_id')->where('livestock_groups.unit_code',$unit))->when($section==='register',fn($q)=>$q->where('unit_code',$unit))->when(in_array($section,['vaccination','deworming','spraying','treatment']),fn($q)=>$q->where('event_type',$section))->select($table.'.*',...($section==='register'?[]:['livestock_groups.group_code']))->orderByDesc($section==='mortality'?'occurred_on':($section==='register'?'acquired_on':($section==='breeding'?'service_date':'recorded_on')))->paginate(30);
         $availableFeeds=$section==='feed'?DB::table('feed_stock_movements')->where('unit_code',$unit)->select('feed_name',DB::raw("sum(case when movement_type='received' then quantity_kg else -quantity_kg end) as balance_kg"))->groupBy('feed_name')->havingRaw("sum(case when movement_type='received' then quantity_kg else -quantity_kg end) > 0")->orderBy('feed_name')->get():collect();
         $species = ['goats'=>'goat', 'rabbits'=>'rabbit', 'dogs'=>'dog'][$unit];
         $breeds = $section === 'register'
@@ -202,7 +208,7 @@ class FarmUnitController extends Controller
 
     public function storeLivestock(Request $request,string $unit,string $section): RedirectResponse
     {
-        abort_unless(in_array($unit,['goats','rabbits','dogs'],true),404);abort_unless(in_array($section,['register','feed','vaccination','treatment','mortality','production'],true),404);abort_unless($request->user()->canAccessFarmUnit($unit),403);abort_unless($request->user()->canDo($unit,'create')||$request->user()->canDo($unit,'edit'),403);
+        abort_unless(in_array($unit,['goats','rabbits','dogs'],true),404);abort_unless(in_array($section,['register','feed','breeding','vaccination','deworming','spraying','treatment','mortality','production'],true),404);abort_unless($request->user()->canAccessFarmUnit($unit),403);abort_unless($request->user()->canDo($unit,'create')||$request->user()->canDo($unit,'edit'),403);
         if($section==='register'){
             $next=$request->string('next')->toString();
             $d=$request->validate([
@@ -226,7 +232,8 @@ class FarmUnitController extends Controller
         }
         $d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id']]);$group=DB::table('livestock_groups')->where('id',$d['livestock_group_id'])->where('unit_code',$unit)->first();abort_unless($group,422,'Choose a group from this unit.');
         if($section==='feed'){$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'recorded_on'=>['required','date'],'action'=>['required','in:mixed,issued,fed'],'feed_name'=>['required','string','max:160'],'quantity_kg'=>['required','numeric','min:0.01'],'source_reference'=>['nullable','string','max:160'],'cost'=>['nullable','numeric','min:0'],'notes'=>['nullable','string','max:2000']]);DB::transaction(function()use($d,$request,$unit){$id=DB::table('livestock_feed_records')->insertGetId($d+['recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);if(in_array($d['action'],['issued','fed'],true))DB::table('feed_stock_movements')->insert(['unit_code'=>$unit,'movement_date'=>$d['recorded_on'],'movement_type'=>$d['action'],'feed_name'=>$d['feed_name'],'quantity_kg'=>$d['quantity_kg'],'reference'=>'livestock-feed:'.$id,'notes'=>$d['notes']??null,'recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);});}
-        elseif(in_array($section,['vaccination','treatment'])){$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'recorded_on'=>['required','date'],'condition_or_vaccine'=>['required','string','max:180'],'medicine'=>['nullable','string','max:180'],'dose'=>['nullable','string','max:100'],'animals_affected'=>['required','integer','min:1'],'next_due_on'=>['nullable','date'],'withdrawal_ends_on'=>['nullable','date'],'cost'=>['nullable','numeric','min:0'],'notes'=>['nullable','string','max:2000']]);DB::table('livestock_health_records')->insert($d+['event_type'=>$section,'recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);}
+        elseif($section==='breeding'){$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'service_date'=>['required','date','before_or_equal:today'],'dam_identity'=>['required','string','max:120'],'dam_breed'=>['nullable','string','max:120'],'sire_identity'=>['required','string','max:120'],'sire_breed'=>['nullable','string','max:120'],'previous_inseminations'=>['required','integer','min:0'],'next_heat_on'=>['nullable','date','after_or_equal:service_date'],'pregnancy_diagnosis'=>['nullable','string','max:80'],'expected_delivery_on'=>['nullable','date','after:service_date'],'notes'=>['nullable','string','max:2000']]);DB::table('livestock_breeding_records')->insert($d+['recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);}
+        elseif(in_array($section,['vaccination','deworming','spraying','treatment'])){$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'recorded_on'=>['required','date'],'condition_or_vaccine'=>['required','string','max:180'],'medicine'=>['nullable','string','max:180'],'application_route'=>['nullable','string','max:80'],'dose'=>['nullable','string','max:100'],'mix_ratio'=>['nullable','string','max:80'],'animals_affected'=>['required','integer','min:1'],'next_due_on'=>['nullable','date'],'batch_number'=>['nullable','string','max:100'],'manufactured_on'=>['nullable','date'],'expires_on'=>['nullable','date','after_or_equal:manufactured_on'],'camp_category'=>['nullable','string','max:100'],'breed'=>['nullable','string','max:120'],'withdrawal_ends_on'=>['nullable','date'],'cost'=>['nullable','numeric','min:0'],'notes'=>['nullable','string','max:2000']]);DB::table('livestock_health_records')->insert($d+['event_type'=>$section,'recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);}
         elseif($section==='mortality'){$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'occurred_on'=>['required','date'],'quantity'=>['required','integer','min:1'],'suspected_cause'=>['nullable','string','max:180'],'disposal_method'=>['nullable','string','max:120'],'notes'=>['nullable','string','max:2000']]);abort_if($d['quantity']>$group->current_quantity,422,'Mortality cannot exceed the current group quantity.');DB::transaction(function()use($d,$request){DB::table('livestock_mortality_records')->insert($d+['recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);DB::table('livestock_groups')->where('id',$d['livestock_group_id'])->decrement('current_quantity',$d['quantity']);});}
         else{$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'recorded_on'=>['required','date'],'production_type'=>['required','in:milk,births,weight,sale,other'],'quantity'=>['required','numeric','min:0.01'],'measure_unit'=>['required','string','max:40'],'value'=>['nullable','numeric','min:0'],'notes'=>['nullable','string','max:2000']]);DB::transaction(function()use($d,$request){DB::table('livestock_production_records')->insert($d+['recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);if($d['production_type']==='births')DB::table('livestock_groups')->where('id',$d['livestock_group_id'])->increment('current_quantity',(int)$d['quantity']);});}
         AuditLog::record('livestock_'.$section.'_recorded',null,self::UNITS[$unit]['name'].' '.$section.' record saved.',null,['group'=>$group->group_code],$unit);return back()->with('status',ucfirst($section).' record saved.');

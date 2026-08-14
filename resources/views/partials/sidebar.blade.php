@@ -62,6 +62,9 @@
         || (($user->role?->code === 'department-manager' || $user->roles->contains('code', 'department-manager'))
             && ($user->department?->code === 'production' || $user->departments->contains('code', 'production')));
     $isCasualWorker = $user->isDataEntryOnly();
+    $isAppointedSupervisor = \App\Models\SupervisorAssignment::where('supervisor_id',$user->id)
+        ->where('is_active',true)->whereDate('starts_on','<=',today())
+        ->where(fn($q)=>$q->whereNull('ends_on')->orWhereDate('ends_on','>=',today()))->exists();
     $casualUnits = collect([
         'poultry'=>['label'=>'🐔 Poultry Daily Entry','anchor'=>'poultry'],
         'goats'=>['label'=>'🐐 Goat Daily Entry','anchor'=>'goats'],
@@ -76,11 +79,20 @@
     ];
 
     $ceoSections = [
+        'Operational Reports' => [
+            ['key' => 'reports', 'label' => 'Overall Production Report', 'page' => 'production'],
+            ['key' => 'reports', 'label' => 'Poultry Unit Report', 'page' => 'poultry'],
+            ['key' => 'reports', 'label' => 'Goat Unit Report', 'page' => 'goats'],
+            ['key' => 'reports', 'label' => 'Rabbit Unit Report', 'page' => 'rabbits'],
+            ['key' => 'reports', 'label' => 'Dog Unit Report', 'page' => 'dogs'],
+            ['key' => 'reports', 'label' => 'Garden Unit Report', 'page' => 'garden'],
+        ],
         '📊 Executive View' => [
             ['key' => 'kpi-dashboards', 'label' => 'KPIs & Analytics'],
             ['key' => 'reports', 'label' => 'Executive Reports'],
         ],
         '✅ Decisions' => [
+            ['key' => 'assign-supervisors', 'label' => 'Daily Supervisors'],
             ['key' => 'approvals', 'label' => 'Pending Approvals'],
             ['key' => 'approvals', 'label' => 'Sent to Director', 'status' => 'sent'],
             ['key' => 'approvals', 'label' => 'Rejected Requests', 'status' => 'rejected'],
@@ -96,7 +108,6 @@
             ['key' => 'purchases', 'label' => 'Purchases'],
             ['key' => 'assets', 'label' => 'Fixed Assets'],
             ['key' => 'hr', 'label' => 'Employees'],
-            ['key' => 'audit', 'label' => 'Audit Trail'],
         ],
         '💬 Communication' => [
             ['key' => 'messages', 'label' => 'Messages'], ['key' => 'notifications', 'label' => 'Notifications'],
@@ -109,6 +120,14 @@
     ];
 
     $directorSections = [
+        'Operational Reports' => [
+            ['key' => 'reports', 'label' => 'Overall Production Report', 'page' => 'production'],
+            ['key' => 'reports', 'label' => 'Poultry Unit Report', 'page' => 'poultry'],
+            ['key' => 'reports', 'label' => 'Goat Unit Report', 'page' => 'goats'],
+            ['key' => 'reports', 'label' => 'Rabbit Unit Report', 'page' => 'rabbits'],
+            ['key' => 'reports', 'label' => 'Dog Unit Report', 'page' => 'dogs'],
+            ['key' => 'reports', 'label' => 'Garden Unit Report', 'page' => 'garden'],
+        ],
         '📊 Board View' => [
             ['key' => 'kpi-dashboards', 'label' => 'KPIs & Analytics'],
             ['key' => 'reports', 'label' => 'Executive Reports'],
@@ -135,13 +154,16 @@
     ];
 
     $assistantSections = [
-        'Executive Support' => [
-            ['key' => 'reports', 'label' => 'Executive Reports'],
-            ['key' => 'approvals', 'label' => 'Approval Tracker', 'status' => 'approved'],
+        'Director Follow-up' => [
+            ['key' => 'dashboard', 'label' => 'Directives & Feedback'],
+            ['key' => 'approvals', 'label' => 'Approved Money Tracker', 'status' => 'approved'],
         ],
         'Communication' => [
             ['key' => 'messages', 'label' => 'Messages & Announcements'],
             ['key' => 'notifications', 'label' => 'Notifications'],
+        ],
+        'Reports & Briefing' => [
+            ['key' => 'reports', 'label' => 'Executive Reports'],
         ],
         'Front Office' => [
             ['key' => 'visitors', 'label' => 'Visitor Register'],
@@ -149,45 +171,34 @@
     ];
 
     $productionSections = [
-        '🗓️ Today’s Work' => [
-            ['key'=>'egg-entry', 'label'=>'Daily Production Entry', 'page'=>'daily'],
+        'Monitor' => [
+            ['key'=>'batches', 'label'=>'Poultry Daily Records', 'page'=>'poultry-report'],
+            ['key'=>'mortality-assess', 'label'=>'Mortality Examination'],
+            ['key'=>'staff-performance', 'label'=>'Attendant Performance'],
+            ['key'=>'feed-received', 'label'=>'Tuesday Feed Verification'],
         ],
-        '💰 Budgets' => [
-            ['key'=>'budget', 'label'=>'Weekly Unit Budgets'],
+        'Farm Units' => [
+            ['key'=>'batches', 'label'=>'Poultry'],
+            ['key'=>'goats', 'label'=>'Goats'],
+            ['key'=>'rabbits', 'label'=>'Rabbits'],
+            ['key'=>'dogs', 'label'=>'Dogs'],
+            ['key'=>'garden', 'label'=>'Garden'],
         ],
-        '🐔 Poultry Unit' => [
-            ['key'=>'batches', 'label'=>'Poultry Overview'],
+        'Plan & Resources' => [
+            ['key'=>'budget', 'label'=>'Weekly Unit Budget'],
         ],
-        '🐐 Goat Unit' => [
-            ['key'=>'goats', 'label'=>'Goat Overview'],
-            ['key'=>'goats', 'label'=>'Goat Unit Report', 'page'=>'export'],
-        ],
-        '🐇 Rabbit Unit' => [
-            ['key'=>'rabbits', 'label'=>'Rabbit Overview'],
-            ['key'=>'rabbits', 'label'=>'Rabbit Unit Report', 'page'=>'export'],
-        ],
-        '🐕 Dog Unit' => [
-            ['key'=>'dogs', 'label'=>'Dog Overview'],
-            ['key'=>'dogs', 'label'=>'Dog Unit Report', 'page'=>'export'],
-        ],
-        '🌱 Garden Unit' => [
-            ['key'=>'garden', 'label'=>'Garden Overview'],
-            ['key'=>'garden', 'label'=>'Garden Unit Report', 'page'=>'export'],
-        ],
-        '🏢 Farm Oversight' => [
-            ['key'=>'reports', 'label'=>'Overall Production Report'],
-            ['key'=>'feed-received', 'label'=>'Receive & View Feed'],
-            ['key'=>'inventory', 'label'=>'Inventory & Farm Inputs'],
-        ],
-        '👥 Team' => [
-            ['key'=>'attendance', 'label'=>'Attendance'],
-            ['key'=>'assign-tasks', 'label'=>'Task Assignment'],
+        'Reports' => [
+            ['key'=>'reports', 'label'=>'Production Reports'],
+            ['key'=>'batches', 'label'=>'Poultry Report', 'page'=>'poultry-report'],
+            ['key'=>'goats', 'label'=>'Goat Report', 'page'=>'export'],
+            ['key'=>'rabbits', 'label'=>'Rabbit Report', 'page'=>'export'],
+            ['key'=>'dogs', 'label'=>'Dog Report', 'page'=>'export'],
+            ['key'=>'garden', 'label'=>'Garden Report', 'page'=>'export'],
         ],
         'Communication' => [
             ['key'=>'messages', 'label'=>'Messages'],
         ],
     ];
-
     $hrSections = [
         '👥 Employees' => [
             ['key' => 'hr', 'label' => 'Employee Register'],
@@ -197,6 +208,7 @@
             ['key' => 'contracts', 'label' => 'Contracts'],
         ],
         '❤️ Welfare' => [
+            ['key' => 'budget', 'label' => 'Weekly Welfare Budget'],
             ['key' => 'advances', 'label' => 'Salary Advance'],
             ['key' => 'welfare', 'label' => 'Welfare'],
             ['key' => 'employee-medical', 'label' => 'Medical Records'],
@@ -216,69 +228,45 @@
             ['key' => 'reports', 'label' => 'Reports'],
             ['key' => 'kpi-dashboards', 'label' => 'KPI Dashboard'],
         ],
+        'Communication' => [
+            ['key' => 'messages', 'label' => 'Messages & Updates'],
+        ],
     ];
 
     $financeSections = [
         '💵 Daily Operations' => [
-            ['key' => 'transactions', 'label' => 'Transaction Register'],
-            ['key' => 'receipts', 'label' => 'Money Received'],
-            ['key' => 'payments', 'label' => 'Money Paid'],
-            ['key' => 'cash-book', 'label' => 'Cash Book'],
-            ['key' => 'bank-book', 'label' => 'Bank Book'],
+            ['key' => 'transactions', 'label' => 'Data Entry & Register'],
         ],
         '📒 Accounting' => [
             ['key' => 'payroll', 'label' => 'Payroll'],
-            ['key' => 'general-ledger', 'label' => 'General Ledger'],
-            ['key' => 'receivables', 'label' => 'Accounts Receivable'],
-            ['key' => 'payables', 'label' => 'Accounts Payable'],
-            ['key' => 'budget', 'label' => 'Budget'],
-            ['key' => 'assets', 'label' => 'Fixed Assets'],
-        ],
-        '🚜 Farm Operations' => [
-            ['key' => 'purchases', 'label' => 'Purchases'],
-            ['key' => 'production', 'label' => 'Production'],
-            ['key' => 'veterinary', 'label' => 'Veterinary'],
+            ['key' => 'budget', 'label' => 'Weekly Budget'],
         ],
         '📈 Reports' => [
             ['key' => 'reports', 'label' => 'Financial Reports'],
-            ['key' => 'kpi-dashboards', 'label' => 'KPI Dashboard'],
-            ['key' => 'profit-loss', 'label' => 'Income Statement'],
-            ['key' => 'balance-sheet', 'label' => 'Balance Sheet'],
-            ['key' => 'cash-flow', 'label' => 'Cash Flow Statement'],
-            ['key' => 'trial-balance', 'label' => 'Trial Balance'],
         ],
         '⚙️ Administration' => [
             ['key' => 'approvals', 'label' => 'Approval Tracking'],
             ['key' => 'audit', 'label' => 'Audit Trail'],
-            ['key' => 'chart-of-accounts', 'label' => 'Chart of Accounts'],
-            ['key' => 'finance-periods', 'label' => 'Financial Periods'],
-            ['key' => 'finance-accounts', 'label' => 'Bank & Cash Accounts'],
-            ['key' => 'payment-methods', 'label' => 'Payment Methods'],
-            ['key' => 'document-numbering', 'label' => 'Document Numbering'],
-            ['key' => 'tax-settings', 'label' => 'Tax & Payroll Settings'],
-            ['key' => 'budget-settings', 'label' => 'Budget Settings'],
-            ['key' => 'finance-imports', 'label' => 'Import & Reconciliation'],
+            ['key' => 'chart-of-accounts', 'label' => 'Finance Setup'],
+        ],
+        'Communication' => [
+            ['key' => 'messages', 'label' => 'Messages & Updates'],
         ],
     ];
 
     $salesSections = [
         '🧾 Daily Sales' => [
-            ['key'=>'sales','label'=>'Record New Sale','anchor'=>'new-sale'],
-            ['key'=>'invoices','label'=>'Invoices & Sales Register','anchor'=>'sales-register'],
-            ['key'=>'receipts','label'=>'Receipts & Payments','anchor'=>'sales-register'],
+            ['key'=>'sales','label'=>'Record Daily Sale','screen'=>'sale'],
         ],
         '🏷️ Products & Pricing' => [
-            ['key'=>'inventory','label'=>'Products & Current Stock','anchor'=>'products'],
-            ['key'=>'sales','label'=>'Selling Prices','anchor'=>'products'],
-            ['key'=>'returns','label'=>'Sales Returns','anchor'=>'sales-register'],
+            ['key'=>'sales','label'=>'Selling Prices','screen'=>'setup'],
         ],
         '👥 Customers' => [
-            ['key'=>'customers','label'=>'Customer Register','anchor'=>'customers'],
-            ['key'=>'customer-ledger','label'=>'Customer Balances','anchor'=>'sales-register'],
         ],
         '📈 Reports' => [
-            ['key'=>'reports','label'=>'Sales Summary','anchor'=>'sales-summary'],
-            ['key'=>'analytics','label'=>'Sales Performance','anchor'=>'sales-summary'],
+        ],
+        'Communication' => [
+            ['key'=>'messages','label'=>'Messages & Updates'],
         ],
     ];
 @endphp
@@ -292,10 +280,9 @@
         <span class="brand-name">Brooks Agro</span>
     </div>
 
-    <div class="drawer-head">
-        <strong>{{ $user->displayName() }}</strong>
-        <span>{{ $user->departmentSummary() }}</span>
-    </div>
+    @if($isAppointedSupervisor)
+        <a class="nav-link" href="{{ route('supervision.index') }}" @if(request()->routeIs('supervision.*')) aria-current="page" @endif><span>Daily Supervisor</span></a>
+    @endif
 
     @if ($isCeo || $isDirector)
         <div class="hr-nav" aria-label="{{ $isCeo ? 'CEO' : 'Director' }} navigation">
@@ -303,16 +290,23 @@
                 <svg class="nav-icon" aria-hidden="true"><use href="#i-home"></use></svg><span>🏠 Dashboard</span>
             </a>
             @foreach(($isCeo ? $ceoSections : $directorSections) as $section => $items)
-                <section class="hr-nav-section" aria-label="{{ $section }}">
-                    <h2>{{ $section }}</h2>
+                <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif>
+                    <summary>{{ $section }}</summary>
                     @foreach($items as $item)
                         @if($user->canAccess($item['key']))
                             @php
                                 $href = match ($item['key']) {
                                     'approvals' => route('approvals.index', isset($item['type']) ? ['type'=>$item['type']] : (isset($item['status']) ? ['status'=>$item['status']] : [])),
+                                    'assign-supervisors' => route('supervision.index'),
                                     'kpi-dashboards' => route('executive.index', ['screen'=>'kpis']),
-                                    'reports' => route('executive.index', ['screen'=>'reports']),
-                                    'messages', 'notifications', 'security', 'settings' => route('executive.index', ['screen'=>$item['key']]),
+                                    'reports' => match($item['page'] ?? 'executive') {
+                                        'production' => route('operations.reports'),
+                                        'poultry' => route('poultry.report.index'),
+                                        'goats','rabbits','dogs','garden' => route('operations.units.report',['unit'=>$item['page']]),
+                                        default => route('executive.index', ['screen'=>'reports']),
+                                    },
+                                    'messages' => route('communications.index'),
+                                    'notifications', 'security', 'settings' => route('executive.index', ['screen'=>$item['key']]),
                                     'visitors' => route('visitors.index'),
                                     'hr' => route('employees.index'),
                                     'attendance','welfare','advances' => route('hr.records.index',['module'=>$item['key']]),
@@ -323,18 +317,20 @@
                             @if($href)<a class="nav-link" href="{{ $href }}"><span>{{ $item['label'] }}</span></a>@endif
                         @endif
                     @endforeach
-                </section>
+                </details>
             @endforeach
         </div>
     @elseif ($isPersonalAssistant)
         <div class="hr-nav" aria-label="Personal Assistant navigation">
             <a class="nav-link" href="{{ route('dashboard') }}"><span>Dashboard</span></a>
             @foreach($assistantSections as $section => $items)
-                <section class="hr-nav-section" aria-label="{{ $section }}"><h2>{{ $section }}</h2>
+                <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif><summary>{{ $section }}</summary>
                 @foreach($items as $item)
                     @if($user->canAccess($item['key']))
                         @php $href = match($item['key']) {
-                            'reports', 'messages', 'notifications' => route('executive.index',['screen'=>$item['key']]),
+                            'messages' => route('communications.index'),
+                            'dashboard' => route('dashboard'),
+                            'reports', 'notifications' => route('executive.index',['screen'=>$item['key']]),
                             'approvals' => route('approvals.index',['status'=>$item['status'] ?? 'pending']),
                             'visitors' => route('visitors.index'),
                             default => \App\Models\Module::where('key',$item['key'])->first()?->url(),
@@ -342,20 +338,21 @@
                         @if($href)<a class="nav-link" href="{{ $href }}"><span>{{ $item['label'] }}</span></a>@endif
                     @endif
                 @endforeach
-                </section>
+                </details>
             @endforeach
         </div>
     @elseif ($isProductionManager)
         <div class="hr-nav" aria-label="Production Manager navigation">
             <a class="nav-link" href="{{ route('dashboard') }}" @if($currentKey === 'dashboard') aria-current="page" @endif><svg class="nav-icon" aria-hidden="true"><use href="#i-home"></use></svg><span>🏠 Dashboard</span></a>
             @foreach($productionSections as $section => $items)
-                <section class="hr-nav-section" aria-label="{{ $section }}"><h2>{{ $section }}</h2>
+                @continue(empty($items))
+                <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif><summary>{{ $section }}</summary>
                 @foreach($items as $item)
                     @if($user->canAccess($item['key']))
                         @php
                             $href = match($item['key']) {
-                                'egg-entry','feed-consumption','mortality-entry' => route('daily.index'),
-                                'batches' => route('batches.index'),
+                                'egg-entry','feed-consumption','mortality-entry' => route('poultry.report.index'),
+                                'batches' => ($item['page'] ?? null)==='poultry-report' ? route('poultry.report.index') : route('batches.index'),
                                 'egg-inventory' => route('collections.index'),
                                 'bird-consumption' => route('consumption.index'),
                                 'health' => route('health.index'),
@@ -373,13 +370,14 @@
                                 'reports' => route('operations.reports'),
                                 'feed-received' => route('operations.feed-stock.index'),
                                 'approvals' => route('approvals.index'),
+                                'messages' => route('communications.index'),
                                 default => \App\Models\Module::where('key',$item['key'])->first()?->url(),
                             };
                         @endphp
                         @if($href)<a class="nav-link" href="{{ $href }}" @if($currentKey===$item['key']) aria-current="page" @endif><span>{{ $item['label'] }}</span></a>@endif
                     @endif
                 @endforeach
-                </section>
+                </details>
             @endforeach
         </div>
     @elseif ($isHrManager || $isFinanceUser || $isSalesManager)
@@ -391,13 +389,14 @@
             </a>
 
             @foreach (($isHrManager ? $hrSections : ($isSalesManager ? $salesSections : $financeSections)) as $section => $items)
-                <section class="hr-nav-section" aria-label="{{ $section }}">
-                    <h2>{{ $section }}</h2>
+                @continue(empty($items))
+                <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif>
+                    <summary>{{ $section }}</summary>
                     @foreach ($items as $item)
                         @if ($user->canAccess($item['key']))
                             @php
                                 $href = $isSalesManager
-                                    ? route('sales.index').'#'.($item['anchor'] ?? 'sales-summary')
+                                    ? route('sales.index', ['screen' => $item['screen'] ?? 'sale'])
                                     : ($isHrManager
                                     ? match ($item['key']) {
                                         'hr' => route('employees.index'),
@@ -405,7 +404,9 @@
                                         'kpi-dashboards' => route('hr.kpis.index'),
                                         'staff-performance' => route('poultry.performance.index'),
                                         'payroll' => route('payroll.index'),
+                                        'budget' => route('hr.welfare-budget.index'),
                                         'fleet' => route('hr.fleet.index'),
+                                        'messages' => route('communications.index'),
                                         default => route('hr.records.index', ['module' => $item['key']]),
                                     }
                                     : match ($item['key']) {
@@ -425,6 +426,7 @@
                                         'kpi-dashboards' => route('finance.reports.kpis'),
                                         'profit-loss', 'balance-sheet', 'cash-flow', 'trial-balance' => route('finance.reports.statement', ['report' => $item['key']]),
                                         'approvals' => route('approvals.index'),
+                                        'messages' => route('communications.index'),
                                         'audit', 'chart-of-accounts', 'finance-periods', 'finance-accounts', 'payment-methods', 'document-numbering', 'tax-settings', 'budget-settings', 'finance-imports' => route('finance.admin.index', ['screen' => $item['key']]),
                                         default => route('module.placeholder', ['key' => $item['key']]),
                                     });
@@ -436,7 +438,7 @@
                             </a>
                         @endif
                     @endforeach
-                </section>
+                </details>
             @endforeach
         </div>
     @elseif ($isCasualWorker)
@@ -449,10 +451,9 @@
                     <p class="nav-empty">No farm unit is assigned. Ask HR to assign Poultry, Goats, Rabbits, Dogs, or Garden.</p>
                 @endforelse
             </section>
-            @if($user->canAccess('my-tasks') || $user->canAccess('messages'))
+            @if($user->canAccess('messages'))
             <section class="hr-nav-section" aria-label="Worker updates"><h2>💬 Updates</h2>
-                @if($user->canAccess('my-tasks'))<a class="nav-link" href="{{ route('module.placeholder',['key'=>'my-tasks']) }}"><span>My Tasks</span></a>@endif
-                @if($user->canAccess('messages'))<a class="nav-link" href="{{ route('module.placeholder',['key'=>'messages']) }}"><span>Messages</span></a>@endif
+                @if($user->canAccess('messages'))<a class="nav-link" href="{{ route('communications.index') }}"><span>Messages</span></a>@endif
             </section>
             @endif
         </div>

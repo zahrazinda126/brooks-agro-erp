@@ -9,6 +9,7 @@ use App\Http\Controllers\HR\EmployeeRecordController;
 use App\Http\Controllers\HR\HrReportController;
 use App\Http\Controllers\HR\PerformanceController;
 use App\Http\Controllers\HR\FleetController;
+use App\Http\Controllers\HR\WelfareBudgetController;
 use App\Http\Controllers\Poultry\BatchController;
 use App\Http\Controllers\Poultry\BreedController;
 use Illuminate\Support\Facades\Route;
@@ -18,6 +19,7 @@ use App\Http\Controllers\Poultry\FeedTypeController;
 use App\Http\Controllers\Poultry\BirdConsumptionController;
 use App\Http\Controllers\Poultry\HealthController;
 use App\Http\Controllers\Poultry\CollectionController;
+use App\Http\Controllers\Poultry\PoultryReportController;
 use App\Http\Controllers\Finance\TransactionController;
 use App\Http\Controllers\Finance\ReceivableController;
 use App\Http\Controllers\Finance\AccountingController;
@@ -33,6 +35,10 @@ use App\Http\Controllers\ProductionBudgetController;
 use App\Http\Controllers\SalesController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\VisitorController;
+use App\Http\Controllers\SupervisorController;
+use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\CommunicationController;
+use App\Http\Controllers\ExecutiveFollowUpController;
 
 
 
@@ -79,7 +85,15 @@ Route::middleware('auth')->group(function () {
     Route::middleware('password.settled')->group(function () {
 
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('/inventory', [InventoryController::class, 'index'])->middleware('module:inventory')->name('inventory.index');
+        Route::post('/inventory/items', [InventoryController::class, 'storeItem'])->middleware('module:inventory,create')->name('inventory.items.store');
+        Route::post('/inventory/movements', [InventoryController::class, 'storeMovement'])->middleware('module:inventory,create')->name('inventory.movements.store');
         Route::get('/visitors', [VisitorController::class, 'index'])->name('visitors.index');
+        Route::get('/supervision', [SupervisorController::class, 'index'])->name('supervision.index');
+        Route::post('/supervision/assignments', [SupervisorController::class, 'assign'])->name('supervision.assignments.store');
+        Route::post('/supervision/assignments/{assignment}/end', [SupervisorController::class, 'end'])->name('supervision.assignments.end');
+        Route::get('/supervision/records/{type}/{id}', [SupervisorController::class, 'showRecord'])->name('supervision.records.show');
+        Route::post('/supervision/records/{type}/{id}/review', [SupervisorController::class, 'reviewRecord'])->name('supervision.records.review');
         Route::post('/visitors', [VisitorController::class, 'store'])->name('visitors.store');
         Route::post('/visitors/{visitor}/checkout', [VisitorController::class, 'checkout'])->name('visitors.checkout');
         Route::get('/hr/fleet', [FleetController::class, 'index'])->name('hr.fleet.index');
@@ -96,11 +110,17 @@ Route::middleware('auth')->group(function () {
         Route::post('/sales/customers', [SalesController::class, 'storeCustomer'])->name('sales.customers.store');
         Route::post('/sales', [SalesController::class, 'storeSale'])->name('sales.store');
         Route::get('/sales/{sale}', [SalesController::class, 'show'])->name('sales.show');
+        Route::get('/sales/{sale}/receipts/{payment}/print', [SalesController::class, 'receipt'])->name('sales.receipts.print');
         Route::post('/sales/{sale}/payments', [SalesController::class, 'payment'])->name('sales.payments.store');
         Route::post('/sales/{sale}/returns', [SalesController::class, 'returnLine'])->name('sales.returns.store');
         Route::get('/operations/reports', [FarmUnitController::class, 'report'])->name('operations.reports');
         Route::get('/operations/feed-stock', [FeedStockController::class, 'index'])->name('operations.feed-stock.index');
         Route::post('/operations/feed-stock', [FeedStockController::class, 'store'])->name('operations.feed-stock.store');
+        Route::get('/hr/staff-welfare-budget', [WelfareBudgetController::class, 'index'])->name('hr.welfare-budget.index');
+        Route::post('/hr/staff-welfare-budget/template', [WelfareBudgetController::class, 'loadTemplate'])->name('hr.welfare-budget.template');
+        Route::post('/hr/staff-welfare-budget', [WelfareBudgetController::class, 'store'])->name('hr.welfare-budget.store');
+        Route::put('/hr/staff-welfare-budget/{budget}', [WelfareBudgetController::class, 'update'])->name('hr.welfare-budget.update');
+        Route::delete('/hr/staff-welfare-budget/{budget}', [WelfareBudgetController::class, 'destroy'])->name('hr.welfare-budget.destroy');
         Route::get('/operations/reports/export', [FarmUnitController::class, 'reportExport'])->name('operations.reports.export');
         Route::get('/production/finance-draft-budget', [ProductionBudgetController::class, 'financeDraft'])->name('production.finance-draft.index');
         Route::post('/production/finance-draft-budget', [ProductionBudgetController::class, 'addFinanceDraftLine'])->name('production.finance-draft.store');
@@ -114,10 +134,18 @@ Route::middleware('auth')->group(function () {
         Route::get('/operations/livestock/{unit}/{section}', [FarmUnitController::class, 'livestock'])->name('operations.livestock.section');
         Route::post('/operations/livestock/{unit}/{section}', [FarmUnitController::class, 'storeLivestock'])->name('operations.livestock.store');
         Route::get('/executive/{screen}', [ExecutiveController::class, 'index'])->name('executive.index');
+        Route::get('/messages', [CommunicationController::class, 'index'])->name('communications.index');
+        Route::post('/executive-follow-up/directives', [ExecutiveFollowUpController::class, 'storeDirective'])->name('executive-follow-up.directives.store');
+        Route::put('/executive-follow-up/directives/{directive}', [ExecutiveFollowUpController::class, 'updateDirective'])->name('executive-follow-up.directives.update');
+        Route::post('/executive-follow-up/meetings', [ExecutiveFollowUpController::class, 'storeMeeting'])->name('executive-follow-up.meetings.store');
+        Route::put('/executive-follow-up/meetings/{meeting}', [ExecutiveFollowUpController::class, 'updateMeeting'])->name('executive-follow-up.meetings.update');
+        Route::post('/executive-follow-up/funds', [ExecutiveFollowUpController::class, 'storeFundFollowUp'])->name('executive-follow-up.funds.store');
+        Route::put('/executive-follow-up/funds/{followUp}', [ExecutiveFollowUpController::class, 'updateFundFollowUp'])->name('executive-follow-up.funds.update');
         Route::post('/executive/messages', [ExecutiveController::class, 'storeMessage'])->name('executive.messages.store');
         Route::get('/approvals', [ApprovalController::class, 'index'])->name('approvals.index');
         Route::get('/approvals/{approval}', [ApprovalController::class, 'show'])->name('approvals.show');
         Route::post('/approvals/{approval}/decision', [ApprovalController::class, 'decide'])->name('approvals.decide');
+        Route::post('/approvals/{approval}/budget-funding', [ApprovalController::class, 'updateBudgetFunding'])->name('approvals.budget-funding.update');
         Route::post('/approvals/{approval}/comments', [ApprovalController::class, 'comment'])->name('approvals.comments.store');
         Route::get('/finance/transactions', [TransactionController::class, 'index'])->name('finance.transactions.index');
         Route::get('/finance/transactions/create', [TransactionController::class, 'create'])->name('finance.transactions.create');
@@ -328,6 +356,8 @@ Route::middleware('auth')->group(function () {
                 ->middleware('module:health')->name('health.show');
             Route::get('/collections', [CollectionController::class, 'index'])
                 ->middleware('module:egg-inventory')->name('collections.index');
+            Route::get('/report', [PoultryReportController::class, 'index'])->name('poultry.report.index');
+            Route::get('/report/export', [PoultryReportController::class, 'export'])->name('poultry.report.export');
             Route::get('/performance', [PoultryPerformanceController::class, 'index'])
                 ->middleware('module:staff-performance')->name('poultry.performance.index');
 

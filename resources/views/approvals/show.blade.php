@@ -2,97 +2,34 @@
 
 @section('title', 'Approval Details')
 @section('content')
-<div class="page-head">
-    <div>
-        <p class="eyebrow">Approval review</p>
-        <h1>{{ $approval->label() }}</h1>
-        <p>Review the complete request before recording your decision.</p>
-    </div>
-    <a class="btn btn--ghost" href="{{ route('approvals.index', ['status' => $approval->status]) }}">Back to queue</a>
+<div class="page-head page-head--split">
+    <div><p class="eyebrow">Approval review</p><h2>{{ $approval->label() }}</h2><p>Submitted by {{ $approval->submitter?->displayName() ?? 'Unknown user' }} on {{ $approval->submitted_at->format('d M Y, H:i') }}.</p></div>
+    <a class="btn btn--quiet btn--inline" href="{{ route('approvals.index', ['status'=>$approval->status]) }}">Back to approvals</a>
 </div>
 
-<div class="summary-grid">
+@include('approvals._decision-form')
+
+<div class="summary-grid summary-grid--compact">
     <div class="summary-card"><span>Status</span><strong>{{ ucfirst($approval->status) }}</strong></div>
     @if($approval->amount())<div class="summary-card"><span>Total requested</span><strong>UGX {{ $approval->amount() }}</strong></div>@endif
-    <div class="summary-card"><span>Submitted by</span><strong>{{ $approval->submitter?->displayName() ?? 'Unknown user' }}</strong></div>
-    <div class="summary-card"><span>Submitted</span><strong>{{ $approval->submitted_at->format('d M Y, H:i') }}</strong></div>
+    <div class="summary-card"><span>Current stage</span><strong>{{ $currentStep ? ucwords(str_replace('-',' ',$currentStep->role_code)) : 'Complete' }}</strong></div>
 </div>
 
-<div class="card">
-    <h2>Approval stages</h2>
-    @foreach($approval->steps as $step)
-        <p><strong>Stage {{ $step->stage }} — {{ ucfirst($step->role_code) }}:</strong> {{ ucfirst($step->status) }}
-        @if($step->decisionMaker) by {{ $step->decisionMaker->displayName() }} on {{ $step->decided_at->format('d M Y, H:i') }}@endif
-        @if($step->decision_note)<br>{{ $step->decision_note }}@endif</p>
-    @endforeach
-</div>
-
-@if($approval->submission_note)
-    <div class="card"><h2>Submission note</h2><p>{{ $approval->submission_note }}</p></div>
+@if($budgetLines->isNotEmpty())
+    @include('approvals._budget-funding')
 @endif
+
 @if($approval->approvable instanceof \App\Models\Purchase)
-    @php
-        $purchase = $approval->approvable;
-    @endphp
-    <div class="card table-card"><table><tbody><tr><th>Purchase date</th><td>{{ $purchase->purchased_on->format('d M Y') }}</td></tr><tr><th>Supplier</th><td>{{ $purchase->supplier_name }}</td></tr><tr><th>Invoice/reference</th><td>{{ $purchase->invoice_number ?: '—' }}</td></tr><tr><th>Category</th><td>{{ $purchase->category }}</td></tr><tr><th>Item</th><td>{{ $purchase->item }}</td></tr><tr><th>Quantity</th><td>{{ $purchase->quantity }} {{ $purchase->unit }}</td></tr><tr><th>Unit cost</th><td>UGX {{ number_format($purchase->unit_cost,2) }}</td></tr><tr><th>Total cost</th><td><strong>UGX {{ number_format($purchase->total_cost,2) }}</strong></td></tr><tr><th>Payment status</th><td>{{ ucfirst(str_replace('_',' ',$purchase->payment_status)) }}</td></tr><tr><th>Notes</th><td>{{ $purchase->notes ?: '—' }}</td></tr></tbody></table></div>
+    @php $purchase=$approval->approvable; @endphp
+    <div class="card table-card"><h2>Purchase details</h2><table><tbody><tr><th>Date</th><td>{{ $purchase->purchased_on->format('d M Y') }}</td></tr><tr><th>Supplier</th><td>{{ $purchase->supplier_name }}</td></tr><tr><th>Item</th><td>{{ $purchase->item }}</td></tr><tr><th>Quantity</th><td>{{ $purchase->quantity }} {{ $purchase->unit }}</td></tr><tr><th>Total</th><td><strong>UGX {{ number_format($purchase->total_cost,2) }}</strong></td></tr><tr><th>Notes</th><td>{{ $purchase->notes ?: '—' }}</td></tr></tbody></table></div>
 @endif
 
 @if($approval->approvable instanceof \App\Models\PayrollRun)
-    @php $payroll = $approval->approvable->loadMissing('lines.employee'); @endphp
-    <div class="card table-card">
-        <h2>Payroll details</h2><p><strong>{{ $payroll->payroll_number }}</strong> · {{ $payroll->period_start->format('d M Y') }} – {{ $payroll->period_end->format('d M Y') }}</p>
-        <table><thead><tr><th>Employee</th><th>Gross</th><th>NSSF</th><th>PAYE</th><th>Advance</th><th>Penalties</th><th>Other</th><th>Net</th></tr></thead><tbody>
-        @foreach($payroll->lines as $line)<tr><td>{{ $line->employee->fullName() }}</td><td>UGX {{ number_format($line->gross_pay,2) }}</td><td>{{ number_format($line->nssf_employee,2) }}</td><td>{{ number_format($line->paye,2) }}</td><td>{{ number_format($line->salary_advance,2) }}</td><td>{{ number_format($line->penalties,2) }}</td><td>{{ number_format($line->other_deductions,2) }}</td><td><strong>UGX {{ number_format($line->net_pay,2) }}</strong></td></tr>@endforeach
-        </tbody><tfoot><tr><th>Total</th><th>UGX {{ number_format($payroll->gross_total,2) }}</th><th colspan="5">Deductions: UGX {{ number_format($payroll->deduction_total,2) }}</th><th>UGX {{ number_format($payroll->net_total,2) }}</th></tr></tfoot></table>
-        <a class="btn btn--ghost" href="{{ route('payroll.show',$payroll) }}">Open full payroll</a>
-    </div>
+    @php $payroll=$approval->approvable->loadMissing('lines.employee'); @endphp
+    <details class="card disclosure"><summary><span><strong>Payroll details</strong><small>{{ $payroll->payroll_number }} · {{ $payroll->lines->count() }} employees</small></span></summary><div class="disclosure__body table-wrap"><table class="exec-table"><thead><tr><th>Employee</th><th>Gross</th><th>Deductions</th><th>Net</th></tr></thead><tbody>@foreach($payroll->lines as $line)<tr><td>{{ $line->employee->fullName() }}</td><td>UGX {{ number_format($line->gross_pay,2) }}</td><td>UGX {{ number_format($line->gross_pay-$line->net_pay,2) }}</td><td><strong>UGX {{ number_format($line->net_pay,2) }}</strong></td></tr>@endforeach</tbody></table></div></details>
 @endif
 
-@if($budgetLines->isNotEmpty())
-    <div class="card table-card">
-        <table>
-            <thead><tr><th>Section</th><th>Item</th><th>Unit</th><th>Quantity</th><th>Unit price</th><th>Total</th><th>Notes</th></tr></thead>
-            <tbody>
-            @foreach($budgetLines as $line)
-                <tr>
-                    <td>{{ $line->category }}</td><td>{{ $line->item ?: '—' }}</td><td>{{ $line->unit ?: '—' }}</td>
-                    <td>{{ $line->quantity !== null ? number_format((float)$line->quantity, 2) : '—' }}</td>
-                    <td>{{ $line->unit_price !== null ? 'UGX '.number_format((float)$line->unit_price, 2) : '—' }}</td>
-                    <td><strong>UGX {{ number_format((float)$line->planned_amount, 2) }}</strong></td>
-                    <td>{{ $line->notes ?: '—' }}</td>
-                </tr>
-            @endforeach
-            </tbody>
-            <tfoot><tr><th colspan="5">Combined weekly budget</th><th>UGX {{ number_format((float)$budgetLines->sum('planned_amount'), 2) }}</th><th></th></tr></tfoot>
-        </table>
-    </div>
-@endif
+<details class="card disclosure"><summary><span><strong>Approval history</strong><small>{{ $approval->steps->count() }} stages</small></span></summary><div class="disclosure__body timeline">@foreach($approval->steps as $step)<div class="timeline__item"><span class="status-pill">{{ ucfirst($step->status) }}</span><div><strong>{{ $step->stage }}. {{ ucwords(str_replace('-',' ',$step->role_code)) }}</strong>@if($step->decisionMaker)<p>{{ $step->decisionMaker->displayName() }} · {{ $step->decided_at->format('d M Y, H:i') }}</p>@endif @if($step->decision_note)<p>{{ $step->decision_note }}</p>@endif</div></div>@endforeach</div></details>
 
-<div class="card"><h2>Review discussion</h2><form method="POST" action="{{ route('approvals.comments.store',$approval) }}">@csrf<div class="field"><label for="comment">Add comment or question</label><textarea id="comment" name="comment" rows="3" required placeholder="Ask for clarification or record an observation."></textarea></div><button class="btn">Post comment</button></form>@forelse($approval->comments as $comment)<div style="border-top:1px solid #ddd;margin-top:1rem;padding-top:1rem"><strong>{{ $comment->user->displayName() }}</strong> <span class="muted">{{ $comment->created_at->format('d M Y, H:i') }}</span><p>{{ $comment->comment }}</p></div>@empty<p class="muted">No review comments yet.</p>@endforelse</div>
-
-@php
-    $myRoleCodes = auth()->user()->roles->pluck('code')->push(auth()->user()->role?->code)->filter();
-    $canActAtThisStage = $approval->currentStep() && $myRoleCodes->contains($approval->currentStep()->role_code);
-@endphp
-@if($approval->status === 'pending' && auth()->user()->canDo('approvals', 'approve') && $canActAtThisStage)
-    <form class="card" method="POST" action="{{ route('approvals.decide', $approval) }}">
-        @csrf
-        <h2>Record decision</h2>
-        <div class="field"><label for="decision_note">Decision note</label><textarea id="decision_note" name="decision_note" rows="3" placeholder="Explain any conditions or reason for rejection.">{{ old('decision_note') }}</textarea></div>
-        @error('decision_note')<p class="error">{{ $message }}</p>@enderror
-        <div class="form-actions">
-            @php
-                $nextApprovalStep = $approval->steps->firstWhere('stage', $approval->level + 1);
-                $nextApprovalRole = $nextApprovalStep ? match($nextApprovalStep->role_code) {
-                    'finance-manager' => 'Finance Manager', 'ceo' => 'CEO', 'director' => 'Director',
-                    default => ucfirst(str_replace('-', ' ', $nextApprovalStep->role_code)),
-                } : null;
-            @endphp
-            <button class="btn" name="decision" value="approved">{{ $nextApprovalRole ? 'Approve and send to '.$nextApprovalRole : 'Give final approval' }}</button>
-            <button class="btn btn--ghost" name="decision" value="rejected">Reject request</button>
-        </div>
-    </form>
-@elseif($approval->decisionMaker)
-    <div class="card"><h2>Decision</h2><p><strong>{{ ucfirst($approval->status) }}</strong> by {{ $approval->decisionMaker->displayName() }} on {{ $approval->decided_at->format('d M Y, H:i') }}.</p>@if($approval->decision_note)<p>{{ $approval->decision_note }}</p>@endif</div>
-@endif
+<details class="card disclosure"><summary><span><strong>Discussion</strong><small>{{ $approval->comments->count() }} comments</small></span></summary><div class="disclosure__body"><form method="POST" action="{{ route('approvals.comments.store',$approval) }}">@csrf<div class="field"><label for="comment">Add comment or question</label><textarea id="comment" name="comment" rows="3" required></textarea></div><button class="btn btn--inline">Post comment</button></form>@forelse($approval->comments as $comment)<article class="comment"><strong>{{ $comment->user->displayName() }}</strong><small>{{ $comment->created_at->format('d M Y, H:i') }}</small><p>{{ $comment->comment }}</p></article>@empty<p class="muted">No comments yet.</p>@endforelse</div></details>
 @endsection

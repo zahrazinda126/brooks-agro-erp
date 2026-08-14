@@ -173,7 +173,7 @@ class SpecSeeder extends Seeder
                 'goods-received', 'goods-issued', 'stock-transfers',
                 'stock-adjustments', 'reorder-levels', 'purchase-orders', 'quotations',
             ],
-            'sales-manager' => ['invoices', 'receipts', 'returns', 'customer-ledger'],
+            'sales-manager' => [],
         ];
 
         // Read Only must never get a write bit anywhere.

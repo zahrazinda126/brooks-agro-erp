@@ -148,7 +148,7 @@ class FoundationSeeder extends Seeder
                 'data-entry', 'transactions',
             ],
             'daily-supervisor' => [
-                'dashboard', 'assign-tasks', 'messages',
+                'dashboard', 'messages',
                 'poultry', 'production', 'veterinary', 'inventory',
                 'reports', 'vaccination',
             ],
@@ -157,7 +157,7 @@ class FoundationSeeder extends Seeder
                 'feedmill', 'messages', 'reports', 'data-entry', 'transactions',
             ],
             'production-manager' => [
-                'dashboard', 'assign-tasks', 'approvals', 'messages',
+                'dashboard', 'messages',
                 'poultry', 'goats', 'rabbits', 'dogs',
                 'hatchery', 'breeding', 'veterinary', 'biosecurity',
                 'production', 'feedmill', 'quality', 'maintenance', 'fleet',
@@ -172,15 +172,14 @@ class FoundationSeeder extends Seeder
                 'dashboard', 'hr', 'payroll', 'fleet', 'reports',
             ],
             'sales-manager' => [
-                'dashboard', 'sales', 'customers',
-                'inventory', 'reports', 'analytics',
+                'dashboard', 'sales',
             ],
             'department-manager' => [
                 'dashboard', 'production', 'veterinary', 'reports',
             ],
             // Casual workers get only the worker screens.
             'casual-worker' => [
-                'my-work', 'my-tasks', 'my-performance', 'notifications', 'messages',
+                'my-work', 'my-performance', 'notifications', 'messages',
                 'egg-entry', 'mortality-entry', 'feed-received',
                 'pen-cleaning', 'litter-removal', 'vaccination-due',
                 'milk-record', 'kindling-record', 'dog-care',
@@ -236,7 +235,7 @@ class FoundationSeeder extends Seeder
             'inventory'      => ['inventory', 'purchases', 'suppliers'],
             'veterinary'     => ['veterinary', 'biosecurity'],
             'administration' => ['reports', 'analytics', 'settings', 'ai'],
-            'supervision'    => ['assign-tasks', 'approvals', 'messages', 'poultry'],
+            'supervision'    => ['messages', 'poultry'],
             // 'all' is intentionally empty: it pairs with superuser roles.
         ];
 

@@ -12,6 +12,17 @@ use App\Models\Purchase;
 use App\Models\HealthEvent;
 use App\Models\LivestockAnimal;
 use App\Models\FarmUnitRecord;
+use App\Models\InventoryItem;
+use App\Models\Budget;
+use App\Models\Payable;
+use App\Models\Receivable;
+use App\Models\ApprovedFundFollowUp;
+use App\Models\ExecutiveDirective;
+use App\Models\ExecutiveMeeting;
+use App\Models\PayrollRun;
+use App\Models\EmployeeRecord;
+use App\Models\FeedConsumption;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -58,14 +69,16 @@ class DashboardController extends Controller
         $isCeo = $user->role?->code === 'ceo' || $user->roles->contains('code','ceo');
         $isHrManager = $user->role?->code === 'hr-manager'
             || $user->roles->contains('code', 'hr-manager');
+        $isFinanceManager = $this->isFinanceManager($user);
+        $isDirector = $user->role?->code === 'director'
+            || $user->roles->contains('code', 'director');
         $isProductionManager = $this->isProductionManager($user);
+        $isPersonalAssistant = $user->role?->code === 'personal-assistant' || $user->roles->contains('code','personal-assistant');
+        if ($isFinanceManager) return ['finance-dashboard'];
+        if ($isPersonalAssistant) return ['pa-dashboard'];
+        if ($isHrManager) return ['hr-dashboard'];
         if ($isCeo) $panels[] = 'executive';
         if ($isProductionManager) $panels[] = 'production-overview';
-
-        // A worker's own tasks come before anything else on the farm.
-        if ($user->canAccess('my-tasks') || $user->canAccess('my-work')) {
-            $panels[] = 'my-work';
-        }
 
         if ($user->canAccess('batches') && ! $isProductionManager) {
             $panels[] = 'flocks';
@@ -83,14 +96,6 @@ class DashboardController extends Controller
             $panels[] = 'hr-kpis';
         }
 
-        // Payroll data belongs to Finance. HR can maintain the staff records
-        // that feed it, but does not need an empty finance summary on their
-        // dashboard just because they can record salary advances.
-        if (($user->canAccess('finance') || $user->canAccess('payroll'))
-            && ! ($isHrManager && ! $user->canAccess('finance'))) {
-            $panels[] = 'money';
-        }
-
         if ($user->canAccess('inventory')) {
             $panels[] = 'stock';
         }
@@ -100,7 +105,11 @@ class DashboardController extends Controller
             $panels[] = 'welcome';
         }
 
-        $panels[] = 'shortcuts';
+        // Finance already has its purpose-built sidebar. Generic shortcuts can
+        // expose unrelated operational screens and do not belong here.
+        if (! $isFinanceManager && ! $isCeo && ! $isDirector && ! $isProductionManager) {
+            $panels[] = 'shortcuts';
+        }
 
         return $panels;
     }
@@ -109,6 +118,13 @@ class DashboardController extends Controller
     {
         $data = [];
         $isCeo = $user->role?->code === 'ceo' || $user->roles->contains('code','ceo');
+        $isFinanceManager = $this->isFinanceManager($user);
+        $isPersonalAssistant = $user->role?->code === 'personal-assistant' || $user->roles->contains('code','personal-assistant');
+        if ($isFinanceManager) $data['financeDashboard'] = $this->financeDashboard();
+        if ($isPersonalAssistant) $data['paDashboard'] = $this->paDashboard();
+        if ($user->role?->code === 'hr-manager' || $user->roles->contains('code', 'hr-manager')) {
+            $data['hrDashboard'] = $this->hrDashboard();
+        }
         if ($isCeo) {
             $month=FinancialTransaction::whereBetween('transaction_date',[now()->startOfMonth(),now()->endOfMonth()])->get();
             $data['executive']=['income'=>(float)$month->where('type','money_received')->sum('amount'),'spending'=>(float)$month->where('type','money_paid')->sum('amount'),'pending'=>Approval::where('status','pending')->whereHas('steps',fn($q)=>$q->where('status','pending')->where('role_code','ceo'))->count(),'sent'=>Approval::where('status','pending')->whereHas('steps',fn($q)=>$q->where('role_code','ceo')->where('status','approved')->where('decided_by',$user->id))->count(),'overdue'=>Approval::where('status','pending')->where('due_at','<',now())->count(),'purchaseExposure'=>(float)Purchase::whereIn('status',['submitted','finance_reviewed','ceo_approved'])->sum('total_cost'),'withdrawals'=>HealthEvent::where('withdrawal_ends_eggs','>=',now()->toDateString())->count()];
@@ -123,6 +139,12 @@ class DashboardController extends Controller
 
         if ($user->canAccess('hr')) {
             $data['staff'] = $this->staffData();
+        }
+
+        if ($user->canAccess('inventory')) {
+            $balanceSql="coalesce(sum(case when movement_type in ('received','return','adjustment_in','transfer_in') then quantity else -quantity end),0)";
+            $stockItems=InventoryItem::query()->select('inventory_items.*')->selectSub(fn($q)=>$q->from('inventory_movements')->whereColumn('inventory_item_id','inventory_items.id')->selectRaw($balanceSql),'balance')->get();
+            $data['stock']=['items'=>$stockItems->count(),'low'=>$stockItems->filter(fn($item)=>(float)$item->balance<=(float)$item->reorder_level)->count(),'feedLines'=>DB::table('feed_stock_movements')->select('unit_code','feed_name')->groupBy('unit_code','feed_name')->get()->count()];
         }
 
         $data['shortcuts'] = $this->shortcuts($user);
@@ -176,6 +198,49 @@ class DashboardController extends Controller
         ];
     }
 
+    private function hrDashboard(): array
+    {
+        $active = Employee::where('status', 'active');
+        $latestPayroll = PayrollRun::withCount('lines')->latest('period_end')->first();
+
+        return [
+            'active' => (clone $active)->count(),
+            'permanent' => (clone $active)->where('employment_type', 'permanent')->count(),
+            'casual' => (clone $active)->where('employment_type', 'casual')->count(),
+            'withoutLogin' => (clone $active)->whereDoesntHave('user')->count(),
+            'endingSoon' => (clone $active)->whereNotNull('expected_end_date')
+                ->whereBetween('expected_end_date', [now()->toDateString(), now()->addDays(30)->toDateString()])->count(),
+            'pendingDeductions' => EmployeeRecord::where('is_payroll_deduction', true)
+                ->where('payroll_deduction_status', 'pending')->count(),
+            'payrollPending' => PayrollRun::whereIn('status', ['submitted','finance_reviewed','ceo_reviewed'])->count(),
+            'monthlyPayroll' => (float) PayrollRun::whereMonth('period_end', now()->month)
+                ->whereYear('period_end', now()->year)->sum('net_total'),
+            'latestPayroll' => $latestPayroll,
+            'recentStaff' => Employee::with(['department','role'])->latest()->limit(6)->get(),
+        ];
+    }
+
+    private function paDashboard(): array
+    {
+        $directives = ExecutiveDirective::latest('issued_on')->get();
+        $meetings = ExecutiveMeeting::orderBy('starts_at')->get();
+        $funds = ApprovedFundFollowUp::with('approval.approvable')->latest()->get();
+        $trackedApprovalIds = $funds->pluck('approval_id');
+        $approvedForTracking = Approval::with('approvable')->where('status','approved')
+            ->whereIn('module_key',['budget','purchases'])->whereNotIn('id',$trackedApprovalIds)->latest('decided_at')->limit(20)->get();
+
+        return [
+            'directives'=>$directives, 'meetings'=>$meetings, 'funds'=>$funds, 'approvedForTracking'=>$approvedForTracking,
+            'openDirectives'=>$directives->whereNotIn('status',['completed','cancelled'])->count(),
+            'overdueDirectives'=>$directives->filter(fn($d)=>$d->due_on && $d->due_on->isPast() && !in_array($d->status,['completed','cancelled'],true))->count(),
+            'todayMeetings'=>$meetings->filter(fn($m)=>$m->starts_at->isToday() && $m->status==='scheduled')->count(),
+            'upcomingMeetings'=>$meetings->filter(fn($m)=>$m->starts_at->isFuture() && $m->status==='scheduled')->take(5),
+            'fundsPending'=>$funds->whereNotIn('status',['verified'])->count(),
+            'approvedAmount'=>(float)$funds->sum('approved_amount'),
+            'accountedAmount'=>(float)$funds->sum('amount_accounted_for'),
+        ];
+    }
+
     /**
      * The three or four screens this person opens most, so the common
      * case is one tap rather than a trip through the menu.
@@ -189,7 +254,6 @@ class DashboardController extends Controller
                 (object)['name'=>'Health & Losses','link'=>route('operations.reports',['view'=>'health']),'icon'=>'vet'],
                 (object)['name'=>'Feeding & Inputs','link'=>route('operations.reports',['view'=>'inputs']),'icon'=>'grain'],
                 (object)['name'=>'Production & Harvest','link'=>route('operations.reports',['view'=>'production']),'icon'=>'factory'],
-                (object)['name'=>'Approval Queue','link'=>route('approvals.index'),'icon'=>'check-circle'],
             ]);
         }
         $wanted = [
@@ -232,9 +296,32 @@ class DashboardController extends Controller
                 && ($user->department?->code === 'production' || $user->departments->contains('code','production')));
     }
 
+    private function isFinanceManager(User $user): bool
+    {
+        return $user->role?->code === 'finance-manager'
+            || $user->roles->contains('code', 'finance-manager')
+            || $user->department?->code === 'finance'
+            || $user->departments->contains('code', 'finance')
+            || $user->department?->code === 'div-finance'
+            || $user->departments->contains('code', 'div-finance');
+    }
+
     private function productionOverview(): array
     {
         $activityStart=now()->subDays(30)->toDateString();
+        $poultryHouses = AnimalGroup::where('status', 'active')->where('current_quantity', '>', 0)
+            ->orderByRaw("coalesce(house, code)")->get();
+        $todayFeed = FeedConsumption::whereDate('used_on', now()->toDateString())
+            ->whereIn('status', ['approved', 'submitted', 'pending'])
+            ->selectRaw('animal_group_id, coalesce(sum(quantity_kg), 0) as quantity_kg')
+            ->groupBy('animal_group_id')->pluck('quantity_kg', 'animal_group_id');
+        $feedPlan = $poultryHouses->map(function (AnimalGroup $house) use ($todayFeed) {
+            $required = round($house->current_quantity * 0.125, 2);
+            $recorded = round((float) ($todayFeed[$house->id] ?? 0), 2);
+            return ['batch'=>$house, 'house'=>$house->house ?: $house->code, 'birds'=>(int)$house->current_quantity,
+                'requiredKg'=>$required, 'recordedKg'=>$recorded, 'shortageKg'=>max(0, round($required-$recorded, 2)),
+                'percent'=>$required > 0 ? min(100, round($recorded/$required*100)) : 100];
+        });
         $units=collect([
             ['code'=>'poultry','label'=>'Poultry','icon'=>'🐔','value'=>(int)AnimalGroup::where('status','active')->sum('current_quantity'),'measure'=>'birds','activity'=>HealthEvent::where('occurred_on','>=',$activityStart)->count()],
             ['code'=>'goats','label'=>'Goats','icon'=>'🐐','value'=>LivestockAnimal::where('unit_code','goats')->where('status','active')->count(),'measure'=>'animals','activity'=>FarmUnitRecord::where('unit_code','goats')->where('record_date','>=',$activityStart)->count()],
@@ -242,7 +329,35 @@ class DashboardController extends Controller
             ['code'=>'dogs','label'=>'Dogs','icon'=>'🐕','value'=>LivestockAnimal::where('unit_code','dogs')->where('status','active')->count(),'measure'=>'animals','activity'=>FarmUnitRecord::where('unit_code','dogs')->where('record_date','>=',$activityStart)->count()],
             ['code'=>'garden','label'=>'Garden','icon'=>'🌱','value'=>FarmUnitRecord::where('unit_code','garden')->where('record_type','plot')->distinct('subject')->count('subject'),'measure'=>'plots','activity'=>FarmUnitRecord::where('unit_code','garden')->where('record_date','>=',$activityStart)->count()],
         ]);
-        return ['units'=>$units,'needsAttention'=>FarmUnitRecord::where('status','needs_attention')->count(),'activity'=>$units->sum('activity')];
+        return ['units'=>$units,'needsAttention'=>FarmUnitRecord::where('status','needs_attention')->count(),'activity'=>$units->sum('activity'),
+            'feedPlan'=>$feedPlan, 'dailyFeedKg'=>(float)$feedPlan->sum('requiredKg'),
+            'recordedFeedKg'=>(float)$feedPlan->sum('recordedKg'), 'feedShortageKg'=>(float)$feedPlan->sum('shortageKg'),
+            'totalBirds'=>(int)$feedPlan->sum('birds')];
+    }
+
+    private function financeDashboard(): array
+    {
+        $monthStart = now()->startOfMonth()->toDateString();
+        $monthEnd = now()->endOfMonth()->toDateString();
+        $month = FinancialTransaction::whereBetween('transaction_date', [$monthStart, $monthEnd])->get();
+        $income = (float) $month->where('type', 'money_received')->sum('amount');
+        $expenses = (float) $month->where('type', 'money_paid')->sum('amount');
+        $monthly = collect(range(5, 0))->map(function ($offset) {
+            $date = now()->startOfMonth()->subMonths($offset);
+            $rows = FinancialTransaction::whereBetween('transaction_date', [$date->toDateString(), $date->copy()->endOfMonth()->toDateString()])->get();
+            return ['label'=>$date->format('M'),'income'=>(float)$rows->where('type','money_received')->sum('amount'),'expenses'=>(float)$rows->where('type','money_paid')->sum('amount')];
+        });
+        $expenseGroups = $month->where('type','money_paid')->groupBy(fn($row)=>$row->counterparty ?: $row->description ?: 'Other')->map(fn($rows,$name)=>['name'=>$name,'amount'=>(float)$rows->sum('amount')])->sortByDesc('amount')->take(5)->values();
+        $budgeted = (float) Budget::whereBetween('period_start', [$monthStart, $monthEnd])->sum('planned_amount');
+
+        return [
+            'income'=>$income, 'expenses'=>$expenses, 'net'=>$income-$expenses,
+            'receivables'=>(float) Receivable::where('status','open')->selectRaw('coalesce(sum(amount-amount_paid),0) total')->value('total'),
+            'payables'=>(float) Payable::where('status','open')->selectRaw('coalesce(sum(amount-amount_paid),0) total')->value('total'),
+            'budgeted'=>$budgeted, 'monthly'=>$monthly, 'expenseGroups'=>$expenseGroups,
+            'pending'=>Approval::where('status','pending')->count(),
+            'recent'=>FinancialTransaction::latest('transaction_date')->latest('id')->limit(7)->get(),
+        ];
     }
 
     /**

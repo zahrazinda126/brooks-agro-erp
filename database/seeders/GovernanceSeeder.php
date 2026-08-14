@@ -52,7 +52,7 @@ class GovernanceSeeder extends Seeder
             'vaccination', 'vaccination-due', 'veterinary', 'biosecurity',
             'milk-record', 'kindling-record', 'dog-care',
             'production', 'feedmill', 'quality', 'breeds',
-            'assign-tasks', 'approvals', 'staff-performance',
+            'staff-performance',
             'reports', 'analytics', 'kpi-dashboards',
             'dashboard', 'messages', 'notifications',
         ];
@@ -71,8 +71,7 @@ class GovernanceSeeder extends Seeder
                     'can_create'  => true,
                     'can_edit'    => true,
                     'can_delete'  => false,
-                    // Approves operational work, never money.
-                    'can_approve' => true,
+                    'can_approve' => false,
                     'created_at'  => now(),
                     'updated_at'  => now(),
                 ]
@@ -147,7 +146,7 @@ class GovernanceSeeder extends Seeder
             'production', 'poultry', 'batches', 'egg-inventory',
             'hr', 'staff-performance', 'contracts',
             'loans', 'advances',
-            'messages', 'notifications',
+            'messages', 'notifications', 'assign-supervisors',
         ];
 
         /* What a Director may APPROVE. Money, and the reports that reach them. */
@@ -243,6 +242,14 @@ class GovernanceSeeder extends Seeder
                 ['can_view' => true, 'can_create' => true, 'can_edit' => true,
                  'can_delete' => false, 'can_approve' => true,
                  'created_at' => now(), 'updated_at' => now()]
+            );
+        }
+        $supervisorsId = DB::table('modules')->where('key', 'assign-supervisors')->value('id');
+        if ($ceoId && $supervisorsId) {
+            DB::table('module_role')->updateOrInsert(
+                ['role_id'=>$ceoId,'module_id'=>$supervisorsId],
+                ['can_view'=>true,'can_create'=>true,'can_edit'=>true,'can_delete'=>false,
+                 'can_approve'=>false,'created_at'=>now(),'updated_at'=>now()]
             );
         }
     }

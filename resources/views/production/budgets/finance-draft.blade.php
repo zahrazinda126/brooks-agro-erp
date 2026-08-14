@@ -1,6 +1,21 @@
 @extends('layouts.app')
 @section('title','Manage Unit Budgets')
 @section('content')
+<div class="card">
+    <div class="page-head"><div><p class="card-label">Saved production budgets</p><h3>Drafts and budget history</h3></div>
+        <form method="GET" action="{{ route('production.finance-draft.index') }}" class="form-actions">
+            <input type="hidden" name="unit" value="{{ $unit }}">
+            <label for="production-budget-week">Budget week</label>
+            <select id="production-budget-week" name="week" onchange="this.form.submit()">
+                <option value="{{ now()->startOfWeek()->toDateString() }}" @selected($start->isSameDay(now()->startOfWeek()))>Current week</option>
+                @foreach($availablePeriods as $period)
+                    @if(!$period->period_start->isSameDay(now()->startOfWeek()))<option value="{{ $period->period_start->toDateString() }}" @selected($start->isSameDay($period->period_start))>{{ $period->period_start->format('d M Y') }} — {{ ucfirst($period->status) }} ({{ $period->line_count }} lines)</option>@endif
+                @endforeach
+            </select>
+        </form>
+    </div>
+    @if($availablePeriods->where('status','draft')->isEmpty())<p class="muted">There are no saved production budget drafts.</p>@else<p><strong>{{ $availablePeriods->where('status','draft')->count() }} saved draft period(s)</strong> are available. Choose a week above to review them.</p>@endif
+</div>
 <div class="page-head page-head--split">
     <div><p class="eyebrow">💰 Production planning</p><h2>{{ $category }} Weekly Budget</h2><p>{{ $start->format('j M Y') }} – {{ $end->format('j M Y') }} · This page contains only {{ $category }} requirements.</p></div>
     <a class="btn btn--quiet" href="{{ route('daily.index') }}">Back to My Work</a>
@@ -13,6 +28,7 @@
     @if($locked)<p class="muted">Finance has submitted this weekly budget for approval. Production can review these lines, but cannot change them unless Finance returns the budget to draft.</p>@else
     <form method="POST" action="{{ route('production.finance-draft.store') }}" class="form-grid">@csrf
         <input type="hidden" name="category" value="{{ $category }}">
+        <input type="hidden" name="week" value="{{ $start->toDateString() }}">
         <div class="field"><label>Unit</label><input value="{{ $category }}" disabled></div>
         <div class="field"><label>Item / requirement</label><input name="item" required></div>
         <div class="field"><label>Measure unit</label><input name="unit" placeholder="kg, litres, bags"></div>

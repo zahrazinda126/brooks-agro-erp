@@ -7,6 +7,7 @@ use App\Models\Budget;
 use App\Models\AuditLog;
 use App\Models\Purchase;
 use App\Models\PayrollRun;
+use App\Services\CommunicationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +57,24 @@ class ApprovalController extends Controller
         DB::transaction(function () use ($approval, $data, $request) {
             $old = ['status' => $approval->status, 'level' => $approval->level];
             $step = $approval->currentStep();
+
+            if ($data['decision'] === 'approved' && $approval->approvable instanceof Budget && in_array($step->role_code, ['ceo', 'director'], true)) {
+                $pendingLines = Budget::whereDate('period_start', $approval->approvable->period_start)
+                    ->where('funding_status', 'pending')->get();
+                foreach ($pendingLines as $line) {
+                    $line->update([
+                        'funding_status'=>'funded', 'funded_amount'=>$line->planned_amount,
+                        'funding_note'=>'Funded by default with stage approval.',
+                        'funding_decided_by'=>$request->user()->id, 'funding_decided_at'=>now(),
+                    ]);
+                    $line->fundingDecisions()->create([
+                        'approval_id'=>$approval->id, 'approval_step_id'=>$step->id,
+                        'decision'=>'funded', 'funded_amount'=>$line->planned_amount,
+                        'note'=>'Funded by default with stage approval.',
+                        'decided_by'=>$request->user()->id, 'decided_at'=>now(),
+                    ]);
+                }
+            }
             $step->update(['status'=>$data['decision'], 'decision_note'=>$data['decision_note'] ?? null,
                 'decided_by'=>$request->user()->id, 'decided_at'=>now()]);
 
@@ -99,6 +118,24 @@ class ApprovalController extends Controller
             AuditLog::record('approval_decided', $approval,
                 "{$request->user()->displayName()} {$data['decision']} {$approval->label()}.",
                 $old, ['decision' => $data['decision'], 'stage'=>$step->stage, 'decision_note' => $data['decision_note'] ?? null], 'approvals');
+
+            $communications = app(CommunicationService::class);
+            if ($data['decision'] === 'rejected' || $isFinalApproval) {
+                $communications->toUser(
+                    $approval->submitted_by,
+                    $data['decision'] === 'rejected' ? 'Request returned for correction' : 'Request fully approved',
+                    $approval->label().($data['decision'] === 'rejected'
+                        ? ' was rejected by '.$request->user()->displayName().'. Reason: '.($data['decision_note'] ?? 'No reason supplied.')
+                        : ' completed all approval stages.'),
+                    'workflow', $request->user()->id
+                );
+            } elseif ($next) {
+                $communications->toRole(
+                    $next->role_code, 'Approval awaiting your decision',
+                    $approval->label().' was approved by '.$request->user()->displayName().' and has reached your stage.',
+                    $request->user()->id
+                );
+            }
         });
 
         $approval->refresh();
@@ -123,11 +160,107 @@ class ApprovalController extends Controller
 
         $budgetLines = collect();
         if ($approval->approvable instanceof Budget) {
-            $budgetLines = Budget::where('period_start', $approval->approvable->period_start)
+            $budgetLines = Budget::with(['fundingDecisionMaker', 'fundingDecisions.decisionMaker', 'fundingDecisions.step'])
+                ->where('period_start', $approval->approvable->period_start)
                 ->orderBy('category')->orderBy('id')->get();
         }
 
-        return view('approvals.show', compact('approval', 'budgetLines'));
+        $roleCodes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique();
+        $currentStep = $approval->currentStep();
+        $canActAtThisStage = $approval->status === 'pending'
+            && $request->user()->canDo('approvals', 'approve')
+            && $currentStep && $roleCodes->contains($currentStep->role_code);
+        $canManageFunding = $request->user()->canDo('approvals', 'approve') && (
+            ($approval->status === 'pending' && $currentStep && in_array($currentStep->role_code, ['ceo','director'], true) && $roleCodes->contains($currentStep->role_code))
+            || ($approval->status === 'approved' && $roleCodes->contains('director'))
+        );
+        $fundingSummary = [
+            'requested'=>(float) $budgetLines->sum('planned_amount'),
+            'funded'=>(float) $budgetLines->sum(fn (Budget $line) => (float) ($line->funded_amount ?? 0)),
+            'unfunded'=>$budgetLines->where('funding_status','unfunded')->count(),
+            'cancelled'=>$budgetLines->where('funding_status','cancelled')->count(),
+            'pending'=>$budgetLines->where('funding_status','pending')->count(),
+        ];
+        $budgetSections = $budgetLines->groupBy('category')->map(function ($lines, $category) {
+            return [
+                'category'=>$category,
+                'items'=>$lines->count(),
+                'requested'=>(float) $lines->sum('planned_amount'),
+                'funded'=>(float) $lines->sum(fn (Budget $line) => (float) ($line->funded_amount ?? 0)),
+                'unfunded'=>$lines->where('funding_status','unfunded')->count(),
+                'cancelled'=>$lines->where('funding_status','cancelled')->count(),
+            ];
+        })->values();
+
+        return view('approvals.show', compact('approval', 'budgetLines', 'budgetSections', 'currentStep', 'canActAtThisStage', 'canManageFunding', 'fundingSummary'));
+    }
+
+    public function updateBudgetFunding(Request $request, Approval $approval): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('approvals', 'approve'), 403);
+        $approval->load(['approvable', 'steps']);
+        abort_unless($approval->approvable instanceof Budget, 404);
+
+        $roleCodes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique();
+        $step = $approval->currentStep();
+        $canActDuringReview = $approval->status === 'pending' && $step
+            && in_array($step->role_code, ['ceo', 'director'], true)
+            && $roleCodes->contains($step->role_code);
+        $canReleaseAfterApproval = $approval->status === 'approved' && $roleCodes->contains('director');
+        abort_unless($canActDuringReview || $canReleaseAfterApproval, 403, 'Line funding decisions are waiting for the CEO or Director.');
+
+        $data = $request->validate([
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.decision' => ['required', 'in:funded,partial,unfunded,cancelled'],
+            'lines.*.funded_amount' => ['nullable', 'numeric', 'min:0'],
+            'lines.*.note' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $periodLines = Budget::whereDate('period_start', $approval->approvable->period_start)
+            ->whereIn('id', array_keys($data['lines']))->get()->keyBy('id');
+        abort_unless($periodLines->count() === count($data['lines']), 422, 'One or more budget lines do not belong to this approval.');
+
+        foreach ($data['lines'] as $id => $lineData) {
+            $requested = (float) $periodLines[$id]->planned_amount;
+            $amount = match ($lineData['decision']) {
+                'funded' => $requested,
+                'unfunded', 'cancelled' => 0,
+                default => (float) ($lineData['funded_amount'] ?? 0),
+            };
+            if ($lineData['decision'] === 'partial' && ($amount <= 0 || $amount >= $requested)) {
+                return back()->withErrors(["lines.{$id}.funded_amount"=>'A partial amount must be greater than zero and less than the requested total.'])->withInput();
+            }
+            if (in_array($lineData['decision'], ['unfunded', 'cancelled'], true) && blank($lineData['note'] ?? null)) {
+                return back()->withErrors(["lines.{$id}.note"=>'Give a reason for an unfunded or cancelled item.'])->withInput();
+            }
+        }
+
+        DB::transaction(function () use ($data, $periodLines, $approval, $step, $request) {
+            foreach ($data['lines'] as $id => $lineData) {
+                $budget = $periodLines[$id];
+                $amount = match ($lineData['decision']) {
+                    'funded' => (float) $budget->planned_amount,
+                    'unfunded', 'cancelled' => 0,
+                    default => (float) $lineData['funded_amount'],
+                };
+                $old = $budget->only(['funding_status', 'funded_amount', 'funding_note']);
+                $budget->update([
+                    'funding_status'=>$lineData['decision'], 'funded_amount'=>$amount,
+                    'funding_note'=>$lineData['note'] ?? null, 'funding_decided_by'=>$request->user()->id,
+                    'funding_decided_at'=>now(),
+                ]);
+                $budget->fundingDecisions()->create([
+                    'approval_id'=>$approval->id, 'approval_step_id'=>$step?->id,
+                    'decision'=>$lineData['decision'], 'funded_amount'=>$amount,
+                    'note'=>$lineData['note'] ?? null, 'decided_by'=>$request->user()->id, 'decided_at'=>now(),
+                ]);
+                AuditLog::record('budget_line_funding_decided', $budget,
+                    $request->user()->displayName().' marked '.$budget->item.' as '.$lineData['decision'].'.',
+                    $old, ['funding_status'=>$lineData['decision'], 'funded_amount'=>$amount, 'funding_note'=>$lineData['note'] ?? null], 'budget');
+            }
+        });
+
+        return back()->with('status', 'Budget line funding decisions saved.');
     }
 
     public function comment(Request $request, Approval $approval): RedirectResponse

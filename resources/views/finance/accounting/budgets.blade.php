@@ -1,33 +1,70 @@
 @extends('layouts.app')
+
 @section('title','Weekly Budget')
 @section('content')
-<div class="page-head"><h2>Weekly budget</h2><p>Choose a unit for its details, or view the combined plan.</p></div>
-<div class="card">
-    <p class="card-label">Weekly budget</p>
-    <h3>{{ $periodStart ? $periodStart->format('d M Y').' – '.$periodEnd->format('d M Y') : 'Current week' }}</h3>
-    <p><strong>Status: {{ ucfirst($budgetStatus) }}</strong></p>
-    @if($budgetStatus==='draft' && $items->isNotEmpty())
-        <form method="POST" action="{{ route('finance.budgets.submit') }}" class="form-actions">@csrf <button class="btn">Submit for approval</button></form>
-    @elseif($budgetStatus==='submitted')
-        <p>This budget was submitted {{ $approval?->submitted_at?->format('d M Y, H:i') }}.</p>
-        <p><strong>Stage {{ $approval?->level ?? 1 }} of {{ $approval?->required_levels ?? 2 }}:</strong> awaiting {{ ucfirst($approval?->currentStep()?->role_code ?? 'approval') }}.</p>
-        @foreach($approval?->steps ?? [] as $step)
-            @if($step->status === 'approved')<p>Stage {{ $step->stage }} approved by <strong>{{ $step->decisionMaker?->displayName() }}</strong> on {{ $step->decided_at->format('d M Y, H:i') }}.</p>@endif
-        @endforeach
-    @elseif($budgetStatus==='approved')
-        <p>Approved by <strong>{{ $approval?->decisionMaker?->displayName() ?? 'Authorised approver' }}</strong>@if($approval?->decided_at) on <strong>{{ $approval->decided_at->format('d M Y, H:i') }}</strong>@endif.</p>
-        @if($approval?->decision_note)<p><strong>Decision note:</strong> {{ $approval->decision_note }}</p>@endif
-    @elseif($budgetStatus==='rejected')
-        <p>Rejected by <strong>{{ $approval?->decisionMaker?->displayName() ?? 'Authorised approver' }}</strong>@if($approval?->decided_at) on <strong>{{ $approval->decided_at->format('d M Y, H:i') }}</strong>@endif.</p>
-        @if($approval?->decision_note)<p><strong>Reason:</strong> {{ $approval->decision_note }}</p>@endif
-        <p>The rejected submission remains in the approval history. A revision must pass through the CEO and Director again.</p>
-        @if(auth()->user()->canDo('budget','edit'))
-            <form method="POST" action="{{ route('finance.budgets.revise') }}" class="form-actions">@csrf<button class="btn">Open budget for revision</button></form>
-        @endif
-    @endif
+@php
+    $unfundedItems=$items->where('funding_status','unfunded');
+    $cancelledItems=$items->where('funding_status','cancelled');
+    $fundedItems=$items->whereIn('funding_status',['funded','partial']);
+@endphp
+
+<div class="page-head page-head--split">
+    <div><p class="eyebrow">Finance</p><h2>Weekly budget</h2><p>Prepare the current plan or review a previous budget and its funding decisions.</p></div>
+    <form method="GET" action="{{ route('finance.budgets.index') }}" class="period-picker">
+        <label for="budget-week">Budget week</label>
+        <select id="budget-week" name="week" onchange="this.form.submit()">
+            <option value="{{ now()->startOfWeek()->toDateString() }}" @selected($selectedWeek===now()->startOfWeek()->toDateString())>Current week</option>
+            @foreach($availablePeriods as $period)
+                @if($period->period_start->toDateString()!==now()->startOfWeek()->toDateString())<option value="{{ $period->period_start->toDateString() }}" @selected($selectedWeek===$period->period_start->toDateString())>{{ $period->period_start->format('d M Y') }} · {{ ucfirst($period->status) }}</option>@endif
+            @endforeach
+        </select>
+    </form>
 </div>
-<nav class="form-actions" aria-label="Budget units"><a class="btn {{ $unit==='all'?'':'btn--quiet' }}" href="{{ route('finance.budgets.index') }}">All units</a>@foreach(['poultry'=>'Poultry','kituntu'=>'Kituntu Garden','goats'=>'Goats','rabbits'=>'Rabbits','dogs'=>'Dogs','administration'=>'Administration'] as $key=>$label)<a class="btn {{ $unit===$key?'':'btn--quiet' }}" href="{{ route('finance.budgets.index',['unit'=>$key]) }}">{{ $label }}</a>@endforeach</nav>
-<div class="summary-grid"><div class="summary-card"><span>{{ $unit==='all' ? 'Combined weekly budget' : 'This unit’s budget' }}</span><strong>UGX {{ number_format($unit==='all'?$allTotal:$plannedTotal) }}</strong></div></div>
-<form method="POST" action="{{ route('finance.budgets.update-weekly') }}">@csrf @method('PUT')<div class="card table-card"><table><thead><tr><th>Section</th><th>Item</th><th>Unit</th><th>Quantity</th><th>Unit price</th><th>Total</th>@if($budgetStatus==='draft')<th></th>@endif</tr></thead><tbody>@forelse($items as $item)<tr><td>{{ $item->category }}</td><td>{{ $item->item }}</td><td>{{ $item->unit }}</td><td>@if($budgetStatus==='draft')<input name="lines[{{ $item->id }}][quantity]" type="number" step="0.01" value="{{ $item->quantity }}">@else{{ number_format((float)$item->quantity, 2) }}@endif</td><td>@if($budgetStatus==='draft')<input name="lines[{{ $item->id }}][unit_price]" type="number" value="{{ $item->unit_price }}">@elseUGX {{ number_format((float)$item->unit_price, 2) }}@endif</td><td>UGX {{ number_format($item->planned_amount) }}</td>@if($budgetStatus==='draft')<td><button formmethod="POST" formaction="{{ route('finance.budgets.destroy',$item) }}" name="_method" value="DELETE">Remove</button></td>@endif</tr>@empty<tr><td colspan="7" class="empty">No budget lines for this unit yet.</td></tr>@endforelse</tbody></table></div>@if($items->isNotEmpty() && $budgetStatus==='draft')<div class="form-actions"><button class="btn">Save weekly budget</button></div>@endif</form>
-@if(auth()->user()->canDo('budget','create') && $budgetStatus==='draft')<div class="form-actions"><button type="button" class="btn" id="show-add-item">Add item</button></div><form id="add-item" method="POST" action="{{ route('finance.budgets.store') }}" class="card" hidden>@csrf <h3>Add budget item</h3><div class="form-grid"><div class="field"><label>Section</label><select name="category"><option>Poultry</option><option>Kituntu Garden</option><option>Goat Unit</option><option>Rabbits Unit</option><option>Dogs Unit</option><option>Administration</option></select></div><div class="field"><label>Item</label><input name="item" required></div><div class="field"><label>Unit</label><input name="unit"></div><div class="field"><label>Quantity</label><input name="quantity" type="number" step="0.01" required></div><div class="field"><label>Unit price</label><input name="unit_price" type="number" required></div><input name="period_start" type="hidden" value="{{ now()->startOfWeek()->format('Y-m-d') }}"><input name="period_end" type="hidden" value="{{ now()->endOfWeek()->format('Y-m-d') }}"></div><div class="form-actions"><button class="btn">Add item</button></div></form><script>document.getElementById('show-add-item').addEventListener('click',()=>{const f=document.getElementById('add-item');f.hidden=false;f.scrollIntoView({behavior:'smooth'});});</script>@endif
+
+<section class="status-banner status-banner--{{ $budgetStatus }}">
+    <div><span class="status-pill">{{ ucfirst($budgetStatus) }}</span><h3>{{ $periodStart ? $periodStart->format('d M').' – '.$periodEnd->format('d M Y') : 'No budget started for this week' }}</h3>
+        @if($budgetStatus==='submitted')<p>Awaiting {{ ucwords(str_replace('-',' ',$approval?->currentStep()?->role_code ?? 'approval')) }}.</p>
+        @elseif($budgetStatus==='approved')<p>Approved for implementation. Funding decisions are shown below.</p>
+        @elseif($budgetStatus==='rejected')<p>{{ $approval?->decision_note ?: 'Returned for correction.' }}</p>
+        @else<p>{{ $items->count() }} line(s) in the working draft.</p>@endif
+    </div>
+    <div class="form-actions form-actions--flush">
+        @if($budgetStatus==='draft' && $items->isNotEmpty())<form method="POST" action="{{ route('finance.budgets.submit') }}">@csrf<input type="hidden" name="week" value="{{ $selectedWeek }}"><button class="btn btn--inline">Submit for approval</button></form>@endif
+        @if($budgetStatus==='rejected' && auth()->user()->canDo('budget','edit'))<form method="POST" action="{{ route('finance.budgets.revise') }}">@csrf<input type="hidden" name="week" value="{{ $selectedWeek }}"><button class="btn btn--inline">Open revision</button></form>@endif
+    </div>
+</section>
+
+<nav class="unit-tabs" aria-label="Budget units">
+    <a class="{{ $unit==='all'?'active':'' }}" href="{{ route('finance.budgets.index',['week'=>$selectedWeek]) }}">All</a>
+    @foreach(['poultry'=>'Poultry','kituntu'=>'Garden','goats'=>'Goats','rabbits'=>'Rabbits','dogs'=>'Dogs','staff-welfare'=>'Staff Welfare','administration'=>'Administration'] as $key=>$label)<a class="{{ $unit===$key?'active':'' }}" href="{{ route('finance.budgets.index',['unit'=>$key,'week'=>$selectedWeek]) }}">{{ $label }}</a>@endforeach
+</nav>
+
+<div class="summary-grid summary-grid--compact">
+    <div class="summary-card"><span>Requested</span><strong>UGX {{ number_format((float)$plannedTotal) }}</strong></div>
+    @if($budgetStatus!=='draft')<div class="summary-card"><span>Funded</span><strong>UGX {{ number_format((float)$fundedItems->sum('funded_amount')) }}</strong></div><div class="summary-card"><span>Awaiting funds</span><strong>{{ $unfundedItems->count() }}</strong></div><div class="summary-card"><span>Cancelled</span><strong>{{ $cancelledItems->count() }}</strong></div>@endif
+</div>
+
+@if($unfundedItems->isNotEmpty())
+<details class="card disclosure" open><summary><span><strong>Unfunded — keep for later</strong><small>Can be released if money arrives midweek</small></span><span class="pill">{{ $unfundedItems->count() }}</span></summary><div class="disclosure__body table-wrap"><table class="exec-table"><thead><tr><th>Item</th><th class="num">Requested</th><th>Reason</th></tr></thead><tbody>@foreach($unfundedItems as $item)<tr><td><strong>{{ $item->item }}</strong><small>{{ $item->category }}</small></td><td class="num">UGX {{ number_format((float)$item->planned_amount) }}</td><td>{{ $item->funding_note }}</td></tr>@endforeach</tbody></table></div></details>
+@endif
+@if($cancelledItems->isNotEmpty())
+<details class="card disclosure"><summary><span><strong>Cancelled — do not carry out</strong><small>Items removed by executive decision</small></span><span class="pill">{{ $cancelledItems->count() }}</span></summary><div class="disclosure__body table-wrap"><table class="exec-table"><thead><tr><th>Item</th><th class="num">Requested</th><th>Reason</th></tr></thead><tbody>@foreach($cancelledItems as $item)<tr><td><strong>{{ $item->item }}</strong><small>{{ $item->category }}</small></td><td class="num">UGX {{ number_format((float)$item->planned_amount) }}</td><td>{{ $item->funding_note }}</td></tr>@endforeach</tbody></table></div></details>
+@endif
+
+<details class="card disclosure" @if($budgetStatus==='draft') open @endif>
+    <summary><span><strong>{{ $budgetStatus==='draft' ? 'Edit budget lines' : 'All budget lines' }}</strong><small>{{ $items->count() }} items for {{ $unit==='all'?'all units':ucfirst($unit) }}</small></span></summary>
+    <div class="disclosure__body">
+        @if($items->isEmpty())<p class="empty">No budget lines for this selection.</p>@else
+        <form method="POST" action="{{ route('finance.budgets.update-weekly') }}">@csrf @method('PUT')
+            <div class="table-wrap"><table class="exec-table"><thead><tr><th>Section / item</th><th>Unit</th><th class="num">Quantity</th><th class="num">Unit price</th><th class="num">Total</th>@if($budgetStatus==='draft')<th></th>@endif</tr></thead><tbody>
+            @foreach($items as $item)<tr><td><strong>{{ $item->item }}</strong><small>{{ $item->category }}</small></td><td>{{ $item->unit }}</td><td class="num">@if($budgetStatus==='draft')<input name="lines[{{ $item->id }}][quantity]" type="number" min="0" step="0.01" value="{{ $item->quantity }}">@else{{ number_format((float)$item->quantity,2) }}@endif</td><td class="num">@if($budgetStatus==='draft')<input name="lines[{{ $item->id }}][unit_price]" type="number" min="0" step="0.01" value="{{ $item->unit_price }}">@else UGX {{ number_format((float)$item->unit_price,2) }}@endif</td><td class="num"><strong>UGX {{ number_format((float)$item->planned_amount) }}</strong></td>@if($budgetStatus==='draft')<td><button class="link-danger" formmethod="POST" formaction="{{ route('finance.budgets.destroy',$item) }}" name="_method" value="DELETE">Remove</button></td>@endif</tr>@endforeach
+            </tbody></table></div>
+            @if($budgetStatus==='draft')<div class="sticky-actions"><button class="btn btn--inline">Save changes</button></div>@endif
+        </form>@endif
+    </div>
+</details>
+
+@if(auth()->user()->canDo('budget','create') && $budgetStatus==='draft')
+<details class="card disclosure"><summary><span><strong>Add a budget item</strong><small>Add an exception or requirement not already listed</small></span></summary><div class="disclosure__body"><form method="POST" action="{{ route('finance.budgets.store') }}">@csrf<div class="form-grid"><div class="field"><label>Section</label><select name="category">@foreach(['Poultry','Kituntu Garden','Goat Unit','Rabbits Unit','Dogs Unit','Administration'] as $category)<option>{{ $category }}</option>@endforeach</select></div><div class="field"><label>Item</label><input name="item" required></div><div class="field"><label>Unit</label><input name="unit"></div><div class="field"><label>Quantity</label><input name="quantity" type="number" min="0.01" step="0.01" required></div><div class="field"><label>Unit price</label><input name="unit_price" type="number" min="0" step="0.01" required></div><input name="period_start" type="hidden" value="{{ $selectedWeek }}"><input name="period_end" type="hidden" value="{{ \Carbon\Carbon::parse($selectedWeek)->endOfWeek()->toDateString() }}"></div><button class="btn btn--inline">Add item</button></form></div></details>
+@endif
 @endsection

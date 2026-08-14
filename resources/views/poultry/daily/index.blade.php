@@ -58,7 +58,6 @@
 @forelse ($batches as $batch)
 
     @php
-        $eggsDone   = $doneEggs->contains($batch->id);
         $feedDone   = $doneFeed->contains($batch->id);
         $needLitter = isset($litterDue) && $litterDue->contains($batch->id);
         $lateLitter = isset($litterLate) && $litterLate->contains($batch->id);
@@ -86,7 +85,7 @@
                 'label' => 'Eggs',
                 'icon'  => 'egg',
                 'url'   => route('daily.eggs', $batch),
-                'done'  => $eggsDone,
+                'done'  => false, // collections can be recorded any number of times
                 'flag'  => null,
             ];
         }

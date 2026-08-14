@@ -33,6 +33,12 @@ class ProductionBudgetController extends Controller
         $unit = $request->string('unit')->toString() ?: 'poultry';
         abort_unless(isset(self::UNITS[$unit]), 404);
         $start = $request->date('week')?->startOfWeek() ?? now()->startOfWeek();
+        $availablePeriods = $this->productionBudgetQuery()
+            ->select('period_start', 'period_end', 'status')
+            ->selectRaw('count(*) as line_count, sum(planned_amount) as planned_total')
+            ->groupBy('period_start', 'period_end', 'status')
+            ->orderByDesc('period_start')
+            ->get();
         $lines = $this->unitBudgetQuery($unit)
             ->whereDate('period_start', $start->toDateString())
             ->orderBy('category')
@@ -44,9 +50,11 @@ class ProductionBudgetController extends Controller
             'start' => $start,
             'end' => $start->copy()->endOfWeek(),
             'locked' => Budget::whereDate('period_start', $start->toDateString())->where('status', '!=', 'draft')->exists(),
+            'isCurrentWeek' => $start->isSameDay(now()->startOfWeek()),
             'units' => self::UNITS,
             'unit' => $unit,
             'category' => self::UNITS[$unit],
+            'availablePeriods' => $availablePeriods,
         ]);
     }
 
@@ -61,9 +69,11 @@ class ProductionBudgetController extends Controller
             'quantity' => ['required', 'numeric', 'min:0.01'],
             'unit_price' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'week' => ['nullable', 'date'],
         ]);
 
-        $start = now()->startOfWeek();
+        $start = isset($data['week']) ? \Carbon\Carbon::parse($data['week'])->startOfWeek() : now()->startOfWeek();
+        unset($data['week']);
         abort_if(
             Budget::whereDate('period_start', $start->toDateString())->where('status', '!=', 'draft')->exists(),
             422,
@@ -119,6 +129,15 @@ class ProductionBudgetController extends Controller
 
         return Budget::query()->where(function ($query) use ($words) {
             foreach ($words as $word) {
+                $query->orWhereRaw('lower(category) like ?', ['%'.$word.'%']);
+            }
+        });
+    }
+
+    private function productionBudgetQuery()
+    {
+        return Budget::query()->where(function ($query) {
+            foreach (['poultry', 'goat', 'rabbit', 'dog', 'garden', 'kituntu'] as $word) {
                 $query->orWhereRaw('lower(category) like ?', ['%'.$word.'%']);
             }
         });

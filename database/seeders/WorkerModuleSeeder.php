@@ -36,7 +36,7 @@ class WorkerModuleSeeder extends Seeder
      */
     private const WORKER_MODULES = [
         // Their own work
-        'my-work', 'my-tasks', 'my-performance',
+        'my-work', 'my-performance',
         'notifications', 'messages',
 
         // Daily recording

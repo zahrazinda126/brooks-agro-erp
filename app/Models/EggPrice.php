@@ -43,7 +43,7 @@ class EggPrice extends Model
     }
 
     /** The price that applied to a grade on a given date. */
-    public static function on(int $gradeId, $date): ?float
+    public static function priceOn(int $gradeId, $date): ?float
     {
         $row = static::where('egg_grade_id', $gradeId)
             ->where('effective_from', '<=', $date)

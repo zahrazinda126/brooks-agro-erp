@@ -64,7 +64,7 @@ return new class extends Migration
 
             $table->date('collected_on');
             // Most farms collect more than once a day.
-            $table->string('session', 20)->default('morning'); // morning|midday|evening
+            $table->string('session', 20)->default('morning'); // morning|afternoon|evening
 
             $table->unsignedInteger('total_eggs')->default(0);
 
@@ -171,6 +171,7 @@ return new class extends Migration
             $table->string('status', 20)->default('submitted');
             $table->foreignId('approved_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('approved_at')->nullable();
+            $table->text('query_note')->nullable();
 
             $table->timestamps();
 

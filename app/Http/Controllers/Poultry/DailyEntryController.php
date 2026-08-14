@@ -48,11 +48,6 @@ class DailyEntryController extends Controller
 
         // What has already been done today, so the screen can say so
         // rather than letting someone enter it twice.
-        $doneEggs = EggCollection::whereDate('collected_on', $today)
-            ->whereIn('animal_group_id', $batches->pluck('id'))
-            ->pluck('animal_group_id')
-            ->unique();
-
         $doneFeed = FeedConsumption::whereDate('used_on', $today)
             ->whereIn('animal_group_id', $batches->pluck('id'))
             ->pluck('animal_group_id')
@@ -72,7 +67,6 @@ class DailyEntryController extends Controller
 
         return view('poultry.daily.index', [
             'batches'  => $batches,
-            'doneEggs' => $doneEggs,
             'doneFeed' => $doneFeed,
             'livestockGroups'=>$livestockGroups,
             'dailyLivestock'=>$dailyLivestock,
@@ -91,6 +85,8 @@ class DailyEntryController extends Controller
     public function eggsForm(Request $request, AnimalGroup $batch): View
     {
         $this->assertVisible($request, $batch);
+        $hour = now()->hour;
+        $session = $hour < 12 ? 'morning' : ($hour < 17 ? 'afternoon' : 'evening');
 
         /*
          | Only the sizes this flock's age makes likely, plus the defect
@@ -111,18 +107,11 @@ class DailyEntryController extends Controller
                 ->where('is_active', true)->orderBy('sort_order')->get();
         }
 
-        $existing = EggCollection::with('lines')
-            ->where('animal_group_id', $batch->id)
-            ->whereDate('collected_on', now()->toDateString())
-            ->where('session', $request->query('session', 'morning'))
-            ->first();
-
         return view('poultry.daily.eggs', [
             'batch'    => $batch,
             'likely'   => $likely,
             'defects'  => $defects,
-            'session'  => $request->query('session', 'morning'),
-            'existing' => $existing,
+            'session'  => $session,
         ]);
     }
 
@@ -132,12 +121,14 @@ class DailyEntryController extends Controller
         abort_unless($request->user()->canDo('egg-entry', 'create'), 403);
 
         $data = $request->validate([
-            'session'     => ['required', 'in:morning,midday,evening'],
-            'collected_at' => ['required', 'date_format:H:i'],
             'trays'       => ['array'],
             'trays.*'     => ['nullable', 'integer', 'min:0', 'max:2000'],
             'loose'       => ['array'],
             'loose.*'     => ['nullable', 'integer', 'min:0', 'max:29'],
+            'egg_mass_g' => ['nullable', 'numeric', 'min:0'],
+            'damaged_eggs' => ['required', 'integer', 'min:0'],
+            'bird_weight_kg' => ['nullable', 'numeric', 'min:0'],
+            'feed_amount_kg' => ['nullable', 'numeric', 'min:0'],
             'worker_note' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -170,28 +161,29 @@ class DailyEntryController extends Controller
                 ->withErrors(['trays' => 'Enter how many eggs you collected before saving.']);
         }
 
-        DB::transaction(function () use ($batch, $data, $lines, $total, $request) {
+        $savedAt = now();
+        $session = $savedAt->hour < 12 ? 'morning' : ($savedAt->hour < 17 ? 'afternoon' : 'evening');
 
-            $collection = EggCollection::updateOrCreate(
-                [
+        DB::transaction(function () use ($batch, $data, $lines, $total, $request, $savedAt, $session) {
+
+            $collection = EggCollection::create([
                     'animal_group_id' => $batch->id,
-                    'collected_on'    => now()->toDateString(),
-                    'session'         => $data['session'],
-                ],
-                [
-                    'department_id' => $batch->department_id,
+                    'department_id'   => $batch->department_id,
+                    'collected_on'    => $savedAt->toDateString(),
+                    'session'         => $session,
                     // What the worker says. recorded_at, set below, is what
                     // the system saw — the two are different facts.
-                    'collected_at'  => $data['collected_at'],
+                    'collected_at'  => $savedAt->format('H:i:s'),
                     'total_eggs'    => $total,
+                    'egg_mass_g' => $data['egg_mass_g'] ?? null,
+                    'damaged_eggs' => $data['damaged_eggs'],
+                    'bird_weight_kg' => $data['bird_weight_kg'] ?? null,
+                    'feed_amount_kg' => $data['feed_amount_kg'] ?? null,
                     'recorded_by'   => $request->user()->id,
-                    'recorded_at'   => now(),
+                    'recorded_at'   => $savedAt,
                     'worker_note'   => $data['worker_note'] ?? null,
                     'status'        => 'submitted',
-                ]
-            );
-
-            $collection->lines()->delete();
+            ]);
 
             foreach ($lines as $line) {
                 $collection->lines()->create($line);

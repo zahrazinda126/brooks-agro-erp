@@ -9,8 +9,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class EggCollection extends Model
 {
     protected $fillable = [
-        'animal_group_id', 'department_id', 'collected_on', 'session',
-        'total_eggs', 'recorded_by', 'recorded_at', 'worker_note',
+        'animal_group_id', 'department_id', 'collected_on', 'collected_at', 'session',
+        'total_eggs', 'egg_mass_g', 'damaged_eggs', 'bird_weight_kg', 'feed_amount_kg',
+        'recorded_by', 'recorded_at', 'worker_note',
         'status', 'approved_by', 'approved_at', 'query_note',
     ];
 
@@ -20,6 +21,9 @@ class EggCollection extends Model
             'collected_on' => 'date',
             'recorded_at'  => 'datetime',
             'approved_at'  => 'datetime',
+            'egg_mass_g' => 'decimal:2',
+            'bird_weight_kg' => 'decimal:2',
+            'feed_amount_kg' => 'decimal:2',
         ];
     }
 

@@ -27,6 +27,7 @@ class CollectionController extends Controller
 
         $query = EggCollection::with(['batch', 'lines.grade', 'recorder.employee'])
             ->visibleTo($user)
+            ->where('status', 'approved')
             ->whereBetween('collected_on', [$from, $to])
             ->orderByDesc('collected_on')
             ->orderByDesc('recorded_at');
@@ -39,6 +40,7 @@ class CollectionController extends Controller
 
         // Totals across the whole range, not just this page.
         $all = EggCollection::visibleTo($user)
+            ->where('status', 'approved')
             ->whereBetween('collected_on', [$from, $to]);
 
         if ($batchId) {
