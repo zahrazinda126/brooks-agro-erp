@@ -25,7 +25,7 @@
     </form>
 
     <div class="form-actions">
-        <a class="btn btn--inline" href="{{ route('hr.reports.export', request()->only(['report', 'from', 'to'])) }}">Download Excel (CSV)</a>
+        <a class="btn btn--inline" href="{{ route('hr.reports.export', request()->only(['report', 'from', 'to'])) }}">Download branded Excel</a>
     </div>
 
     <div class="data-list">

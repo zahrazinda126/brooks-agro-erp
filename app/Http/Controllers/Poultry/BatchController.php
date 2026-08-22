@@ -10,9 +10,12 @@ use App\Models\AuditLog;
 use App\Models\Breed;
 use App\Models\Department;
 use App\Models\Setting;
+use App\Models\PoultryHouse;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 /*
@@ -71,12 +74,16 @@ class BatchController extends Controller
             'breeds'      => Breed::poultry()->where('is_active', true)->orderBy('name')->get(),
             'departments' => $this->departments($request->user()),
             'nextCode'    => $this->nextCode(),
+            'availableHouses' => PoultryHouse::where('is_active', true)
+                ->whereNull('animal_group_id')->orderBy('house_number')->get(),
         ]);
     }
 
     public function store(StoreBatchRequest $request): RedirectResponse
     {
         $data = $request->validated();
+        $data['breed_id'] = $this->resolveBreed($data['breed_name'] ?? null, $data['purpose']);
+        unset($data['breed_name']);
 
         $data['code'] = $data['code'] ?: $this->nextCode();
 
@@ -94,6 +101,9 @@ class BatchController extends Controller
         $free = (int) ($data['quantity_free'] ?? 0);
 
         $data['current_quantity'] = $data['quantity_received'] + $free;
+        $data['expected_brooder_exit_date'] = (int) $data['age_days_on_arrival'] <= 42
+            ? Carbon::parse($data['received_date'])->addDays(42 - (int) $data['age_days_on_arrival'])->toDateString()
+            : null;
         if (isset($data['total_cost'])) {
             $data['unit_cost'] = round((float) $data['total_cost'] / $data['quantity_received'], 2);
         } else {
@@ -110,7 +120,39 @@ class BatchController extends Controller
             (int) ($data['age_days_on_arrival'] ?? 0)
         );
 
-        $batch = AnimalGroup::create($data);
+        $allocations = collect($data['house_allocations'] ?? [])->map(fn ($quantity) => (int) $quantity)->filter();
+        $newHouses = collect($data['new_houses'] ?? [])->filter(fn ($house) =>
+            trim((string) ($house['house_number'] ?? '')) !== '' && (int) ($house['bird_quantity'] ?? 0) > 0
+        );
+        unset($data['house_allocations']);
+        unset($data['new_houses']);
+
+        $batch = DB::transaction(function () use ($data, $allocations, $newHouses) {
+            $houses = PoultryHouse::whereIn('id', $allocations->keys())
+                ->where('is_active', true)->whereNull('animal_group_id')
+                ->lockForUpdate()->get()->keyBy('id');
+
+            abort_if($houses->count() !== $allocations->count(), 422,
+                'One of the selected houses is no longer available. Refresh the page and choose again.');
+
+            $batch = AnimalGroup::create($data);
+            foreach ($allocations as $houseId => $quantity) {
+                $houses[$houseId]->update(['animal_group_id' => $batch->id, 'bird_quantity' => $quantity]);
+            }
+            $createdHouses = collect();
+            foreach ($newHouses as $houseData) {
+                $createdHouses->push(PoultryHouse::create([
+                    'house_number' => trim($houseData['house_number']),
+                    'house_type' => $houseData['house_type'] ?? 'standard',
+                    'animal_group_id' => $batch->id,
+                    'bird_quantity' => (int) $houseData['bird_quantity'],
+                    'is_active' => true,
+                ]));
+            }
+            $batch->update(['house' => $houses->pluck('house_number')->merge($createdHouses->pluck('house_number'))->join(', ')]);
+
+            return $batch;
+        });
 
         AuditLog::record(
             'created', $batch,
@@ -150,6 +192,8 @@ class BatchController extends Controller
         $this->assertVisible($request, $batch);
 
         $data   = $request->validated();
+        $data['breed_id'] = $this->resolveBreed($data['breed_name'] ?? null, $data['purpose']);
+        unset($data['breed_name']);
         $before = $batch->only(array_keys($data));
 
         // Only the paid birds carry cost. Free extras never do.
@@ -251,6 +295,35 @@ class BatchController extends Controller
         return Carbon::parse($receivedDate)
             ->addDays(max(0, $daysToLay))
             ->toDateString();
+    }
+
+    private function resolveBreed(?string $name, string $purpose): ?int
+    {
+        $name = trim((string) $name);
+        if ($name === '') {
+            return null;
+        }
+
+        $existing = Breed::poultry()->whereRaw('lower(name) = ?', [Str::lower($name)])->first();
+        if ($existing) {
+            return $existing->id;
+        }
+
+        $baseCode = Str::upper(Str::slug($name, '-')) ?: 'POULTRY-BREED';
+        $code = $baseCode;
+        $suffix = 2;
+        while (Breed::where('code', $code)->exists()) {
+            $code = $baseCode.'-'.$suffix++;
+        }
+
+        return Breed::create([
+            'code' => $code,
+            'name' => $name,
+            'species' => 'poultry',
+            'purpose' => $purpose,
+            'is_active' => true,
+            'notes' => 'Added during poultry batch registration.',
+        ])->id;
     }
 
     /**

@@ -31,13 +31,13 @@ class MortalityAssessmentController extends Controller
         $user = $request->user();
 
         $pending = MortalityRecord::with(['batch.breed', 'recorder.employee', 'department'])
-            ->visibleTo($user)
+            ->when(! $this->isProductionManager($user), fn ($query) => $query->visibleTo($user))
             ->pendingAssessment()
             ->orderBy('recorded_at')          // oldest first
             ->get();
 
         $recent = MortalityRecord::with(['batch', 'cause', 'assessor.employee'])
-            ->visibleTo($user)
+            ->when(! $this->isProductionManager($user), fn ($query) => $query->visibleTo($user))
             ->where('status', 'assessed')
             ->orderByDesc('assessed_at')
             ->limit(10)
@@ -140,7 +140,7 @@ class MortalityAssessmentController extends Controller
     {
         $user = $request->user();
 
-        if ($user->isSuperuser()) {
+        if ($user->isSuperuser() || $this->isProductionManager($user)) {
             return;
         }
 
@@ -149,5 +149,13 @@ class MortalityAssessmentController extends Controller
             403,
             'This record belongs to a section you are not posted to.'
         );
+    }
+
+    private function isProductionManager($user): bool
+    {
+        return $user->role?->code === 'production-manager'
+            || $user->roles->contains('code', 'production-manager')
+            || (($user->role?->code === 'department-manager' || $user->roles->contains('code', 'department-manager'))
+                && ($user->department?->code === 'production' || $user->departments->contains('code', 'production')));
     }
 }

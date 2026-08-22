@@ -41,6 +41,8 @@
 <form method="POST" action="{{ route('daily.eggs.store', $batch) }}" id="eggForm">
     @csrf
 
+    @include('poultry.daily._house_select', ['houseChoices' => $houseChoices, 'selectedHouse' => $selectedHouse, 'entryRoute' => 'daily.eggs'])
+
     {{-- Which round --}}
     <div class="ask">
         <p class="ask-q">Collection period</p>
@@ -136,9 +138,7 @@
         <p class="ask-hint">House: {{ $batch->house ?: $batch->code }}. Leave a measurement empty when it was not taken.</p>
         <div class="form-grid">
             <div class="field"><label>Egg mass (g)</label><input type="number" name="egg_mass_g" value="{{ old('egg_mass_g') }}" min="0" step="0.01" inputmode="decimal"></div>
-            <div class="field"><label>Number of damaged eggs</label><input type="number" name="damaged_eggs" value="{{ old('damaged_eggs',0) }}" min="0" inputmode="numeric" required></div>
             <div class="field"><label>Bird weight (kg)</label><input type="number" name="bird_weight_kg" value="{{ old('bird_weight_kg') }}" min="0" step="0.01" inputmode="decimal"></div>
-            <div class="field"><label>Amount of feed (kg)</label><input type="number" name="feed_amount_kg" value="{{ old('feed_amount_kg') }}" min="0" step="0.01" inputmode="decimal"><span class="field-hint">Also appears in the daily feed record for stock verification.</span></div>
         </div>
     </div>
 

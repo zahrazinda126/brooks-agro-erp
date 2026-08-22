@@ -40,6 +40,8 @@
 <form method="POST" action="{{ route('daily.deaths.store', $batch) }}">
     @csrf
 
+    @include('poultry.daily._house_select', ['houseChoices' => $houseChoices, 'selectedHouse' => $selectedHouse, 'entryRoute' => 'daily.deaths'])
+
     <div class="ask">
         <p class="ask-q">How many birds died today?</p>
         <p class="ask-hint">If none died, leave it at 0 and save.</p>

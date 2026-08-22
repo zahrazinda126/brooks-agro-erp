@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class MortalityRecord extends Model
 {
     protected $fillable = [
-        'animal_group_id', 'department_id', 'occurred_on',
+        'animal_group_id', 'poultry_house_id', 'department_id', 'occurred_on',
         'quantity_died', 'quantity_culled', 'recorded_by', 'recorded_at', 'worker_note',
         'mortality_cause_id', 'assessed_by', 'assessed_at',
         'assessment_note', 'action_taken', 'vet_called', 'status',

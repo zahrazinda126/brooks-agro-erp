@@ -201,6 +201,16 @@ class User extends Authenticatable
 
     public function canDo(string $moduleKey, string $action): bool
     {
+        // The company owners may maintain junior worker records and logins.
+        // Seniority checks in the HR controllers still prevent self-management
+        // or changing another account at or above the owner's own rank.
+        if ($moduleKey === 'hr' && in_array($action, ['edit', 'delete'], true)) {
+            $codes = $this->roles->pluck('code')->push($this->role?->code)->filter();
+            if ($codes->contains(fn ($code) => in_array($code, ['ceo', 'director'], true))) {
+                return true;
+            }
+        }
+
         return (bool) ($this->abilities()[$moduleKey][$action] ?? false);
     }
 

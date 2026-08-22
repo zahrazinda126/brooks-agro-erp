@@ -22,6 +22,10 @@ use App\Models\ExecutiveMeeting;
 use App\Models\PayrollRun;
 use App\Models\EmployeeRecord;
 use App\Models\FeedConsumption;
+use App\Models\EggCollection;
+use App\Models\Sale;
+use App\Models\SaleLine;
+use App\Models\SalesCustomer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -74,10 +78,12 @@ class DashboardController extends Controller
             || $user->roles->contains('code', 'director');
         $isProductionManager = $this->isProductionManager($user);
         $isPersonalAssistant = $user->role?->code === 'personal-assistant' || $user->roles->contains('code','personal-assistant');
+        $isSalesManager = $user->role?->code === 'sales-manager' || $user->roles->contains('code','sales-manager');
+        if ($isCeo || $isDirector) return ['executive'];
+        if ($isSalesManager) return ['sales-dashboard'];
         if ($isFinanceManager) return ['finance-dashboard'];
         if ($isPersonalAssistant) return ['pa-dashboard'];
         if ($isHrManager) return ['hr-dashboard'];
-        if ($isCeo) $panels[] = 'executive';
         if ($isProductionManager) $panels[] = 'production-overview';
 
         if ($user->canAccess('batches') && ! $isProductionManager) {
@@ -118,6 +124,8 @@ class DashboardController extends Controller
     {
         $data = [];
         $isCeo = $user->role?->code === 'ceo' || $user->roles->contains('code','ceo');
+        $isDirector = $user->role?->code === 'director' || $user->roles->contains('code','director');
+        $isSalesManager = $user->role?->code === 'sales-manager' || $user->roles->contains('code','sales-manager');
         $isFinanceManager = $this->isFinanceManager($user);
         $isPersonalAssistant = $user->role?->code === 'personal-assistant' || $user->roles->contains('code','personal-assistant');
         if ($isFinanceManager) $data['financeDashboard'] = $this->financeDashboard();
@@ -125,10 +133,8 @@ class DashboardController extends Controller
         if ($user->role?->code === 'hr-manager' || $user->roles->contains('code', 'hr-manager')) {
             $data['hrDashboard'] = $this->hrDashboard();
         }
-        if ($isCeo) {
-            $month=FinancialTransaction::whereBetween('transaction_date',[now()->startOfMonth(),now()->endOfMonth()])->get();
-            $data['executive']=['income'=>(float)$month->where('type','money_received')->sum('amount'),'spending'=>(float)$month->where('type','money_paid')->sum('amount'),'pending'=>Approval::where('status','pending')->whereHas('steps',fn($q)=>$q->where('status','pending')->where('role_code','ceo'))->count(),'sent'=>Approval::where('status','pending')->whereHas('steps',fn($q)=>$q->where('role_code','ceo')->where('status','approved')->where('decided_by',$user->id))->count(),'overdue'=>Approval::where('status','pending')->where('due_at','<',now())->count(),'purchaseExposure'=>(float)Purchase::whereIn('status',['submitted','finance_reviewed','ceo_approved'])->sum('total_cost'),'withdrawals'=>HealthEvent::where('withdrawal_ends_eggs','>=',now()->toDateString())->count()];
-        }
+        if ($isCeo || $isDirector) $data['executive'] = $this->executiveDashboard($user);
+        if ($isSalesManager) $data['salesDashboard'] = $this->salesDashboard();
         if ($this->isProductionManager($user)) $data['productionOverview']=$this->productionOverview();
 
         if ($user->canAccess('approvals')) $data['approvals']=['pending'=>Approval::where('status','pending')->count(),'overdue'=>Approval::where('status','pending')->where('due_at','<',now())->count()];
@@ -150,6 +156,70 @@ class DashboardController extends Controller
         $data['shortcuts'] = $this->shortcuts($user);
 
         return $data;
+    }
+
+    private function executiveDashboard(User $user): array
+    {
+        $months = collect(range(5, 0))->map(function (int $offset) {
+            $date = now()->copy()->subMonths($offset);
+            $rows = FinancialTransaction::whereBetween('transaction_date', [$date->copy()->startOfMonth(), $date->copy()->endOfMonth()])->get();
+
+            return [
+                'label' => $date->format('M'),
+                'income' => (float) $rows->where('type', 'money_received')->sum('amount'),
+                'spending' => (float) $rows->where('type', 'money_paid')->sum('amount'),
+            ];
+        });
+        $month = $months->last();
+        $spendingByArea = FinancialTransaction::where('type', 'money_paid')
+            ->whereBetween('transaction_date', [now()->startOfMonth(), now()->endOfMonth()])
+            ->selectRaw("coalesce(nullif(cost_centre, ''), nullif(account, ''), 'Other') as name, sum(amount) as amount")
+            ->groupByRaw("coalesce(nullif(cost_centre, ''), nullif(account, ''), 'Other')")
+            ->orderByDesc('amount')->limit(5)->get()
+            ->map(fn ($row) => ['name' => $row->name, 'amount' => (float) $row->amount]);
+        $livestock = LivestockAnimal::where('status', 'active')->selectRaw('unit_code, count(*) as total')->groupBy('unit_code')->pluck('total', 'unit_code');
+        $feedBalance = (float) DB::table('feed_stock_movements')->selectRaw("coalesce(sum(case when movement_type in ('received','return','adjustment_in','transfer_in') then quantity_kg else -quantity_kg end),0) as balance")->value('balance');
+
+        return [
+            'income' => $month['income'], 'spending' => $month['spending'], 'net' => $month['income'] - $month['spending'],
+            'monthly' => $months, 'spendingByArea' => $spendingByArea,
+            'pending' => Approval::where('status', 'pending')->count(),
+            'overdue' => Approval::where('status', 'pending')->where('due_at', '<', now())->count(),
+            'purchaseExposure' => (float) Purchase::whereIn('status', ['submitted','finance_reviewed','ceo_approved'])->sum('total_cost'),
+            'receivables' => (float) Receivable::selectRaw('coalesce(sum(amount - amount_paid),0) as balance')->value('balance'),
+            'payables' => (float) Payable::selectRaw('coalesce(sum(amount - amount_paid),0) as balance')->value('balance'),
+            'birds' => (int) AnimalGroup::where('status', 'active')->sum('current_quantity'),
+            'livestock' => $livestock, 'feedBalance' => $feedBalance,
+            'eggsToday' => (int) EggCollection::whereDate('collected_on', today())->sum('total_eggs'),
+            'eggsMonth' => (int) EggCollection::whereBetween('collected_on', [now()->startOfMonth(), now()->endOfMonth()])->sum('total_eggs'),
+            'withdrawals' => HealthEvent::where('withdrawal_ends_eggs', '>=', now()->toDateString())->count(),
+        ];
+    }
+
+    private function salesDashboard(): array
+    {
+        $valid = fn () => Sale::where('status', '!=', 'void');
+        $monthly = collect(range(5, 0))->map(function (int $offset) use ($valid) {
+            $month = now()->copy()->startOfMonth()->subMonths($offset);
+            return ['label'=>$month->format('M'),'amount'=>(float)$valid()->whereBetween('sale_date',[$month,$month->copy()->endOfMonth()])->sum('total')];
+        });
+        $monthSales = $valid()->whereBetween('sale_date',[now()->startOfMonth(),now()->endOfMonth()]);
+        $topProducts = SaleLine::query()->join('sales','sales.id','=','sale_lines.sale_id')->where('sales.status','!=','void')
+            ->whereBetween('sales.sale_date',[now()->startOfMonth(),now()->endOfMonth()])
+            ->selectRaw('sale_lines.description as name, sum(sale_lines.quantity) as quantity, sum(sale_lines.line_total) as amount')
+            ->groupBy('sale_lines.description')->orderByDesc('amount')->limit(5)->get();
+        $topCustomers = Sale::where('status','!=','void')->whereBetween('sale_date',[now()->startOfMonth(),now()->endOfMonth()])
+            ->selectRaw('customer_name as name, count(*) as purchases, sum(total) as amount')->groupBy('customer_name')->orderByDesc('amount')->limit(5)->get();
+
+        return [
+            'today'=>(float)$valid()->whereDate('sale_date',today())->sum('total'),
+            'todayCount'=>$valid()->whereDate('sale_date',today())->count(),
+            'month'=>(float)(clone $monthSales)->sum('total'),'monthCount'=>(clone $monthSales)->count(),
+            'average'=>(float)((clone $monthSales)->avg('total')??0),'outstanding'=>(float)$valid()->sum('balance'),
+            'customers'=>SalesCustomer::where('is_active',true)->count(),'monthly'=>$monthly,
+            'topProducts'=>$topProducts,'topCustomers'=>$topCustomers,
+            'recent'=>Sale::with('lines')->where('status','!=','void')->latest('sale_date')->latest('id')->limit(8)->get(),
+        ];
     }
 
     /*

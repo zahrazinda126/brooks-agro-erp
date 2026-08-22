@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class FeedConsumption extends Model
 {
     protected $fillable = [
-        'animal_group_id', 'department_id', 'feed_type_id', 'used_on', 'feed_type',
+        'animal_group_id', 'poultry_house_id', 'department_id', 'feed_type_id', 'used_on', 'feed_type',
         'quantity_kg', 'bags', 'kg_per_bag',
         'recorded_by', 'recorded_at', 'worker_note',
         'status', 'approved_by', 'approved_at',
@@ -35,6 +35,11 @@ class FeedConsumption extends Model
     public function batch(): BelongsTo
     {
         return $this->belongsTo(AnimalGroup::class, 'animal_group_id');
+    }
+
+    public function house(): BelongsTo
+    {
+        return $this->belongsTo(PoultryHouse::class, 'poultry_house_id');
     }
 
     public function type(): BelongsTo

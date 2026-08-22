@@ -67,7 +67,8 @@
 
         @unless($plain)
             <div class="topbar-search" role="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" placeholder="Search batches, animals, tasks…" aria-label="Search"></div>
-            <div class="topbar-user"><span>{{ strtoupper(substr($user->firstName(),0,1).substr($user->displayName(),-1)) }}</span><div><strong>{{ $user->displayName() }}</strong><small>{{ $user->roleSummary() }}</small></div></div>
+            @php($unreadNotifications=\App\Models\Communication::where('recipient_id',$user->id)->whereNull('read_at')->latest()->get())
+            <a class="topbar-user" href="{{ route('account.edit') }}" title="Edit my account"><span>{{ strtoupper(substr($user->firstName(),0,1).substr($user->displayName(),-1)) }}</span><div><strong>{{ $user->displayName() }}</strong><small>{{ $user->roleSummary() }} &middot; Edit account</small></div></a>
         @endunless
         <form method="POST" action="{{ route('logout') }}" class="topbar-end">
             @csrf
@@ -88,6 +89,7 @@
             <div class="notice notice--alarm" role="alert"><strong>Please check this page.</strong> {{ $errors->first() }}</div>
         @endif
 
+        @unless($plain)@if($unreadNotifications->isNotEmpty())@php($latestNotification=$unreadNotifications->first())<div class="login-notification"><div><b>{{ $unreadNotifications->count() }} unread {{ Str::plural('notification',$unreadNotifications->count()) }}</b><span>{{ $latestNotification->subject }} &middot; {{ $latestNotification->created_at->diffForHumans() }}</span></div><form method="POST" action="{{ route('communications.read',$latestNotification) }}">@csrf<button class="btn btn--small">Open notification</button></form></div>@endif @endunless
         @yield('content')
     </main>
 </div>

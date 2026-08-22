@@ -6,7 +6,7 @@
 
     <div class="page-head">
         <h2>New batch</h2>
-        <p>Record a delivery of birds. Everything after this — eggs, feed, mortality, cost — attaches to it.</p>
+        <p>Record a delivery of birds.</p>
     </div>
 
     @if ($errors->any())

@@ -19,6 +19,7 @@ class StoreBatchRequest extends FormRequest
             'name'          => ['nullable', 'string', 'max:120'],
             'department_id' => ['required', 'exists:departments,id'],
             'breed_id'      => ['nullable', 'exists:breeds,id'],
+            'breed_name'    => ['nullable', 'string', 'max:120'],
             'purpose'       => ['required', Rule::in(['layer', 'broiler', 'dual', 'kienyeji'])],
 
             'received_date'       => ['required', 'date', 'before_or_equal:today'],
@@ -35,8 +36,46 @@ class StoreBatchRequest extends FormRequest
             'supplier_name' => ['nullable', 'string', 'max:160'],
             'invoice_no'    => ['nullable', 'string', 'max:60'],
             'house'         => ['nullable', 'string', 'max:60'],
+            'house_allocations' => ['nullable', 'array'],
+            'house_allocations.*' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+            'new_houses' => ['nullable', 'array'],
+            'new_houses.*.house_number' => ['nullable', 'string', 'max:60', 'distinct', 'unique:poultry_houses,house_number'],
+            'new_houses.*.house_type' => ['nullable', Rule::in(['brooder', 'standard'])],
+            'new_houses.*.bird_quantity' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'notes'         => ['nullable', 'string', 'max:2000'],
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $expected = (int) $this->input('quantity_received') + (int) $this->input('quantity_free');
+            $allocated = collect($this->input('house_allocations', []))->sum(fn ($quantity) => (int) $quantity)
+                + collect($this->input('new_houses', []))->sum(fn ($house) => (int) ($house['bird_quantity'] ?? 0));
+
+            foreach ($this->input('new_houses', []) as $index => $house) {
+                $hasNumber = trim((string) ($house['house_number'] ?? '')) !== '';
+                $hasBirds = (int) ($house['bird_quantity'] ?? 0) > 0;
+                if ($hasNumber xor $hasBirds) {
+                    $validator->errors()->add("new_houses.$index.house_number", 'Enter both the house number and its number of birds.');
+                }
+            }
+
+            if ($allocated !== $expected) {
+                $validator->errors()->add('house_allocations',
+                    'Allocate all '.number_format($expected).' birds across the houses. The current allocation is '.number_format($allocated).'.');
+            }
+
+            if ((int) $this->input('age_days_on_arrival') <= 42 && $allocated > 0) {
+                $selectedIds = collect($this->input('house_allocations', []))->filter(fn ($quantity) => (int) $quantity > 0)->keys();
+                $hasStandardHouse = \App\Models\PoultryHouse::whereIn('id', $selectedIds)->where('house_type', '!=', 'brooder')->exists();
+                $hasStandardNewHouse = collect($this->input('new_houses', []))->contains(fn ($house) =>
+                    (int) ($house['bird_quantity'] ?? 0) > 0 && ($house['house_type'] ?? 'standard') !== 'brooder');
+                if ($hasStandardHouse || $hasStandardNewHouse) {
+                    $validator->errors()->add('house_allocations', 'Birds aged 42 days or less must first be allocated to houses marked as brooders.');
+                }
+            }
+        });
     }
 
     public function messages(): array

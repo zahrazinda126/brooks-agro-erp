@@ -5,6 +5,7 @@ namespace App\Http\Controllers\HR;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\EmployeeRecord;
+use App\Services\BrandedReportExport;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\View\View;
@@ -46,16 +47,13 @@ class HrReportController extends Controller
         $report = $request->query('report', 'workforce');
         abort_unless(isset(self::REPORTS[$report]), 404);
         $data = $this->reportData($report, $start, $end);
-        $filename = str($report.'-'.$start->format('Y-m-d').'-'.$end->format('Y-m-d'))->slug().'.csv';
+        $filename = str($report.'-'.$start->format('Y-m-d').'-'.$end->format('Y-m-d'))->slug().'.xls';
 
-        return response()->streamDownload(function () use ($data) {
-            $out = fopen('php://output', 'w');
-            fputcsv($out, $data['headers']);
-            foreach ($data['rows'] as $row) {
-                fputcsv($out, $row);
-            }
-            fclose($out);
-        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+        return app(BrandedReportExport::class)->download(
+            self::REPORTS[$report],
+            'Reporting period: '.$start->format('d M Y').' to '.$end->format('d M Y'),
+            $data['headers'], $data['rows'], $filename, $request->user()->displayName()
+        );
     }
 
     public function kpis(Request $request): View

@@ -97,6 +97,42 @@ class EmployeeAccountController extends Controller
             ]);
     }
 
+    public function edit(Request $request, Employee $employee): View
+    {
+        $user = $employee->user;
+        abort_unless($user, 404, 'This employee has no login.');
+        $this->assertOutranks($request->user(), $user);
+
+        return view('hr.account-edit', [
+            'employee' => $employee,
+            'account' => $user,
+            'roles' => $this->assignableRoles($request->user()),
+            'departments' => Department::where('level', 'department')->where('is_active', true)->orderBy('name')->get(),
+        ]);
+    }
+
+    public function update(Request $request, Employee $employee): RedirectResponse
+    {
+        $user = $employee->user;
+        abort_unless($user, 404, 'This employee has no login.');
+        $this->assertOutranks($request->user(), $user);
+        $assignable = $this->assignableRoles($request->user())->pluck('id');
+        $data = $request->validate([
+            'username' => ['required', 'string', 'min:3', 'max:60', 'regex:/^[a-z][a-z0-9._-]*$/', Rule::unique('users', 'username')->ignore($user->id)],
+            'email' => ['nullable', 'email', 'max:190', Rule::unique('users', 'email')->ignore($user->id)],
+            'role_id' => ['required', Rule::in($assignable)],
+            'department_id' => ['nullable', 'exists:departments,id'],
+        ]);
+        $before = $user->only(['username', 'email', 'role_id', 'department_id']);
+        $data['email'] = $data['email'] ?: null;
+        $data['department_id'] = $data['department_id'] ?: $employee->department_id;
+        $user->update($data);
+
+        AuditLog::record('worker_account_updated', $user, "Updated login '{$user->username}' for {$employee->fullName()}.", $before, $user->only(array_keys($before)), 'hr');
+
+        return redirect()->route('employees.show', $employee)->with('status', 'Worker login details updated.');
+    }
+
     public function reset(Request $request, Employee $employee): RedirectResponse
     {
         $user = $employee->user;

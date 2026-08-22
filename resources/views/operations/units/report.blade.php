@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title',$config['name'].' Report')
 @section('content')
-<div class="page-head page-head--split"><div><p class="eyebrow">📊 Unit report</p><h2>{{ $config['name'] }} Report</h2><p>View operational records before downloading them.</p></div><div class="form-actions"><a class="btn btn--quiet" href="{{ route('operations.units.index',['unit'=>$unit]) }}">Unit overview</a><a class="btn" href="{{ route('operations.units.export',['unit'=>$unit,'from'=>$from->toDateString(),'to'=>$to->toDateString()]) }}">Download CSV</a></div></div>
+<div class="page-head page-head--split"><div><p class="eyebrow">📊 Unit report</p><h2>{{ $config['name'] }} Report</h2><p>View operational records before downloading them.</p></div><div class="form-actions"><a class="btn btn--quiet" href="{{ route('operations.units.index',['unit'=>$unit]) }}">Unit overview</a><a class="btn" href="{{ route('operations.units.export',['unit'=>$unit,'from'=>$from->toDateString(),'to'=>$to->toDateString()]) }}">Download branded Excel</a></div></div>
 <form class="exec-panel form-grid" method="GET"><div class="field"><label>From</label><input type="date" name="from" value="{{ $from->toDateString() }}"></div><div class="field"><label>To</label><input type="date" name="to" value="{{ $to->toDateString() }}"></div><div class="form-actions"><button class="btn">View report</button></div></form>
 
 @if(isset($groups))

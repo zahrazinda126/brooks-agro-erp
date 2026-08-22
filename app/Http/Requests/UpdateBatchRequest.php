@@ -20,6 +20,7 @@ class UpdateBatchRequest extends FormRequest
             'name'          => ['nullable', 'string', 'max:120'],
             'department_id' => ['required', 'exists:departments,id'],
             'breed_id'      => ['nullable', 'exists:breeds,id'],
+            'breed_name'    => ['nullable', 'string', 'max:120'],
             'purpose'       => ['required', Rule::in(['layer', 'broiler', 'dual', 'kienyeji'])],
 
             'received_date'       => ['required', 'date', 'before_or_equal:today'],

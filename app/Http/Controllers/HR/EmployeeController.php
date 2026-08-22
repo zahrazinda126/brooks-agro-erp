@@ -12,6 +12,7 @@ use App\Models\Role;
 use App\Models\Setting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 /*
@@ -142,6 +143,30 @@ class EmployeeController extends Controller
         return redirect()
             ->route('employees.show', $employee)
             ->with('status', 'Changes saved.');
+    }
+
+    public function destroy(Request $request, Employee $employee): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('hr', 'delete'), 403);
+        $employee->load('user.role');
+        $account = $employee->user;
+
+        abort_if($account?->id === $request->user()->id, 403, 'You cannot delete your own worker record or login.');
+        $targetRank = $account?->effectiveRank() ?? ($employee->role?->rank ?? 999);
+        abort_if($targetRank <= $request->user()->effectiveRank(), 403, 'You cannot delete a worker at or above your own access level.');
+
+        DB::transaction(function () use ($employee, $account) {
+            if ($account) {
+                $account->forceFill(['is_active' => false, 'failed_login_attempts' => 0, 'locked_until' => null])->save();
+                $account->delete();
+            }
+            $employee->update(['status' => 'terminated', 'end_date' => $employee->end_date ?: today()]);
+            $employee->delete();
+        });
+
+        AuditLog::record('worker_removed', $employee, "Removed {$employee->fullName()} ({$employee->staff_no}) and disabled their login.", null, ['login_disabled' => (bool) $account], 'hr');
+
+        return redirect()->route('employees.index')->with('status', 'Worker removed. Their historical records have been retained.');
     }
 
     /* ---------------------------------------------------------------- */

@@ -18,6 +18,8 @@
 @php
     $groups     = $user->sidebarModules();
     $currentKey = request()->route('key')
+        ?? (request()->routeIs('executive.*') ? request()->route('screen') : null)
+        ?? (request()->routeIs('communications.*') ? 'messages' : null)
         ?? (request()->routeIs('dashboard') ? 'dashboard' : null)
         ?? (request()->routeIs('approvals.*') ? 'approvals' : null)
         ?? (request()->routeIs('employees.*') ? 'hr' : null)
@@ -55,6 +57,7 @@
     );
     $isCeo = $user->role?->code === 'ceo' || $user->roles->contains('code', 'ceo');
     $isDirector = $user->role?->code === 'director' || $user->roles->contains('code', 'director');
+    $isSystemAdmin = $user->role?->code === 'system-admin' || $user->roles->contains('code', 'system-admin');
     $isPersonalAssistant = $user->role?->code === 'personal-assistant'
         || $user->roles->contains('code', 'personal-assistant');
     $isProductionManager = $user->role?->code === 'production-manager'
@@ -89,7 +92,7 @@
         ],
         '📊 Executive View' => [
             ['key' => 'kpi-dashboards', 'label' => 'KPIs & Analytics'],
-            ['key' => 'reports', 'label' => 'Executive Reports'],
+            ['key' => 'reports', 'label' => 'Financial & Executive Reports'],
         ],
         '✅ Decisions' => [
             ['key' => 'assign-supervisors', 'label' => 'Daily Supervisors'],
@@ -97,17 +100,13 @@
             ['key' => 'approvals', 'label' => 'Sent to Director', 'status' => 'sent'],
             ['key' => 'approvals', 'label' => 'Rejected Requests', 'status' => 'rejected'],
         ],
-        '📈 Financial Reports' => [
-            ['key' => 'profit-loss', 'label' => 'Income Statement'],
-            ['key' => 'balance-sheet', 'label' => 'Balance Sheet'],
-            ['key' => 'cash-flow', 'label' => 'Cash Flow Statement'],
-            ['key' => 'trial-balance', 'label' => 'Trial Balance'],
-        ],
         '🏢 Oversight' => [
             ['key' => 'budget', 'label' => 'Weekly Budgets'],
+            ['key' => 'sales', 'label' => 'Selling Prices', 'screen' => 'setup'],
             ['key' => 'purchases', 'label' => 'Purchases'],
             ['key' => 'assets', 'label' => 'Fixed Assets'],
             ['key' => 'hr', 'label' => 'Employees'],
+            ['key' => 'customers', 'label' => 'Customer Details'],
         ],
         '💬 Communication' => [
             ['key' => 'messages', 'label' => 'Messages'], ['key' => 'notifications', 'label' => 'Notifications'],
@@ -130,21 +129,24 @@
         ],
         '📊 Board View' => [
             ['key' => 'kpi-dashboards', 'label' => 'KPIs & Analytics'],
-            ['key' => 'reports', 'label' => 'Executive Reports'],
+            ['key' => 'reports', 'label' => 'Financial & Executive Reports'],
         ],
         '✅ Final Decisions' => [
+            ['key' => 'directives', 'label' => 'Directives & Tracking'],
             ['key' => 'approvals', 'label' => 'Pending Final Approvals'],
-        ],
-        '📈 Financial Statements' => [
-            ['key' => 'profit-loss', 'label' => 'Income Statement'],
-            ['key' => 'balance-sheet', 'label' => 'Balance Sheet'],
-            ['key' => 'cash-flow', 'label' => 'Cash Flow Statement'],
-            ['key' => 'trial-balance', 'label' => 'Trial Balance'],
         ],
         '🏛️ Governance' => [
             ['key' => 'budget', 'label' => 'Approved Budgets'],
             ['key' => 'assets', 'label' => 'Fixed Assets'],
             ['key' => 'audit', 'label' => 'Audit Trail'],
+        ],
+        'People & Customers' => [
+            ['key' => 'hr', 'label' => 'Workers & Staff Details'],
+            ['key' => 'customers', 'label' => 'Customer Details'],
+        ],
+        'Communication' => [
+            ['key' => 'messages', 'label' => 'Messages & Announcements'],
+            ['key' => 'notifications', 'label' => 'Notifications'],
         ],
         '⚙️ Administration' => [
             ['key' => 'visitors', 'label' => 'Visitor Register'],
@@ -155,7 +157,7 @@
 
     $assistantSections = [
         'Director Follow-up' => [
-            ['key' => 'dashboard', 'label' => 'Directives & Feedback'],
+            ['key' => 'directives', 'label' => 'Directives & Feedback'],
             ['key' => 'approvals', 'label' => 'Approved Money Tracker', 'status' => 'approved'],
         ],
         'Communication' => [
@@ -179,6 +181,7 @@
         ],
         'Farm Units' => [
             ['key'=>'batches', 'label'=>'Poultry'],
+            ['key'=>'batches', 'label'=>'Houses & Worker Assignment', 'page'=>'houses'],
             ['key'=>'goats', 'label'=>'Goats'],
             ['key'=>'rabbits', 'label'=>'Rabbits'],
             ['key'=>'dogs', 'label'=>'Dogs'],
@@ -240,6 +243,7 @@
         '📒 Accounting' => [
             ['key' => 'payroll', 'label' => 'Payroll'],
             ['key' => 'budget', 'label' => 'Weekly Budget'],
+            ['key' => 'sales', 'label' => 'Selling Prices', 'screen' => 'setup'],
         ],
         '📈 Reports' => [
             ['key' => 'reports', 'label' => 'Financial Reports'],
@@ -258,12 +262,10 @@
         '🧾 Daily Sales' => [
             ['key'=>'sales','label'=>'Record Daily Sale','screen'=>'sale'],
         ],
-        '🏷️ Products & Pricing' => [
-            ['key'=>'sales','label'=>'Selling Prices','screen'=>'setup'],
-        ],
         '👥 Customers' => [
         ],
         '📈 Reports' => [
+            ['key'=>'sales','label'=>'Sales Report','screen'=>'reports'],
         ],
         'Communication' => [
             ['key'=>'messages','label'=>'Messages & Updates'],
@@ -284,6 +286,8 @@
         <a class="nav-link" href="{{ route('supervision.index') }}" @if(request()->routeIs('supervision.*')) aria-current="page" @endif><span>Daily Supervisor</span></a>
     @endif
 
+    <a class="nav-link" href="{{ route('vaccination-schedule.index') }}" @if(request()->routeIs('vaccination-schedule.*')) aria-current="page" @endif><span>Vaccination Schedule</span></a>
+
     @if ($isCeo || $isDirector)
         <div class="hr-nav" aria-label="{{ $isCeo ? 'CEO' : 'Director' }} navigation">
             <a class="nav-link" href="{{ route('dashboard') }}" @if($currentKey === 'dashboard') aria-current="page" @endif>
@@ -293,7 +297,8 @@
                 <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif>
                     <summary>{{ $section }}</summary>
                     @foreach($items as $item)
-                        @if($user->canAccess($item['key']))
+                        @continue(in_array($item['key'], ['settings', 'notifications'], true))
+                        @if($user->canAccess($item['key']) || in_array($item['key'], ['customers', 'security', 'settings', 'visitors', 'directives'], true) || ($isCeo && $item['key'] === 'sales'))
                             @php
                                 $href = match ($item['key']) {
                                     'approvals' => route('approvals.index', isset($item['type']) ? ['type'=>$item['type']] : (isset($item['status']) ? ['status'=>$item['status']] : [])),
@@ -309,6 +314,9 @@
                                     'notifications', 'security', 'settings' => route('executive.index', ['screen'=>$item['key']]),
                                     'visitors' => route('visitors.index'),
                                     'hr' => route('employees.index'),
+                                    'customers' => route('owner.customers'),
+                                    'directives' => route('directives.index'),
+                                    'sales' => route('sales.index', ['screen' => $item['screen'] ?? 'setup']),
                                     'attendance','welfare','advances' => route('hr.records.index',['module'=>$item['key']]),
                                     'staff-performance' => route('poultry.performance.index'),
                                     default => \App\Models\Module::where('key',$item['key'])->first()?->url(),
@@ -326,10 +334,11 @@
             @foreach($assistantSections as $section => $items)
                 <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif><summary>{{ $section }}</summary>
                 @foreach($items as $item)
-                    @if($user->canAccess($item['key']))
+                    @continue(in_array($item['key'], ['settings', 'notifications'], true))
+                    @if($user->canAccess($item['key']) || $item['key'] === 'directives')
                         @php $href = match($item['key']) {
                             'messages' => route('communications.index'),
-                            'dashboard' => route('dashboard'),
+                            'dashboard' => route('dashboard'), 'directives' => route('directives.index'),
                             'reports', 'notifications' => route('executive.index',['screen'=>$item['key']]),
                             'approvals' => route('approvals.index',['status'=>$item['status'] ?? 'pending']),
                             'visitors' => route('visitors.index'),
@@ -348,11 +357,16 @@
                 @continue(empty($items))
                 <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif><summary>{{ $section }}</summary>
                 @foreach($items as $item)
+                    @continue(in_array($item['key'], ['settings', 'notifications'], true))
                     @if($user->canAccess($item['key']))
                         @php
                             $href = match($item['key']) {
                                 'egg-entry','feed-consumption','mortality-entry' => route('poultry.report.index'),
-                                'batches' => ($item['page'] ?? null)==='poultry-report' ? route('poultry.report.index') : route('batches.index'),
+                                'batches' => match($item['page'] ?? null) {
+                                    'poultry-report' => route('poultry.report.index'),
+                                    'houses' => route('poultry-houses.index'),
+                                    default => route('batches.index'),
+                                },
                                 'egg-inventory' => route('collections.index'),
                                 'bird-consumption' => route('consumption.index'),
                                 'health' => route('health.index'),
@@ -385,7 +399,7 @@
             <a class="nav-link" href="{{ route('dashboard') }}"
                @if ($currentKey === 'dashboard') aria-current="page" @endif>
                 <svg class="nav-icon" aria-hidden="true"><use href="#i-home"></use></svg>
-                <span>🏠 Dashboard</span>
+                <span>Dashboard</span>
             </a>
 
             @foreach (($isHrManager ? $hrSections : ($isSalesManager ? $salesSections : $financeSections)) as $section => $items)
@@ -393,7 +407,8 @@
                 <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif>
                     <summary>{{ $section }}</summary>
                     @foreach ($items as $item)
-                        @if ($user->canAccess($item['key']))
+                        @continue(in_array($item['key'], ['settings', 'notifications'], true))
+                        @if ($user->canAccess($item['key']) || ($isFinanceUser && $item['key'] === 'sales'))
                             @php
                                 $href = $isSalesManager
                                     ? route('sales.index', ['screen' => $item['screen'] ?? 'sale'])
@@ -423,6 +438,7 @@
                                         'production' => route('finance.farm.production'),
                                         'veterinary' => route('finance.farm.veterinary'),
                                         'reports' => route('finance.reports.index'),
+                                        'sales' => route('sales.index', ['screen' => $item['screen'] ?? 'setup']),
                                         'kpi-dashboards' => route('finance.reports.kpis'),
                                         'profit-loss', 'balance-sheet', 'cash-flow', 'trial-balance' => route('finance.reports.statement', ['report' => $item['key']]),
                                         'approvals' => route('approvals.index'),
@@ -493,6 +509,7 @@
                 </summary>
 
                 @foreach ($modules as $module)
+                    @continue(in_array($module->key, ['settings', 'notifications'], true))
 
                     @if ($module->children->isNotEmpty())
                         @php
@@ -523,6 +540,7 @@
                             @endif
 
                             @foreach ($module->children as $child)
+                                @continue(in_array($child->key, ['settings', 'notifications'], true))
                                 <a class="nav-link nav-link--child"
                                    href="{{ $child->url() }}"
                                    data-name="{{ Str::lower($child->navigationLabel()) }}"
@@ -555,6 +573,22 @@
 
         <p class="nav-none" id="navNone" hidden>Nothing matches that.</p>
     @endif
+
+    @php
+        $sidebarUnread = \App\Models\Communication::where('recipient_id', $user->id)->whereNull('read_at')->count();
+        $settingsHref = ($isCeo || $isDirector || $isSystemAdmin)
+            ? route('executive.index', ['screen' => 'settings'])
+            : route('account.edit');
+    @endphp
+    <div class="sidebar-utilities" aria-label="Notifications and settings">
+        <a href="{{ route('communications.index') }}" class="sidebar-utility" title="Notifications" aria-label="Notifications{{ $sidebarUnread ? ': '.$sidebarUnread.' unread' : '' }}" @if(request()->routeIs('communications.*')) aria-current="page" @endif>
+            <svg aria-hidden="true"><use href="#i-bell"></use></svg>
+            @if($sidebarUnread)<b>{{ $sidebarUnread > 99 ? '99+' : $sidebarUnread }}</b>@endif
+        </a>
+        <a href="{{ $settingsHref }}" class="sidebar-utility" title="Settings" aria-label="Settings" @if(request()->routeIs('account.*') || request()->routeIs('executive.*') && request()->route('screen') === 'settings') aria-current="page" @endif>
+            <svg aria-hidden="true"><use href="#i-gear"></use></svg>
+        </a>
+    </div>
 
     <form method="POST" action="{{ route('logout') }}" class="nav-signout">
         @csrf

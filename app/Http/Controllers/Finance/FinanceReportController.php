@@ -1,6 +1,6 @@
 <?php
 namespace App\Http\Controllers\Finance;
-use App\Http\Controllers\Controller; use App\Models\FinancialTransaction; use App\Models\Receivable; use App\Models\Payable; use App\Models\CustomerPrepayment; use App\Models\FixedAsset; use App\Models\Budget; use Illuminate\Http\Request; use Illuminate\View\View; use Symfony\Component\HttpFoundation\StreamedResponse;
+use App\Http\Controllers\Controller; use App\Models\FinancialTransaction; use App\Models\Receivable; use App\Models\Payable; use App\Models\CustomerPrepayment; use App\Models\FixedAsset; use App\Models\Budget; use App\Services\BrandedReportExport; use Illuminate\Http\Request; use Illuminate\View\View; use Symfony\Component\HttpFoundation\StreamedResponse;
 class FinanceReportController extends Controller {
  private function period(Request $r):array{return [$r->query('from',now()->startOfMonth()->toDateString()),$r->query('to',now()->toDateString())];}
  private function transactions(string $from,string $to){return FinancialTransaction::whereBetween('transaction_date',[$from,$to])->orderBy('transaction_date')->get();}
@@ -55,5 +55,19 @@ class FinanceReportController extends Controller {
   return compact('columns','rows');
  }
 
- public function export(Request $r,string $report):StreamedResponse {abort_unless($r->user()->canAccess('reports')||$r->user()->canAccess('finance'),403);$allowed=['overview','kpis','profit-loss','balance-sheet','cash-flow','trial-balance','three-statement'];abort_unless(in_array($report,$allowed,true),404);$filename=$report.'-'.now()->format('Ymd-His').'.csv';return response()->streamDownload(function()use($r,$report){$out=fopen('php://output','w');fwrite($out,"\xEF\xBB\xBF");if($report==='three-statement'){$year=(int)$r->query('year',(now()->month>=7?now()->year:now()->year-1));$data=$this->threeStatementData($year);fputcsv($out,array_merge(['Section','Account'],$data['columns'],['Annual Total']));foreach($data['rows'] as $x)fputcsv($out,array_merge([$x['section'],$x['label']],$x['values'],[$x['total']]));}else{[$from,$to]=$this->period($r);$m=$this->metrics($from,$to);fputcsv($out,['BROOKS AGRO FARM LTD.']);fputcsv($out,['Report',str_replace('-',' ',strtoupper($report))]);fputcsv($out,['From',$from,'To',$to]);fputcsv($out,[]);if(in_array($report,['overview','kpis'])){fputcsv($out,['Metric','Amount/Rate']);foreach($m as $k=>$v)fputcsv($out,[str_replace('_',' ',ucfirst($k)),$v]);}else{$view=$this->statement($r,$report)->getData();fputcsv($out,['Account/Section','Debit/Asset','Credit/Liability']);foreach($view['rows'] as $x)fputcsv($out,[$x['label'],$x['debit'],$x['credit']]);}}fclose($out);},$filename,['Content-Type'=>'text/csv; charset=UTF-8']);}
+ public function export(Request $r,string $report):StreamedResponse
+ {
+  abort_unless($r->user()->canAccess('reports')||$r->user()->canAccess('finance'),403);
+  $allowed=['overview','kpis','profit-loss','balance-sheet','cash-flow','trial-balance','three-statement'];abort_unless(in_array($report,$allowed,true),404);
+  $title=str($report)->replace('-',' ')->title()->toString();
+  if($report==='three-statement'){
+   $year=(int)$r->query('year',(now()->month>=7?now()->year:now()->year-1));$data=$this->threeStatementData($year);
+   $rows=collect($data['rows'])->map(fn($x)=>['cells'=>array_merge([$x['section'],$x['label']],$x['values'],[$x['total']]),'style'=>$x['style']]);
+   return app(BrandedReportExport::class)->download('Three-Statement Financial Model','Financial year July '.$year.' to June '.($year+1),array_merge(['Section','Account'],$data['columns'],['Annual Total']),$rows,'three-statement-'.$year.'.xls',$r->user()->displayName());
+  }
+  [$from,$to]=$this->period($r);$m=$this->metrics($from,$to);
+  if(in_array($report,['overview','kpis'])){$headers=['Metric','Amount / Rate'];$rows=collect($m)->map(fn($v,$k)=>[str($k)->replace('_',' ')->title()->toString(),$v]);}
+  else{$view=$this->statement($r,$report)->getData();$headers=['Account / Section','Debit / Asset','Credit / Liability'];$rows=collect($view['rows'])->map(fn($x)=>[$x['label'],$x['debit'],$x['credit']]);}
+  return app(BrandedReportExport::class)->download($title,'Reporting period: '.$from.' to '.$to,$headers,$rows,$report.'-'.now()->format('Ymd-His').'.xls',$r->user()->displayName());
+ }
 }

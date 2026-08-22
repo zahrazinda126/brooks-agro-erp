@@ -128,6 +128,7 @@
 
                 @if ($user->canDo('hr', 'edit') && $employee->user->id !== $user->id)
                     <div class="button-row">
+                        <a class="btn btn--quiet btn--inline" href="{{ route('employees.account.edit', $employee) }}">Edit login</a>
                         <form method="POST" action="{{ route('employees.account.reset', $employee) }}">
                             @csrf
                             <button type="submit" class="btn btn--quiet btn--inline"
@@ -174,5 +175,9 @@
     <p style="margin-top:18px;">
         <a class="btn btn--quiet btn--inline" href="{{ route('employees.index') }}">Back to register</a>
     </p>
+
+    @if($user->canDo('hr', 'delete') && $employee->user?->id !== $user->id)
+        <section class="danger-zone"><div><strong>Remove worker</strong><p>Disables their login and removes them from the active register. Payroll, approvals and audit history are retained.</p></div><form method="POST" action="{{ route('employees.destroy',$employee) }}">@csrf @method('DELETE')<button class="btn btn--danger" onclick="return confirm('Remove {{ $employee->fullName() }} and disable their login? Historical records will be retained.')">Remove worker</button></form></section>
+    @endif
 
 @endsection

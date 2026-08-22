@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title','Overall Production Report')
 @section('content')
-<div class="form-actions" style="float:right"><a class="btn" href="{{ route('operations.reports.export',['view'=>$view]) }}">Export {{ ucfirst($view) }} CSV</a></div>
+<div class="form-actions" style="float:right"><a class="btn" href="{{ route('operations.reports.export',['view'=>$view]) }}">Download {{ ucfirst($view) }} Excel</a></div>
 <div class="page-head"><p class="eyebrow">📈 Production management</p><h2>Overall Production Report</h2><p>Combined oversight of Poultry, Goats, Rabbits, Dogs and Garden operations.</p></div>
 <nav class="unit-tabs"><a class="{{ $view==='overall'?'active':'' }}" href="{{ route('operations.reports') }}">All units</a><a class="{{ $view==='livestock'?'active':'' }}" href="{{ route('operations.reports',['view'=>'livestock']) }}">Livestock</a><a class="{{ $view==='health'?'active':'' }}" href="{{ route('operations.reports',['view'=>'health']) }}">Health & losses</a><a class="{{ $view==='inputs'?'active':'' }}" href="{{ route('operations.reports',['view'=>'inputs']) }}">Feeding & inputs</a><a class="{{ $view==='production'?'active':'' }}" href="{{ route('operations.reports',['view'=>'production']) }}">Production & harvest</a></nav>
 <div class="production-unit-grid">@foreach($units as $unit)<article class="production-unit-card"><span>{{ $unit['icon'] }}</span><div><small>{{ $unit['label'] }}</small><strong>{{ number_format($unit['value']) }}</strong><em>{{ $unit['measure'] }}</em></div></article>@endforeach</div>

@@ -1,4 +1,4 @@
-{{--
+﻿{{--
     Shared by create and edit.
 
     Ordered the way birds actually arrive: what they are, when they came,
@@ -57,26 +57,25 @@
         </div>
 
         <div class="field">
-            <label for="breed_id">Breed</label>
-            <select id="breed_id" name="breed_id">
-                <option value="">Not stated</option>
+            <label for="breed_name">Breed</label>
+            <input id="breed_name" name="breed_name" list="poultry-breed-options"
+                   value="{{ old('breed_name', $batch->breed?->name ?? '') }}"
+                   placeholder="Choose or type a new breed" autocomplete="off">
+            <datalist id="poultry-breed-options">
                 @foreach ($breeds as $b)
-                    <option value="{{ $b->id }}"
-                        data-lay-week="{{ $b->lay_start_week }}"
-                        @selected((int) old('breed_id', $batch->breed_id ?? 0) === $b->id)>
-                        {{ $b->name }}@if ($b->lay_start_week) — lays from week {{ $b->lay_start_week }}@endif
-                    </option>
+                    <option value="{{ $b->name }}">{{ ucfirst($b->purpose) }}</option>
                 @endforeach
-            </select>
-            <p class="field-hint">Sets when eggs are expected and what size to look for.</p>
+            </datalist>
+            <p class="field-hint">Choose a known breed or type a new one. A new breed is saved for future batches.</p>
         </div>
 
-        <div class="field">
-            <label for="house">House or pen</label>
-            <input id="house" name="house" type="text"
-                   value="{{ old('house', $batch->house ?? '') }}"
-                   placeholder="e.g. House 2">
-        </div>
+        @if (isset($batch))
+            <div class="field">
+                <label for="house">House or pen</label>
+                <input id="house" name="house" type="text" value="{{ old('house', $batch->house ?? '') }}">
+                <p class="field-hint">Use Houses & Worker Assignment to change the detailed allocation.</p>
+            </div>
+        @endif
     </div>
 </div>
 
@@ -114,7 +113,7 @@
         </div>
 
         {{--
-            Suppliers throw in extras to cover losses in transit — usually
+            Suppliers throw in extras to cover losses in transit &mdash; usually
             about 2%, but it varies by supplier and by consignment, so it is
             typed rather than assumed.
 
@@ -156,16 +155,16 @@
         <div class="field field--wide">
             <div class="arrival-summary">
                 <div>
-                    <span class="figure" data-total-birds>—</span>
+                    <span class="figure" data-total-birds>&mdash;</span>
                     <span class="figure-unit">Birds in the house</span>
                 </div>
                 <div>
-                    <span class="figure" data-total-cost>—</span>
-                    <span class="figure-unit">UGX · total paid</span>
+                    <span class="figure" data-total-cost>&mdash;</span>
+                    <span class="figure-unit">UGX &middot; total paid</span>
                 </div>
                 <div>
-                    <span class="figure" data-real-cost>—</span>
-                    <span class="figure-unit">UGX · real cost per bird</span>
+                    <span class="figure" data-real-cost>&mdash;</span>
+                    <span class="figure-unit">UGX &middot; real cost per bird</span>
                 </div>
             </div>
             <p class="field-hint" style="margin-top:8px;">
@@ -200,6 +199,43 @@
     </div>
 </div>
 
+@if (! isset($batch))
+<div class="card">
+    <p class="card-label">Final step · Allocate birds to houses</p>
+    <p class="field-hint">The farm has 43 poultry houses. Enter birds only against the available houses receiving this batch. Occupied houses are omitted. The total must equal all paid and free birds received.</p>
+    @error('house_allocations')<p class="field-error">{{ $message }}</p>@enderror
+    <div class="house-allocation-list">
+        @forelse ($availableHouses as $house)
+            <label class="house-allocation-row">
+                <span><strong>{{ $house->house_number }}</strong><small>{{ $house->house_type === 'brooder' ? 'Brooder' : 'Standard house' }} · Available</small></span>
+                <input type="number" min="0" name="house_allocations[{{ $house->id }}]"
+                       value="{{ old('house_allocations.'.$house->id) }}" placeholder="Number of birds">
+            </label>
+        @empty
+            <div class="notice">All registered houses are currently occupied. You can create a house for this batch below.</div>
+        @endforelse
+    </div>
+
+    <details class="disclosure" style="margin-top:20px">
+        <summary>Add a house outside the current 1–43 register</summary>
+        <div class="disclosure__body">
+            <p class="field-hint">Use this only when the farm opens an additional poultry house.</p>
+            <div class="house-allocation-list">
+                @for ($row = 0; $row < 2; $row++)
+                    <div class="house-allocation-row">
+                        <input name="new_houses[{{ $row }}][house_number]" value="{{ old('new_houses.'.$row.'.house_number') }}" placeholder="House number">
+                        <select name="new_houses[{{ $row }}][house_type]"><option value="standard">Standard house</option><option value="brooder" @selected(old('new_houses.'.$row.'.house_type')==='brooder')>Brooder</option></select>
+                        <input type="number" min="0" name="new_houses[{{ $row }}][bird_quantity]"
+                               value="{{ old('new_houses.'.$row.'.bird_quantity') }}" placeholder="Birds">
+                    </div>
+                    @error('new_houses.'.$row.'.house_number')<p class="field-error">{{ $message }}</p>@enderror
+                @endfor
+            </div>
+        </div>
+    </details>
+</div>
+@endif
+
 <script>
 /*
  | Live arithmetic, so the person entering can see the deal as they type.
@@ -228,11 +264,11 @@
         var birds = p + f;
         var total = p * c;
 
-        outBirds.textContent = birds ? birds.toLocaleString() : '—';
-        outCost.textContent  = total ? Math.round(total).toLocaleString() : '—';
+        outBirds.textContent = birds ? birds.toLocaleString() : '\u2014';
+        outCost.textContent  = total ? Math.round(total).toLocaleString() : '\u2014';
         outReal.textContent  = (birds && total)
             ? Math.round(total / birds).toLocaleString()
-            : '—';
+            : '\u2014';
 
         if (outPct) {
             outPct.textContent = (p && f)
@@ -248,3 +284,4 @@
     recalc();
 })();
 </script>
+

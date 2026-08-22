@@ -21,6 +21,8 @@ class HealthEvent extends Model
     protected $fillable = [
         'animal_group_id', 'department_id', 'event_type', 'medication_id',
         'occurred_on', 'birds_treated', 'dose_given', 'days_of_course',
+        'application_route', 'vaccine_batch_number', 'manufacturer',
+        'manufactured_on', 'expires_on', 'next_due_on',
         'withdrawal_ends_eggs', 'withdrawal_ends_meat',
         'reason', 'findings', 'cost',
         'administered_by', 'administered_name', 'vet_involved',
@@ -31,6 +33,9 @@ class HealthEvent extends Model
     {
         return [
             'occurred_on'          => 'date',
+            'manufactured_on'      => 'date',
+            'expires_on'           => 'date',
+            'next_due_on'          => 'date',
             'withdrawal_ends_eggs' => 'date',
             'withdrawal_ends_meat' => 'date',
             'recorded_at'          => 'datetime',

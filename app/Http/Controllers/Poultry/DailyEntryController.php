@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Poultry;
 
+use App\Services\FeedStockService;
+
 use App\Http\Controllers\Controller;
 use App\Models\AnimalGroup;
 use App\Models\AuditLog;
@@ -11,6 +13,8 @@ use App\Models\EggGrade;
 use App\Models\FeedConsumption;
 use App\Models\FeedType;
 use App\Models\MortalityRecord;
+use App\Models\PoultryHouseAssignment;
+use App\Models\PoultryHouse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -46,12 +50,35 @@ class DailyEntryController extends Controller
             ->orderBy('code')
             ->get();
 
+        // Poultry casual workers work only in houses assigned by Production.
+        // Managers and multi-role users retain their broader operational view.
+        $assignedHouses = collect();
+        if ($user->isDataEntryOnly() && $user->employee_id) {
+            $assignedHouses = PoultryHouseAssignment::with('house')
+                ->where('employee_id', $user->employee_id)->whereNull('assigned_until')->get()
+                ->pluck('house')->filter();
+            $batches = $batches->whereIn('id', $assignedHouses->pluck('animal_group_id')->filter())->values();
+        }
+
         // What has already been done today, so the screen can say so
         // rather than letting someone enter it twice.
         $doneFeed = FeedConsumption::whereDate('used_on', $today)
             ->whereIn('animal_group_id', $batches->pluck('id'))
             ->pluck('animal_group_id')
             ->unique();
+        if ($user->isDataEntryOnly() && $assignedHouses->isNotEmpty()) {
+            $givenByHouse = DB::table('poultry_feed_servings')->whereDate('fed_on', $today)
+                ->whereIn('poultry_house_id', $assignedHouses->pluck('id'))
+                ->select('poultry_house_id', DB::raw('sum(quantity_kg) as total_kg'))
+                ->groupBy('poultry_house_id')->pluck('total_kg', 'poultry_house_id');
+            $doneFeed = $batches->filter(function ($batch) use ($assignedHouses, $givenByHouse) {
+                $houses = $assignedHouses->where('animal_group_id', $batch->id);
+
+                return $houses->isNotEmpty() && $houses->every(fn ($house) =>
+                    (float) ($givenByHouse[$house->id] ?? 0) >= $house->bird_quantity * 0.125
+                );
+            })->pluck('id');
+        }
         $visibleLivestockUnits = collect(['goats','rabbits','dogs'])->filter(fn ($unit) => $user->canAccessFarmUnit($unit))->values();
         $livestockGroups = DB::table('livestock_groups')->whereIn('unit_code',$visibleLivestockUnits)->where('status','active')->orderBy('unit_code')->orderBy('group_code')->get()->groupBy('unit_code');
         $dailyLivestock = [
@@ -75,6 +102,7 @@ class DailyEntryController extends Controller
             'visibleFarmUnits'=>collect(['poultry','goats','rabbits','dogs','garden'])->filter(fn ($unit) => $user->canAccessFarmUnit($unit))->values(),
             'showProductionPlanning'=>! $user->isDataEntryOnly() && $user->canAccess('budget'),
             'feedBalances'=>$feedBalances,
+            'assignedHouses'=>$assignedHouses,
         ]);
     }
 
@@ -85,6 +113,10 @@ class DailyEntryController extends Controller
     public function eggsForm(Request $request, AnimalGroup $batch): View
     {
         $this->assertVisible($request, $batch);
+        $houses = $this->feedHousesFor($request, $batch);
+        abort_if($houses->isEmpty(), 422, 'No poultry house is assigned to this batch.');
+        $houseChoices = $this->houseChoicesFor($request, $batch);
+        $selectedHouse = $houses->firstWhere('id', (int) $request->query('house')) ?? $houses->first();
         $hour = now()->hour;
         $session = $hour < 12 ? 'morning' : ($hour < 17 ? 'afternoon' : 'evening');
 
@@ -112,6 +144,9 @@ class DailyEntryController extends Controller
             'likely'   => $likely,
             'defects'  => $defects,
             'session'  => $session,
+            'houses' => $houses,
+            'houseChoices' => $houseChoices,
+            'selectedHouse' => $selectedHouse,
         ]);
     }
 
@@ -126,14 +161,16 @@ class DailyEntryController extends Controller
             'loose'       => ['array'],
             'loose.*'     => ['nullable', 'integer', 'min:0', 'max:29'],
             'egg_mass_g' => ['nullable', 'numeric', 'min:0'],
-            'damaged_eggs' => ['required', 'integer', 'min:0'],
             'bird_weight_kg' => ['nullable', 'numeric', 'min:0'],
-            'feed_amount_kg' => ['nullable', 'numeric', 'min:0'],
             'worker_note' => ['nullable', 'string', 'max:500'],
+            'poultry_house_id' => ['required', 'exists:poultry_houses,id'],
         ]);
+        $house = $this->feedHousesFor($request, $batch)->firstWhere('id', (int) $data['poultry_house_id']);
+        abort_unless($house, 403, 'This poultry house is not assigned to you or does not contain this batch.');
 
         $grades = EggGrade::where('is_active', true)->get()->keyBy('id');
         $total  = 0;
+        $damagedEggs = 0;
         $lines  = [];
 
         foreach ($grades as $id => $grade) {
@@ -146,6 +183,9 @@ class DailyEntryController extends Controller
 
             $eggs   = ($trays * $grade->eggs_per_tray) + $loose;
             $total += $eggs;
+            if ($grade->is_defect) {
+                $damagedEggs += $eggs;
+            }
 
             $lines[] = [
                 'egg_grade_id' => $id,
@@ -164,10 +204,11 @@ class DailyEntryController extends Controller
         $savedAt = now();
         $session = $savedAt->hour < 12 ? 'morning' : ($savedAt->hour < 17 ? 'afternoon' : 'evening');
 
-        DB::transaction(function () use ($batch, $data, $lines, $total, $request, $savedAt, $session) {
+        DB::transaction(function () use ($batch, $house, $data, $lines, $total, $damagedEggs, $request, $savedAt, $session) {
 
             $collection = EggCollection::create([
                     'animal_group_id' => $batch->id,
+                    'poultry_house_id' => $house->id,
                     'department_id'   => $batch->department_id,
                     'collected_on'    => $savedAt->toDateString(),
                     'session'         => $session,
@@ -176,9 +217,8 @@ class DailyEntryController extends Controller
                     'collected_at'  => $savedAt->format('H:i:s'),
                     'total_eggs'    => $total,
                     'egg_mass_g' => $data['egg_mass_g'] ?? null,
-                    'damaged_eggs' => $data['damaged_eggs'],
+                    'damaged_eggs' => $damagedEggs,
                     'bird_weight_kg' => $data['bird_weight_kg'] ?? null,
-                    'feed_amount_kg' => $data['feed_amount_kg'] ?? null,
                     'recorded_by'   => $request->user()->id,
                     'recorded_at'   => $savedAt,
                     'worker_note'   => $data['worker_note'] ?? null,
@@ -218,7 +258,16 @@ class DailyEntryController extends Controller
     {
         $this->assertVisible($request, $batch);
 
-        return view('poultry.daily.deaths', ['batch' => $batch]);
+        $houses = $this->feedHousesFor($request, $batch);
+        abort_if($houses->isEmpty(), 422, 'No poultry house is assigned to this batch.');
+        $selectedHouse = $houses->firstWhere('id', (int) $request->query('house')) ?? $houses->first();
+
+        return view('poultry.daily.deaths', [
+            'batch' => $batch,
+            'houses' => $houses,
+            'houseChoices' => $this->houseChoicesFor($request, $batch),
+            'selectedHouse' => $selectedHouse,
+        ]);
     }
 
     public function deathsStore(Request $request, AnimalGroup $batch): RedirectResponse
@@ -230,9 +279,12 @@ class DailyEntryController extends Controller
             'quantity_died'   => ['required', 'integer', 'min:0', 'max:100000'],
             'quantity_culled' => ['nullable', 'integer', 'min:0', 'max:100000'],
             'worker_note'     => ['nullable', 'string', 'max:500'],
+            'poultry_house_id' => ['required', 'exists:poultry_houses,id'],
         ], [
             'quantity_died.required' => 'Enter how many birds died. Enter 0 if none died.',
         ]);
+        $house = $this->feedHousesFor($request, $batch)->firstWhere('id', (int) $data['poultry_house_id']);
+        abort_unless($house, 403, 'This poultry house is not assigned to you or does not contain this batch.');
 
         $died   = (int) $data['quantity_died'];
         $culled = (int) ($data['quantity_culled'] ?? 0);
@@ -245,17 +297,18 @@ class DailyEntryController extends Controller
         }
 
         // Cannot lose more birds than are alive.
-        if ($total > $batch->current_quantity) {
+        if ($total > $house->bird_quantity) {
             return back()->withInput()->withErrors([
-                'quantity_died' => "There are only " . number_format($batch->current_quantity)
-                    . " birds in {$batch->code}. Check the number.",
+                'quantity_died' => "There are only " . number_format($house->bird_quantity)
+                    . " birds in {$house->house_number}. Check the number.",
             ]);
         }
 
-        DB::transaction(function () use ($batch, $died, $culled, $total, $data, $request) {
+        DB::transaction(function () use ($batch, $house, $died, $culled, $total, $data, $request) {
 
             $record = MortalityRecord::create([
                 'animal_group_id' => $batch->id,
+                'poultry_house_id' => $house->id,
                 'department_id'   => $batch->department_id,
                 'occurred_on'     => now()->toDateString(),
                 'quantity_died'   => $died,
@@ -271,6 +324,7 @@ class DailyEntryController extends Controller
             $batch->decrement('current_quantity', $total);
             $batch->increment('total_mortality', $died);
             $batch->increment('total_culled', $culled);
+            $house->decrement('bird_quantity', $total);
 
             AuditLog::record('created', $record,
                 "Recorded {$total} birds lost from {$batch->code}.", null, null, 'mortality-entry');
@@ -306,15 +360,56 @@ class DailyEntryController extends Controller
 
         // Today's entries, so the form comes back filled in rather than
         // making someone start again to correct one number.
+        $houses = $this->feedHousesFor($request, $batch);
+        $selectedHouse = $houses->firstWhere('id', (int) $request->query('house')) ?? $houses->first();
+        abort_unless($selectedHouse, 422, 'No poultry house is assigned to this batch.');
+
         $existing = FeedConsumption::where('animal_group_id', $batch->id)
+            ->where('poultry_house_id', $selectedHouse->id)
             ->whereDate('used_on', now()->toDateString())
             ->get();
+        $servings = DB::table('poultry_feed_servings')
+            ->where('poultry_house_id', $selectedHouse->id)
+            ->whereDate('fed_on', now()->toDateString())
+            ->orderBy('fed_at')->get();
 
         return view('poultry.daily.feed', [
             'batch'    => $batch,
             'groups'   => $groups,
             'existing' => $existing,
+            'houses' => $houses,
+            'houseChoices' => $this->houseChoicesFor($request, $batch),
+            'selectedHouse' => $selectedHouse,
+            'servings' => $servings,
         ]);
+    }
+
+    public function feedServingStore(Request $request, AnimalGroup $batch): RedirectResponse
+    {
+        $this->assertVisible($request, $batch);
+        abort_unless($request->user()->canDo('feed-consumption', 'create'), 403);
+        $data = $request->validate([
+            'poultry_house_id' => ['required', 'exists:poultry_houses,id'],
+            'fed_at' => ['required', 'date_format:H:i'],
+            'quantity_kg' => ['required', 'numeric', 'min:0.01', 'max:20000'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+        $house = $this->feedHousesFor($request, $batch)->firstWhere('id', (int) $data['poultry_house_id']);
+        abort_unless($house, 403, 'This poultry house is not assigned to you or does not contain this batch.');
+
+        DB::table('poultry_feed_servings')->insert([
+            'animal_group_id' => $batch->id,
+            'poultry_house_id' => $house->id,
+            'fed_on' => now()->toDateString(),
+            'fed_at' => $data['fed_at'],
+            'quantity_kg' => $data['quantity_kg'],
+            'notes' => $data['notes'] ?? null,
+            'recorded_by' => $request->user()->id,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        return redirect()->route('daily.feed', ['batch' => $batch, 'house' => $house->id])
+            ->with('status', 'Feed given to '.$house->house_number.' recorded. You can add another feeding time.');
     }
 
     public function feedStore(Request $request, AnimalGroup $batch): RedirectResponse
@@ -332,7 +427,11 @@ class DailyEntryController extends Controller
             'loose_kg'    => ['array'],
             'loose_kg.*'  => ['nullable', 'numeric', 'min:0', 'max:20000'],
             'worker_note' => ['nullable', 'string', 'max:500'],
+            'poultry_house_id' => ['required', 'exists:poultry_houses,id'],
         ]);
+
+        $house = $this->feedHousesFor($request, $batch)->firstWhere('id', (int) $data['poultry_house_id']);
+        abort_unless($house, 403, 'This poultry house is not assigned to you or does not contain this batch.');
 
         $chosen = array_keys($data['use'] ?? []);
 
@@ -397,7 +496,7 @@ class DailyEntryController extends Controller
             $totalKg += $kg;
         }
 
-        DB::transaction(function () use ($batch, $lines, $data, $request) {
+        DB::transaction(function () use ($batch, $house, $lines, $data, $request) {
 
             /*
              | Replace today's entries rather than adding to them. Someone
@@ -405,14 +504,16 @@ class DailyEntryController extends Controller
              | they see on screen is what ends up stored.
              */
             FeedConsumption::where('animal_group_id', $batch->id)
+                ->where('poultry_house_id', $house->id)
                 ->whereDate('used_on', now()->toDateString())
                 ->delete();
-            $stockReference = 'poultry-feed:'.$batch->id.':'.now()->toDateString();
+            $stockReference = 'poultry-feed:'.$batch->id.':house-'.$house->id.':'.now()->toDateString();
             DB::table('feed_stock_movements')->where('reference', $stockReference)->delete();
 
             foreach ($lines as $line) {
                 FeedConsumption::create([
                     'animal_group_id' => $batch->id,
+                    'poultry_house_id' => $house->id,
                     'department_id'   => $batch->department_id,
                     'feed_type_id'    => $line['type']->id,
                     'feed_type'       => $line['type']->code,
@@ -425,17 +526,17 @@ class DailyEntryController extends Controller
                     'worker_note'     => $data['worker_note'] ?? null,
                     'status'          => 'submitted',
                 ]);
-                DB::table('feed_stock_movements')->insert([
+                app(FeedStockService::class)->issue([
                     'unit_code'=>'poultry','movement_date'=>now()->toDateString(),'movement_type'=>'consumed',
                     'feed_name'=>$line['type']->name,'quantity_kg'=>$line['quantity'],'reference'=>$stockReference,
-                    'notes'=>$data['worker_note']??null,'recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now(),
+                    'notes'=>$data['worker_note']??null,'recorded_by'=>$request->user()->id,
                 ]);
             }
         });
 
         AuditLog::record(
             'created', $batch,
-            "Recorded " . round($totalKg) . " kg of feed for {$batch->code} across "
+            "Recorded " . round($totalKg) . " kg of ingredients taken for mixing for {$batch->code} across "
                 . count($lines) . ' ' . (count($lines) === 1 ? 'feed' : 'feeds') . '.',
             null, null, 'feed-consumption'
         );
@@ -451,11 +552,55 @@ class DailyEntryController extends Controller
 
     /* ---------------------------------------------------------------- */
 
+    private function feedHousesFor(Request $request, AnimalGroup $batch)
+    {
+        $query = PoultryHouse::where('animal_group_id', $batch->id)->where('is_active', true);
+        $user = $request->user();
+
+        if ($user->isDataEntryOnly()) {
+            $assignedHouseIds = PoultryHouseAssignment::where('employee_id', $user->employee_id)
+                ->whereNull('assigned_until')->pluck('poultry_house_id');
+            $query->whereIn('id', $assignedHouseIds);
+        }
+
+        return $query->orderBy('house_number')->get();
+    }
+
+    private function houseChoicesFor(Request $request, AnimalGroup $batch)
+    {
+        $user = $request->user();
+        if (! $user->isDataEntryOnly()) {
+            return $this->feedHousesFor($request, $batch);
+        }
+
+        $assignedHouseIds = PoultryHouseAssignment::where('employee_id', $user->employee_id)
+            ->whereNull('assigned_until')->pluck('poultry_house_id');
+
+        return PoultryHouse::whereIn('id', $assignedHouseIds)
+            ->where('is_active', true)->whereNotNull('animal_group_id')
+            ->orderBy('house_number')->get();
+    }
+
     private function assertVisible(Request $request, AnimalGroup $batch): void
     {
         $user = $request->user();
 
         if ($user->isSuperuser()) {
+            return;
+        }
+
+        if ($user->isDataEntryOnly()) {
+            abort_unless($user->employee_id, 403, 'Your login is not linked to a worker record.');
+
+            $isAssigned = PoultryHouseAssignment::where('employee_id', $user->employee_id)
+                ->whereNull('assigned_until')
+                ->whereHas('house', fn ($query) => $query
+                    ->where('animal_group_id', $batch->id)
+                    ->where('is_active', true))
+                ->exists();
+
+            abort_unless($isAssigned, 403, 'This poultry house is not assigned to you.');
+
             return;
         }
 

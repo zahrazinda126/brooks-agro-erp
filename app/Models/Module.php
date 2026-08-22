@@ -110,6 +110,9 @@ class Module extends Model
         if (in_array($this->key, ['audit','chart-of-accounts','finance-periods','finance-accounts','payment-methods','document-numbering','tax-settings','budget-settings','finance-imports'], true) && Route::has('finance.admin.index')) {
             return route('finance.admin.index', ['screen' => $this->key]);
         }
+        if (in_array($this->key, ['security', 'settings'], true) && Route::has('executive.index')) {
+            return route('executive.index', ['screen' => $this->key]);
+        }
         if ($this->key === 'staff-performance' && Route::has('poultry.performance.index')) {
             return route('poultry.performance.index');
         }

@@ -26,16 +26,20 @@ class SalesController extends Controller
 
     public function index(Request $request): View
     {
-        abort_unless($request->user()->canAccess('sales'), 403);
         $screen = $request->query('screen', 'sale');
-        abort_unless(in_array($screen, ['sale', 'setup'], true), 404);
+        abort_unless(in_array($screen, ['sale', 'setup', 'reports'], true), 404);
+        abort_unless(match ($screen) {
+            'setup' => $this->canManagePrices($request),
+            'reports' => $this->canViewSalesReports($request),
+            default => $request->user()->canAccess('sales'),
+        }, 403);
         $products = SaleProduct::where('is_active', true)->orderBy('category')->orderBy('name')->get();
         $products->each(fn ($product) => $product->display_stock = $this->availableStock($product));
         $customers = SalesCustomer::where('is_active', true)->orderBy('name')->get();
-        $sales = Sale::with('lines')->latest('sale_date')->latest('id')->paginate(25)->withQueryString();
+        $sales = Sale::with(['lines', 'seller'])->latest('sale_date')->latest('id')->paginate(25)->withQueryString();
         $from = $request->query('from', now()->startOfMonth()->toDateString());
         $to = $request->query('to', now()->toDateString());
-        $reportSales = Sale::with('lines')->whereBetween('sale_date', [$from, $to])->whereNotIn('status', ['void'])->get();
+        $reportSales = Sale::with(['lines', 'seller'])->whereBetween('sale_date', [$from, $to])->whereNotIn('status', ['void'])->get();
         $reportTotal = (float) $reportSales->sum('total');
         $customerReport = $reportSales->groupBy('customer_name')->map(fn ($rows, $name) => ['name' => $name, 'sales' => $rows->count(), 'amount' => (float) $rows->sum('total')])->sortByDesc('amount')->values()->map(fn ($row, $index) => $row + ['rank' => $index + 1, 'share' => $reportTotal > 0 ? $row['amount'] / $reportTotal * 100 : 0]);
         $productReport = $reportSales->flatMap->lines->groupBy('description')->map(fn ($rows, $name) => ['name' => $name, 'quantity' => (float) $rows->sum('quantity'), 'amount' => (float) $rows->sum('line_total')])->sortByDesc('amount')->values();
@@ -44,8 +48,11 @@ class SalesController extends Controller
 
             return ['label' => $month->format('M Y'), 'amount' => (float) Sale::whereBetween('sale_date', [$month, $month->copy()->endOfMonth()])->whereNotIn('status', ['void'])->sum('total')];
         });
+        $priceHistory = $screen === 'setup'
+            ? AuditLog::with('user')->where('event', 'sale_price_changed')->where('auditable_type', SaleProduct::class)->latest('created_at')->limit(20)->get()
+            : collect();
 
-        return view('sales.index', compact('products', 'customers', 'sales', 'screen', 'from', 'to', 'customerReport', 'productReport', 'monthly', 'reportTotal') + [
+        return view('sales.index', compact('products', 'customers', 'sales', 'screen', 'from', 'to', 'customerReport', 'productReport', 'monthly', 'reportTotal', 'reportSales', 'priceHistory') + [
             'todayTotal' => (float) Sale::whereDate('sale_date', today())->whereNotIn('status', ['void'])->sum('total'),
             'monthTotal' => (float) Sale::whereBetween('sale_date', [now()->startOfMonth(), now()->endOfMonth()])->whereNotIn('status', ['void'])->sum('total'),
             'outstanding' => (float) Sale::where('balance', '>', 0)->sum('balance'),
@@ -68,16 +75,39 @@ class SalesController extends Controller
 
     public function updatePrice(Request $request, SaleProduct $product): RedirectResponse
     {
-        abort_unless($request->user()->canDo('sales', 'edit'), 403);
-        $data = $request->validate(['unit_price' => ['required', 'numeric', 'min:0'], 'effective_from' => ['required', 'date'], 'notes' => ['nullable', 'string', 'max:1000']]);
+        abort_unless($this->canManagePrices($request), 403);
+        $data = $request->validate(['unit_price' => ['required', 'numeric', 'min:0'], 'effective_from' => ['required', 'date'], 'notes' => ['nullable', 'string', 'max:1000'], 'expected_updated_at' => ['required', 'date'], 'confirm_price_change' => ['nullable', 'boolean']]);
+        if ($product->updated_at->format('Y-m-d H:i:s') !== \Carbon\Carbon::parse($data['expected_updated_at'])->format('Y-m-d H:i:s')) {
+            return back()->withErrors(['unit_price' => $product->name.' was changed by another user while this page was open. The current price is UGX '.number_format((float) $product->unit_price).'. Review it and try again.']);
+        }
         $old = $product->unit_price;
+        if ((float) $old !== (float) $data['unit_price'] && (float) $old > 0 && ! $request->boolean('confirm_price_change')) {
+            return back()->withErrors(['unit_price' => 'Confirm that you intend to replace the existing '.$product->name.' price of UGX '.number_format((float) $old).'.']);
+        }
         $product->update(['unit_price' => $data['unit_price'], 'notes' => $data['notes'] ?? $product->notes]);
         if ($product->egg_grade_id) {
             EggPrice::change($product->egg_grade_id, (float) $data['unit_price'], $data['effective_from'], $request->user()->id, $data['notes'] ?? null);
         }
-        AuditLog::record('sale_price_changed', $product, $product->name.' price changed.', ['unit_price' => $old], ['unit_price' => $data['unit_price']], 'sales');
+        AuditLog::record('sale_price_changed', $product, $product->name.' price changed by '.$request->user()->displayName().'.', ['unit_price' => $old], ['unit_price' => $data['unit_price'], 'effective_from' => $data['effective_from']], 'sales');
 
         return back()->with('status', 'Price updated with an effective-date history.');
+    }
+
+    private function canManagePrices(Request $request): bool
+    {
+        $user = $request->user();
+        $roleCodes = $user->roles->pluck('code')->push($user->role?->code)->filter();
+
+        return $roleCodes->intersect(['ceo', 'finance-manager'])->isNotEmpty();
+    }
+
+    private function canViewSalesReports(Request $request): bool
+    {
+        $user = $request->user();
+        $roleCodes = $user->roles->pluck('code')->push($user->role?->code)->filter();
+
+        return $user->canAccess('sales')
+            || $roleCodes->intersect(['ceo', 'director', 'finance-manager', 'sales-manager'])->isNotEmpty();
     }
 
     public function storeCustomer(Request $request): RedirectResponse
@@ -92,11 +122,12 @@ class SalesController extends Controller
     public function storeSale(Request $request): RedirectResponse
     {
         abort_unless($request->user()->canDo('sales', 'create'), 403);
-        $data = $request->validate(['sale_date' => ['required', 'date', 'before_or_equal:today'], 'customer_id' => ['nullable', 'exists:sales_customers,id'], 'walk_in_customer' => ['nullable', 'string', 'max:160'], 'payment_type' => ['required', 'in:cash,credit,mixed'], 'payment_method' => ['nullable', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'string', 'max:120'], 'amount_paid' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'notes' => ['nullable', 'string', 'max:2000'], 'lines' => ['required', 'array', 'min:1'], 'lines.*.product_id' => ['nullable', 'required_without:lines.*.description', 'exists:sale_products,id'], 'lines.*.category' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:60'], 'lines.*.description' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:180'], 'lines.*.unit' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:40'], 'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required', 'numeric', 'min:0']]);
+        $data = $request->validate(['sale_date' => ['required', 'date', 'before_or_equal:today'], 'customer_id' => ['nullable', 'exists:sales_customers,id'], 'walk_in_customer' => ['nullable', 'string', 'max:160'], 'payment_type' => ['required', 'in:cash,credit,mixed'], 'payment_method' => ['nullable', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'string', 'max:120'], 'amount_paid' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'notes' => ['nullable', 'string', 'max:2000'], 'lines' => ['required', 'array', 'min:1'], 'lines.*.product_id' => ['nullable', 'required_without:lines.*.description', 'exists:sale_products,id'], 'lines.*.category' => ['nullable', 'required_without:lines.*.product_id', Rule::in(self::CATEGORIES)], 'lines.*.description' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:180'], 'lines.*.unit' => ['nullable', 'required_without:lines.*.product_id', Rule::in(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'])], 'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required', 'numeric', 'min:0']]);
         $data['payment_type'] = 'cash';
         $data['amount_paid'] = 0;
         $data['discount'] = 0;
-        $customer = $data['customer_id'] ? SalesCustomer::find($data['customer_id']) : null;
+        $customerId = $data['customer_id'] ?? null;
+        $customer = $customerId ? SalesCustomer::find($customerId) : null;
         $enteredName = trim($data['walk_in_customer'] ?? '');
         if (! $customer && $enteredName !== '' && strcasecmp($enteredName, 'One-time customer') !== 0) {
             $customer = SalesCustomer::whereRaw('lower(name) = ?', [mb_strtolower($enteredName)])->first()
@@ -110,7 +141,12 @@ class SalesController extends Controller
                 foreach ($data['lines'] as $line) {
                     $product = ! empty($line['product_id']) ? SaleProduct::lockForUpdate()->findOrFail($line['product_id']) : null;
                     $qty = (float) $line['quantity'];
-                    $price = (float) $line['unit_price'];
+                    // A configured selling price is authoritative. Manual price
+                    // entry is accepted only for an unlisted product or a
+                    // catalogue product whose price has not yet been set.
+                    $price = $product && (float) $product->unit_price > 0
+                        ? (float) $product->unit_price
+                        : (float) $line['unit_price'];
                     if ($product) {
                         $available = $this->availableStock($product);
                         if ($available !== null && $qty > $available) {
@@ -165,7 +201,7 @@ class SalesController extends Controller
     public function show(Request $request, Sale $sale): View
     {
         abort_unless($request->user()->canAccess('sales') || $request->user()->canAccess('finance'), 403);
-        $sale->load(['lines.product', 'payments', 'customer']);
+        $sale->load(['lines.product', 'payments', 'customer', 'seller']);
 
         return view('sales.show', compact('sale'));
     }
@@ -175,6 +211,7 @@ class SalesController extends Controller
         abort_unless($request->user()->canAccess('sales') || $request->user()->canAccess('finance'), 403);
         abort_unless($payment->sale_id === $sale->id, 404);
         $sale->load(['lines', 'customer']);
+        $payment->load('recorder');
 
         return view('sales.receipt', compact('sale', 'payment'));
     }

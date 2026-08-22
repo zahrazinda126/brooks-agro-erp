@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Operations;
 
+use App\Services\FeedStockService;
+use App\Services\BrandedReportExport;
+
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Breed;
@@ -47,7 +50,7 @@ class FarmUnitController extends Controller
     public function export(Request $request, string $unit): StreamedResponse
     {
         $config = self::UNITS[$unit] ?? abort(404);
-        abort_unless($request->user()->canAccessFarmUnit($unit), 403);
+        abort_unless($request->user()->canAccess('reports') || $request->user()->canAccessFarmUnit($unit), 403);
         $from = $request->date('from');
         $to = $request->date('to');
 
@@ -62,12 +65,11 @@ class FarmUnitController extends Controller
                 ->merge($period($base('livestock_mortality_records'),'occurred_on')->selectRaw("occurred_on as report_date, group_code, 'Mortality' as section, suspected_cause as subject, quantity, 'animals' as measure_unit, null as amount, disposal_method as detail")->get())
                 ->merge($period($base('livestock_production_records'),'recorded_on')->selectRaw("recorded_on as report_date, group_code, 'Production' as section, production_type as subject, quantity, measure_unit, value as amount, notes as detail")->get())
                 ->sortBy('report_date');
-            return response()->streamDownload(function () use ($rows) {
-                $out=fopen('php://output','w');
-                fputcsv($out,['Date','Group','Section','Record','Quantity','Unit','Value or cost (UGX)','Details']);
-                foreach($rows as $row) fputcsv($out,[$row->report_date,$row->group_code,$row->section,$row->subject,$row->quantity,$row->measure_unit,$row->amount,$row->detail]);
-                fclose($out);
-            },$unit.'-unit-report-'.now()->format('Y-m-d').'.csv',['Content-Type'=>'text/csv']);
+            return app(BrandedReportExport::class)->download($config['name'].' Report',
+                $this->exportPeriodLabel($from,$to),
+                ['Date','Group','Section','Record','Quantity','Unit','Value or cost (UGX)','Details'],
+                $rows->map(fn($row)=>[$row->report_date,$row->group_code,$row->section,$row->subject,$row->quantity,$row->measure_unit,$row->amount,$row->detail]),
+                $unit.'-unit-report-'.now()->format('Y-m-d').'.xls',$request->user()->displayName());
         }
 
         $query = FarmUnitRecord::with('recorder')->where('verification_status','approved')->where('unit_code',$unit)->orderBy('record_date')->orderBy('id');
@@ -75,18 +77,17 @@ class FarmUnitController extends Controller
         if ($request->filled('type') && isset($config['types'][$request->string('type')->toString()])) $query->where('record_type',$request->string('type')->toString());
         if ($request->filled('view')) $query->whereIn('record_type',$this->viewTypes($unit,$request->string('view')->toString()));
         $records=$query->get();
-        return response()->streamDownload(function () use ($records,$config) {
-            $out=fopen('php://output','w');
-            fputcsv($out,['Date','Record type','Subject','Quantity','Unit','Value or cost (UGX)','Status','Notes','Recorded by']);
-            foreach($records as $row) fputcsv($out,[$row->record_date->format('Y-m-d'),$config['types'][$row->record_type]??$row->record_type,$row->subject,$row->quantity,$row->measure_unit,$row->amount,$row->status,$row->notes,$row->recorder?->displayName()]);
-            fclose($out);
-        },$unit.'-unit-report-'.now()->format('Y-m-d').'.csv',['Content-Type'=>'text/csv']);
+        return app(BrandedReportExport::class)->download($config['name'].' Report',
+            $this->exportPeriodLabel($from,$to),
+            ['Date','Record type','Subject','Quantity','Unit','Value or cost (UGX)','Status','Notes','Recorded by'],
+            $records->map(fn($row)=>[$row->record_date->format('Y-m-d'),$config['types'][$row->record_type]??$row->record_type,$row->subject,$row->quantity,$row->measure_unit,$row->amount,$row->status,$row->notes,$row->recorder?->displayName()]),
+            $unit.'-unit-report-'.now()->format('Y-m-d').'.xls',$request->user()->displayName());
     }
 
     public function unitReport(Request $request, string $unit): View
     {
         $config = self::UNITS[$unit] ?? abort(404);
-        abort_unless($request->user()->canAccessFarmUnit($unit), 403);
+        abort_unless($request->user()->canAccess('reports') || $request->user()->canAccessFarmUnit($unit), 403);
 
         $from = $request->date('from') ?? now()->startOfMonth();
         $to = $request->date('to') ?? now();
@@ -142,19 +143,16 @@ class FarmUnitController extends Controller
         if($view==='inputs')$farm->whereIn('record_type',['feeding','input_application','irrigation']);
         if($view==='production')$farm->whereIn('record_type',['milk','kidding','kindling','whelping','breeding','harvest','sale']);
         $include=match($view){'health'=>['health','mortality'],'inputs'=>['feed'],'production'=>['production','eggs'],default=>['feed','health','mortality','production','eggs']};
-        return response()->streamDownload(function()use($farm,$include,$view){
-            $out=fopen('php://output','w');fwrite($out,"\xEF\xBB\xBF");
-            fputcsv($out,['BROOKS AGRO FARM LTD.']);fputcsv($out,['Overall Production Report',ucfirst($view),'Exported',now()->format('d M Y H:i')]);fputcsv($out,[]);
-            fputcsv($out,['Date','Unit','Category','Group / subject','Description','Quantity','Measure','Value / cost (UGX)','Status / details']);
-            foreach($farm->cursor() as $r)fputcsv($out,[$r->record_date->format('Y-m-d'),ucfirst($r->unit_code),str_replace('_',' ',$r->record_type),$r->subject,$r->notes,$r->quantity,$r->measure_unit,$r->amount,str_replace('_',' ',$r->status)]);
-            if(in_array('eggs',$include,true))foreach(EggCollection::with(['batch','lines.grade'])->where('status','approved')->orderBy('collected_on')->orderBy('collected_at')->get() as $r){$breakdown=$r->lines->map(fn($line)=>($line->grade?->name??'Grade').': '.$line->total_eggs)->implode('; ');fputcsv($out,[$r->collected_on->format('Y-m-d'),'Poultry','Egg collection',$r->batch?->code??'Flock',ucfirst($r->session).' - '.$breakdown,$r->total_eggs,'eggs',null,'Approved']);}
-            $units=['goats','rabbits','dogs'];
-            if(in_array('feed',$include,true))foreach(DB::table('livestock_feed_records')->join('livestock_groups','livestock_groups.id','=','livestock_feed_records.livestock_group_id')->where('livestock_feed_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_feed_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)fputcsv($out,[$r->recorded_on,ucfirst($r->unit_code),'Feed',$r->group_code,$r->feed_name,$r->quantity_kg,'kg',$r->cost,$r->action]);
-            if(in_array('health',$include,true))foreach(DB::table('livestock_health_records')->join('livestock_groups','livestock_groups.id','=','livestock_health_records.livestock_group_id')->where('livestock_health_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_health_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)fputcsv($out,[$r->recorded_on,ucfirst($r->unit_code),ucfirst($r->event_type),$r->group_code,$r->condition_or_vaccine,$r->animals_affected,'animals',$r->cost,$r->medicine]);
-            if(in_array('mortality',$include,true))foreach(DB::table('livestock_mortality_records')->join('livestock_groups','livestock_groups.id','=','livestock_mortality_records.livestock_group_id')->where('livestock_mortality_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_mortality_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('occurred_on')->cursor() as $r)fputcsv($out,[$r->occurred_on,ucfirst($r->unit_code),'Mortality',$r->group_code,$r->suspected_cause,$r->quantity,'animals',null,$r->disposal_method]);
-            if(in_array('production',$include,true))foreach(DB::table('livestock_production_records')->join('livestock_groups','livestock_groups.id','=','livestock_production_records.livestock_group_id')->where('livestock_production_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_production_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)fputcsv($out,[$r->recorded_on,ucfirst($r->unit_code),'Production',$r->group_code,$r->production_type,$r->quantity,$r->measure_unit,$r->value,$r->notes]);
-            fclose($out);
-        },'overall-production-'.$view.'-'.now()->format('Y-m-d').'.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
+        $rows=collect($farm->get())->map(fn($r)=>[$r->record_date->format('Y-m-d'),ucfirst($r->unit_code),str_replace('_',' ',$r->record_type),$r->subject,$r->notes,$r->quantity,$r->measure_unit,$r->amount,str_replace('_',' ',$r->status)]);
+        if(in_array('eggs',$include,true))foreach(EggCollection::with(['batch','lines.grade'])->where('status','approved')->orderBy('collected_on')->orderBy('collected_at')->get() as $r){$breakdown=$r->lines->map(fn($line)=>($line->grade?->name??'Grade').': '.$line->total_eggs)->implode('; ');$rows->push([$r->collected_on->format('Y-m-d'),'Poultry','Egg collection',$r->batch?->code??'Flock',ucfirst($r->session).' - '.$breakdown,$r->total_eggs,'eggs',null,'Approved']);}
+        $units=['goats','rabbits','dogs'];
+        if(in_array('feed',$include,true))foreach(DB::table('livestock_feed_records')->join('livestock_groups','livestock_groups.id','=','livestock_feed_records.livestock_group_id')->where('livestock_feed_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_feed_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)$rows->push([$r->recorded_on,ucfirst($r->unit_code),'Feed',$r->group_code,$r->feed_name,$r->quantity_kg,'kg',$r->cost,$r->action]);
+        if(in_array('health',$include,true))foreach(DB::table('livestock_health_records')->join('livestock_groups','livestock_groups.id','=','livestock_health_records.livestock_group_id')->where('livestock_health_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_health_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)$rows->push([$r->recorded_on,ucfirst($r->unit_code),ucfirst($r->event_type),$r->group_code,$r->condition_or_vaccine,$r->animals_affected,'animals',$r->cost,$r->medicine]);
+        if(in_array('mortality',$include,true))foreach(DB::table('livestock_mortality_records')->join('livestock_groups','livestock_groups.id','=','livestock_mortality_records.livestock_group_id')->where('livestock_mortality_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_mortality_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('occurred_on')->cursor() as $r)$rows->push([$r->occurred_on,ucfirst($r->unit_code),'Mortality',$r->group_code,$r->suspected_cause,$r->quantity,'animals',null,$r->disposal_method]);
+        if(in_array('production',$include,true))foreach(DB::table('livestock_production_records')->join('livestock_groups','livestock_groups.id','=','livestock_production_records.livestock_group_id')->where('livestock_production_records.verification_status','approved')->whereIn('livestock_groups.unit_code',$units)->select('livestock_production_records.*','livestock_groups.unit_code','livestock_groups.group_code')->orderBy('recorded_on')->cursor() as $r)$rows->push([$r->recorded_on,ucfirst($r->unit_code),'Production',$r->group_code,$r->production_type,$r->quantity,$r->measure_unit,$r->value,$r->notes]);
+        return app(BrandedReportExport::class)->download('Overall Production Report',ucfirst($view).' view',
+            ['Date','Unit','Category','Group / subject','Description','Quantity','Measure','Value / cost (UGX)','Status / details'],
+            $rows->sortBy(0)->values(),'overall-production-'.$view.'-'.now()->format('Y-m-d').'.xls',$request->user()->displayName());
     }
 
     private function viewTypes(string $unit, string $view): array
@@ -166,6 +164,12 @@ class FarmUnitController extends Controller
             'activity' => ['plot','planting','field_activity'],
             default => array_keys(self::UNITS[$unit]['types']),
         };
+    }
+
+    private function exportPeriodLabel($from, $to): string
+    {
+        if (! $from && ! $to) return 'All approved records';
+        return 'Reporting period: '.($from?->format('d M Y') ?? 'Beginning').' to '.($to?->format('d M Y') ?? 'Today');
     }
 
     public function store(Request $request, string $unit): RedirectResponse
@@ -231,7 +235,7 @@ class FarmUnitController extends Controller
             return back()->with('status','New '.$unit.' group '.$d['group_code'].' registered.');
         }
         $d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id']]);$group=DB::table('livestock_groups')->where('id',$d['livestock_group_id'])->where('unit_code',$unit)->first();abort_unless($group,422,'Choose a group from this unit.');
-        if($section==='feed'){$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'recorded_on'=>['required','date'],'action'=>['required','in:mixed,issued,fed'],'feed_name'=>['required','string','max:160'],'quantity_kg'=>['required','numeric','min:0.01'],'source_reference'=>['nullable','string','max:160'],'cost'=>['nullable','numeric','min:0'],'notes'=>['nullable','string','max:2000']]);DB::transaction(function()use($d,$request,$unit){$id=DB::table('livestock_feed_records')->insertGetId($d+['recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);if(in_array($d['action'],['issued','fed'],true))DB::table('feed_stock_movements')->insert(['unit_code'=>$unit,'movement_date'=>$d['recorded_on'],'movement_type'=>$d['action'],'feed_name'=>$d['feed_name'],'quantity_kg'=>$d['quantity_kg'],'reference'=>'livestock-feed:'.$id,'notes'=>$d['notes']??null,'recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);});}
+        if($section==='feed'){$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'recorded_on'=>['required','date'],'action'=>['required','in:mixed,issued,fed'],'feed_name'=>['required','string','max:160'],'quantity_kg'=>['required','numeric','min:0.01'],'source_reference'=>['nullable','string','max:160'],'cost'=>['nullable','numeric','min:0'],'notes'=>['nullable','string','max:2000']]);DB::transaction(function()use($d,$request,$unit){$id=DB::table('livestock_feed_records')->insertGetId($d+['recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);if(in_array($d['action'],['issued','fed'],true))app(FeedStockService::class)->issue(['unit_code'=>$unit,'movement_date'=>$d['recorded_on'],'movement_type'=>$d['action'],'feed_name'=>$d['feed_name'],'quantity_kg'=>$d['quantity_kg'],'reference'=>'livestock-feed:'.$id,'notes'=>$d['notes']??null,'recorded_by'=>$request->user()->id]);});}
         elseif($section==='breeding'){$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'service_date'=>['required','date','before_or_equal:today'],'dam_identity'=>['required','string','max:120'],'dam_breed'=>['nullable','string','max:120'],'sire_identity'=>['required','string','max:120'],'sire_breed'=>['nullable','string','max:120'],'previous_inseminations'=>['required','integer','min:0'],'next_heat_on'=>['nullable','date','after_or_equal:service_date'],'pregnancy_diagnosis'=>['nullable','string','max:80'],'expected_delivery_on'=>['nullable','date','after:service_date'],'notes'=>['nullable','string','max:2000']]);DB::table('livestock_breeding_records')->insert($d+['recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);}
         elseif(in_array($section,['vaccination','deworming','spraying','treatment'])){$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'recorded_on'=>['required','date'],'condition_or_vaccine'=>['required','string','max:180'],'medicine'=>['nullable','string','max:180'],'application_route'=>['nullable','string','max:80'],'dose'=>['nullable','string','max:100'],'mix_ratio'=>['nullable','string','max:80'],'animals_affected'=>['required','integer','min:1'],'next_due_on'=>['nullable','date'],'batch_number'=>['nullable','string','max:100'],'manufactured_on'=>['nullable','date'],'expires_on'=>['nullable','date','after_or_equal:manufactured_on'],'camp_category'=>['nullable','string','max:100'],'breed'=>['nullable','string','max:120'],'withdrawal_ends_on'=>['nullable','date'],'cost'=>['nullable','numeric','min:0'],'notes'=>['nullable','string','max:2000']]);DB::table('livestock_health_records')->insert($d+['event_type'=>$section,'recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);}
         elseif($section==='mortality'){$d=$request->validate(['livestock_group_id'=>['required','exists:livestock_groups,id'],'occurred_on'=>['required','date'],'quantity'=>['required','integer','min:1'],'suspected_cause'=>['nullable','string','max:180'],'disposal_method'=>['nullable','string','max:120'],'notes'=>['nullable','string','max:2000']]);abort_if($d['quantity']>$group->current_quantity,422,'Mortality cannot exceed the current group quantity.');DB::transaction(function()use($d,$request){DB::table('livestock_mortality_records')->insert($d+['recorded_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);DB::table('livestock_groups')->where('id',$d['livestock_group_id'])->decrement('current_quantity',$d['quantity']);});}

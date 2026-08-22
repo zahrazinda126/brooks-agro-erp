@@ -21,7 +21,7 @@ class AnimalGroup extends Model
 
     protected $fillable = [
         'code', 'name', 'department_id', 'breed_id', 'purpose',
-        'received_date', 'age_days_on_arrival',
+        'received_date', 'age_days_on_arrival', 'expected_brooder_exit_date',
         'quantity_received', 'quantity_free',
         'unit_cost', 'total_cost', 'supplier_id', 'supplier_name', 'invoice_no',
         'current_quantity', 'total_mortality', 'total_culled', 'total_sold',
@@ -33,6 +33,7 @@ class AnimalGroup extends Model
     {
         return [
             'received_date'     => 'date',
+            'expected_brooder_exit_date' => 'date',
             'expected_lay_date' => 'date',
             'actual_lay_date'   => 'date',
             'closed_date'       => 'date',

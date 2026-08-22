@@ -7,21 +7,24 @@ use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\FinancialTransaction;
 use App\Models\User;
+use App\Models\Role;
+use App\Models\Module;
 use App\Models\Communication;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
 
 class ExecutiveController extends Controller
 {
     private const TITLES = [
         'kpis' => 'KPIs & Analytics',
-        'reports' => 'Executive Reports',
+        'reports' => 'Financial & Executive Reports',
         'messages' => 'Messages & Announcements',
         'notifications' => 'Executive Notifications',
         'security' => 'Users & Permissions',
-        'settings' => 'System Settings',
+        'settings' => 'Company & System Settings',
     ];
 
     public function index(Request $request, string $screen): View
@@ -58,7 +61,82 @@ class ExecutiveController extends Controller
             default => [],
         };
 
-        return view('executive.index', compact('screen', 'data') + ['title' => self::TITLES[$screen]]);
+        $permissionData = null;
+        if ($screen === 'security' && $this->isDirector($request)) {
+            $roles = Role::where('is_active', true)->where('rank', '>', $request->user()->effectiveRank())
+                ->where('is_superuser', false)->orderBy('rank')->orderBy('name')->get();
+            $selectedRole = $roles->firstWhere('id', (int) $request->query('role')) ?: $roles->first();
+            $modules = Module::where('is_active', true)->where('is_container', false)
+                ->orderBy('group')->orderBy('sort_order')->orderBy('name')->get();
+            $grants = $selectedRole
+                ? DB::table('module_role')->where('role_id', $selectedRole->id)->get()->keyBy('module_id')
+                : collect();
+            $permissionData = compact('roles', 'selectedRole', 'modules', 'grants');
+        }
+
+        return view('executive.index', compact('screen', 'data', 'permissionData') + ['title' => self::TITLES[$screen]]);
+    }
+
+    public function updatePermissions(Request $request, Role $role): RedirectResponse
+    {
+        abort_unless($this->isDirector($request), 403, 'Only the Director can change access permissions.');
+        abort_if($role->is_superuser || $role->rank <= $request->user()->effectiveRank(), 403, 'This role is protected and cannot be changed here.');
+
+        $data = $request->validate([
+            'permissions' => ['nullable', 'array'],
+            'permissions.*' => ['array'],
+            'permissions.*.*' => ['in:1'],
+        ]);
+        $modules = Module::where('is_active', true)->where('is_container', false)->get();
+        $before = DB::table('module_role')->where('role_id', $role->id)->get()
+            ->mapWithKeys(fn ($row) => [$row->module_id => ['view'=>(bool)$row->can_view,'create'=>(bool)$row->can_create,'edit'=>(bool)$row->can_edit,'delete'=>(bool)$row->can_delete,'approve'=>(bool)$row->can_approve]])->all();
+
+        DB::transaction(function () use ($modules, $role, $data) {
+            foreach ($modules as $module) {
+                $given = $data['permissions'][$module->id] ?? [];
+                DB::table('module_role')->updateOrInsert(
+                    ['role_id' => $role->id, 'module_id' => $module->id],
+                    [
+                        'can_view' => isset($given['view']), 'can_create' => isset($given['create']),
+                        'can_edit' => isset($given['edit']), 'can_delete' => isset($given['delete']),
+                        'can_approve' => isset($given['approve']), 'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
+            }
+        });
+        $after = DB::table('module_role')->where('role_id', $role->id)->get()
+            ->mapWithKeys(fn ($row) => [$row->module_id => ['view'=>(bool)$row->can_view,'create'=>(bool)$row->can_create,'edit'=>(bool)$row->can_edit,'delete'=>(bool)$row->can_delete,'approve'=>(bool)$row->can_approve]])->all();
+        AuditLog::record('role_permissions_updated', $role, "Updated access permissions for {$role->name}.", $before, $after, 'security');
+
+        return redirect()->route('executive.index', ['screen'=>'security', 'role'=>$role->id])->with('status', "{$role->name} permissions updated.");
+    }
+
+    /** Reset an account even when it has no linked employee record. */
+    public function resetAccountPassword(Request $request, User $account): RedirectResponse
+    {
+        abort_unless($this->isSystemAdministrator($request), 403,
+            'Only the System Administrator can reset senior account passwords.');
+        abort_if($account->id === $request->user()->id, 403,
+            'Use Edit account to change your own password.');
+
+        $temporary = $this->temporaryPassword();
+        $account->forceFill([
+            'password' => Hash::make($temporary),
+            'must_change_password' => true,
+            'password_changed_at' => null,
+            'password_expires_at' => null,
+            'failed_login_attempts' => 0,
+            'locked_until' => null,
+            'is_active' => true,
+        ])->save();
+
+        AuditLog::record('password_reset', $account,
+            "System Administrator reset the password for '{$account->username}'.",
+            null, ['account_id' => $account->id, 'account_role' => $account->role?->code], 'security');
+
+        return redirect()->route('executive.index', ['screen' => 'security'])
+            ->with('credentials', ['username' => $account->username, 'password' => $temporary]);
     }
 
     public function storeMessage(Request $request): RedirectResponse
@@ -80,8 +158,33 @@ class ExecutiveController extends Controller
     {
         $codes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter();
         $isExecutive = $codes->contains(fn ($code) => in_array($code, ['ceo', 'director'], true));
+        $isSystemAdministrator = $codes->contains('system-admin');
         $isAssistant = $codes->contains('personal-assistant');
         $assistantScreen = $screen === null || in_array($screen, ['reports', 'messages', 'notifications'], true);
-        abort_unless($isExecutive || ($isAssistant && $assistantScreen), 403);
+        $administratorScreen = in_array($screen, ['security', 'settings'], true);
+        abort_unless($isExecutive || ($isAssistant && $assistantScreen) || ($isSystemAdministrator && $administratorScreen), 403);
+    }
+
+    private function isDirector(Request $request): bool
+    {
+        return $request->user()->roles->contains('code', 'director') || $request->user()->role?->code === 'director';
+    }
+
+    private function isSystemAdministrator(Request $request): bool
+    {
+        return $request->user()->roles->contains('code', 'system-admin')
+            || $request->user()->role?->code === 'system-admin';
+    }
+
+    private function temporaryPassword(): string
+    {
+        $letters = 'abcdefghjkmnpqrstuvwxyz';
+        $digits = '23456789';
+        $password = '';
+
+        for ($i = 0; $i < 6; $i++) $password .= $letters[random_int(0, strlen($letters) - 1)];
+        for ($i = 0; $i < 3; $i++) $password .= $digits[random_int(0, strlen($digits) - 1)];
+
+        return ucfirst($password);
     }
 }

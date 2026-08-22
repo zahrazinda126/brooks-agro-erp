@@ -3,13 +3,17 @@
 @section('content')
 <div class="page-head">
     <p class="eyebrow">Retail shop</p>
-    <h2>{{ $screen === 'setup' ? 'Selling Prices' : 'Record Daily Sale' }}</h2>
-    <p>{{ $screen === 'setup' ? 'Update the current market price used when recording sales.' : 'Enter a completed customer sale and issue its receipt.' }}</p>
+    <h2>{{ ['setup' => 'Selling Prices', 'reports' => 'Sales Report'][$screen] ?? 'Record Daily Sale' }}</h2>
+    <p>{{ ['setup' => 'Update the current market price used when recording sales.', 'reports' => 'Review sales, customers and products for the selected period.'][$screen] ?? 'Enter a completed customer sale and issue its receipt.' }}</p>
 </div>
 
 <nav class="unit-tabs" aria-label="Sales workspace">
-    <a class="{{ $screen === 'sale' ? 'active' : '' }}" href="{{ route('sales.index', ['screen' => 'sale']) }}">Record Daily Sale</a>
-    <a class="{{ $screen === 'setup' ? 'active' : '' }}" href="{{ route('sales.index', ['screen' => 'setup']) }}">Selling Prices</a>
+    @if($screen !== 'setup')
+        <a class="{{ $screen === 'sale' ? 'active' : '' }}" href="{{ route('sales.index', ['screen' => 'sale']) }}">Record Daily Sale</a>
+        <a class="{{ $screen === 'reports' ? 'active' : '' }}" href="{{ route('sales.index', ['screen' => 'reports']) }}">Sales Report</a>
+    @else
+        <a class="active" href="{{ route('sales.index', ['screen' => 'setup']) }}">Selling Prices</a>
+    @endif
 </nav>
 
 @if($screen === 'sale')
@@ -34,10 +38,12 @@
             <article class="entry-line">
                 <div class="entry-line__title"><strong data-line-number>Item</strong><strong data-line-total>UGX 0</strong></div>
                 <div class="entry-line__grid">
-                    <div class="field field--wide"><label>Product</label><select data-product required><option value="">Choose product</option>@foreach($products as $product)<option value="{{ $product->id }}" data-price="{{ $product->unit_price }}" data-unit="{{ $product->unit }}" data-category="{{ $product->category }}">{{ ucfirst($product->category) }} · {{ $product->name }} ({{ $product->unit }})</option>@endforeach</select></div>
-                    <div class="field"><label>Unit</label><input data-unit readonly></div>
+                    <div class="field field--wide"><label>Product</label><select data-product required><option value="">Choose product</option>@foreach($products as $product)<option value="{{ $product->id }}" data-price="{{ (float)$product->unit_price > 0 ? $product->unit_price : '' }}" data-unit="{{ $product->unit }}" data-category="{{ $product->category }}">{{ ucfirst($product->category) }} &middot; {{ $product->name }} ({{ $product->unit }})</option>@endforeach<option value="__unlisted__">+ Unlisted / type a product</option></select></div>
+                    <div class="field field--wide" data-custom-product hidden><label>Unlisted product name</label><input data-description placeholder="Type the product sold"></div>
+                    <div class="field" data-custom-category-field hidden><label>Category</label><select data-custom-category>@foreach($categories as $category)<option value="{{ $category }}">{{ ucfirst($category) }}</option>@endforeach</select></div>
+                    <div class="field"><label>Unit</label><input data-unit readonly><select data-unit-choice hidden><option value="">Choose unit</option>@foreach(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'] as $unit)<option value="{{ $unit }}">{{ ucfirst($unit) }}</option>@endforeach</select></div>
                     <div class="field"><label>Quantity</label><input data-quantity type="number" step="0.01" min="0.01" required></div>
-                    <div class="field"><label>Unit price (UGX)</label><input data-price type="number" step="0.01" min="0" readonly required></div>
+                    <div class="field"><label>Unit price (UGX)</label><input data-price type="number" step="0.01" min="0" readonly required><small class="field-hint" data-price-hint>Select a product to use its selling price.</small></div>
                 </div>
                 <input data-category type="hidden"><div class="entry-line__actions"><button type="button" class="btn btn--quiet btn--small" data-remove>Remove item</button></div>
             </article>
@@ -49,19 +55,64 @@
 <script>
 (() => {
     const body = document.getElementById('saleLines'), template = document.getElementById('saleLineTemplate'); let index = 0;
-    const total = () => { let sum = 0; body.querySelectorAll('.entry-line').forEach(row => { const value = (parseFloat(row.querySelector('[data-quantity]').value) || 0) * (parseFloat(row.querySelector('[data-price]').value) || 0); row.querySelector('[data-line-total]').textContent = 'UGX ' + Math.round(value).toLocaleString(); sum += value; }); document.getElementById('invoiceTotal').textContent = 'UGX ' + Math.round(sum).toLocaleString(); };
-    const add = () => { const row = template.content.firstElementChild.cloneNode(true), i = index++, product = row.querySelector('[data-product]'), unit = row.querySelector('[data-unit]'), quantity = row.querySelector('[data-quantity]'), price = row.querySelector('[data-price]'), category = row.querySelector('[data-category]'); row.querySelector('[data-line-number]').textContent = `Item ${i + 1}`; product.name = `lines[${i}][product_id]`; unit.name = `lines[${i}][unit]`; quantity.name = `lines[${i}][quantity]`; price.name = `lines[${i}][unit_price]`; category.name = `lines[${i}][category]`; product.onchange = () => { const option = product.selectedOptions[0]; unit.value = option?.dataset.unit || ''; price.value = option?.dataset.price || ''; category.value = option?.dataset.category || ''; total(); }; quantity.oninput = total; row.querySelector('[data-remove]').onclick = () => { row.remove(); total(); }; body.appendChild(row); };
+    const total = () => { let sum = 0; body.querySelectorAll('.entry-line').forEach(row => { const value = (parseFloat(row.querySelector('input[data-quantity]').value) || 0) * (parseFloat(row.querySelector('input[data-price]').value) || 0); row.querySelector('[data-line-total]').textContent = 'UGX ' + Math.round(value).toLocaleString(); sum += value; }); document.getElementById('invoiceTotal').textContent = 'UGX ' + Math.round(sum).toLocaleString(); };
+    const add = () => {
+        const row = template.content.firstElementChild.cloneNode(true), i = index++, product = row.querySelector('select[data-product]'), unit = row.querySelector('input[data-unit]'), unitChoice = row.querySelector('select[data-unit-choice]'), quantity = row.querySelector('input[data-quantity]'), price = row.querySelector('input[data-price]'), category = row.querySelector('input[type="hidden"][data-category]'), customCategory = row.querySelector('select[data-custom-category]'), description = row.querySelector('input[data-description]'), customBlock = row.querySelector('[data-custom-product]'), customCategoryField = row.querySelector('[data-custom-category-field]'), priceHint = row.querySelector('[data-price-hint]');
+        row.querySelector('[data-line-number]').textContent = `Item ${i + 1}`; product.name = `lines[${i}][product_id]`; unit.name = `lines[${i}][unit]`; quantity.name = `lines[${i}][quantity]`; price.name = `lines[${i}][unit_price]`; category.name = `lines[${i}][category]`; description.name = `lines[${i}][description]`;
+        const sync = () => {
+            const option = product.selectedOptions[0], custom = product.value === '__unlisted__', savedPrice = option?.dataset.price || '';
+            product.name = custom ? '' : `lines[${i}][product_id]`;
+            customBlock.hidden = !custom; customCategoryField.hidden = !custom; description.disabled = !custom; description.required = custom; customCategory.disabled = !custom;
+            unit.hidden = custom; unit.disabled = custom; unitChoice.hidden = !custom; unitChoice.disabled = !custom; unitChoice.required = custom; if(custom) unitChoice.name = `lines[${i}][unit]`; else unitChoice.name = '';
+            unit.value = custom ? '' : (option?.dataset.unit || ''); category.value = custom ? customCategory.value : (option?.dataset.category || '');
+            price.value = custom ? '' : savedPrice; price.readOnly = !custom && savedPrice !== ''; priceHint.textContent = price.readOnly ? 'Saved selling price applied automatically.' : 'No selling price is set; enter the price used for this sale.';
+            total();
+        };
+        product.onchange = sync; customCategory.onchange = () => category.value = customCategory.value; unitChoice.onchange = () => unit.value = unitChoice.value; quantity.oninput = total; price.oninput = total; row.querySelector('[data-remove]').onclick = () => { row.remove(); total(); }; body.appendChild(row);
+    };
     document.getElementById('addSaleLine').onclick = add; add();
 })();
 </script>
-@else
+@elseif($screen === 'setup')
+@if($priceHistory->isNotEmpty())
+<section class="price-change-notice"><div><p class="eyebrow">Latest price update</p><strong>{{ $priceHistory->first()->description }}</strong><span>{{ $priceHistory->first()->created_at->format('d M Y, H:i') }} &middot; Previous UGX {{ number_format((float) data_get($priceHistory->first()->old_values,'unit_price')) }} &rarr; New UGX {{ number_format((float) data_get($priceHistory->first()->new_values,'unit_price')) }}</span></div><span>Price history is retained</span></section>
+@endif
 <section class="exec-panel table-wrap">
     <div class="section-head"><div><p class="eyebrow">Market pricing</p><h3>Current selling prices</h3></div><p>Products are maintained by stock control. Change only the selling price here.</p></div>
     <table class="exec-table"><thead><tr><th>Category</th><th>Product</th><th>Unit</th><th>Current price</th><th>New market price</th></tr></thead><tbody>
     @forelse($products as $product)
-        <tr><td>{{ ucfirst($product->category) }}</td><td><strong>{{ $product->name }}</strong></td><td>{{ $product->unit }}</td><td>UGX {{ number_format((float) $product->unit_price, 2) }}</td><td><form method="POST" action="{{ route('sales.products.price', $product) }}" class="form-actions">@csrf @method('PUT')<input aria-label="New price" type="number" min="0" step="0.01" name="unit_price" value="{{ $product->unit_price }}" required><input aria-label="Effective date" type="date" name="effective_from" value="{{ now()->toDateString() }}" required><button class="btn btn--small">Update price</button></form></td></tr>
+        <tr><td>{{ ucfirst($product->category) }}</td><td><strong>{{ $product->name }}</strong>@php($lastChange=$priceHistory->firstWhere('auditable_id',$product->id))@if($lastChange)<small class="data-sub">Last set by {{ $lastChange->user?->displayName() ?? $lastChange->username ?? 'System' }}<br>{{ $lastChange->created_at->format('d M Y, H:i') }}</small>@endif</td><td>{{ $product->unit }}</td><td>UGX {{ number_format((float) $product->unit_price, 2) }}</td><td><form method="POST" action="{{ route('sales.products.price', $product) }}" class="form-actions price-update-form" data-product="{{ $product->name }}" data-current-price="{{ (float) $product->unit_price }}">@csrf @method('PUT')<input type="hidden" name="expected_updated_at" value="{{ $product->updated_at->format('Y-m-d H:i:s') }}"><input type="hidden" name="confirm_price_change" value="0" data-confirm-price><input aria-label="New price" type="number" min="0" step="0.01" name="unit_price" value="{{ $product->unit_price }}" required><input aria-label="Effective date" type="date" name="effective_from" value="{{ now()->toDateString() }}" required><button class="btn btn--small">Update price</button></form></td></tr>
     @empty<tr><td colspan="5">No products have been configured by stock control.</td></tr>@endforelse
     </tbody></table>
+</section>
+<section class="exec-panel"><div class="section-heading"><div><p class="card-label">Accountability</p><h3>Recent price changes</h3></div></div><div class="price-history">@forelse($priceHistory as $change)<article><div><strong>{{ $change->description }}</strong><small>{{ $change->created_at->format('d M Y, H:i') }} &middot; {{ $change->user?->displayName() ?? $change->username ?? 'System' }}</small></div><span>UGX {{ number_format((float)data_get($change->old_values,'unit_price')) }} &rarr; <b>UGX {{ number_format((float)data_get($change->new_values,'unit_price')) }}</b></span></article>@empty<p class="muted">No price changes have been recorded yet.</p>@endforelse</div></section>
+<script>document.querySelectorAll('.price-update-form').forEach(form=>form.addEventListener('submit',event=>{const input=form.querySelector('[name="unit_price"]'),current=Number(form.dataset.currentPrice),next=Number(input.value);if(next===current)return;const message=`${form.dataset.product} is currently UGX ${current.toLocaleString()}. Are you sure you want to replace it with UGX ${next.toLocaleString()}?`;if(!window.confirm(message)){event.preventDefault();return;}form.querySelector('[data-confirm-price]').value='1';}));</script>
+@else
+@php
+    $reportMax = max(1, $monthly->max('amount'));
+    $topCustomer = $customerReport->first();
+    $topProduct = $productReport->first();
+@endphp
+<section class="sales-report">
+    <form class="sales-report__filter" method="GET" action="{{ route('sales.index') }}">
+        <input type="hidden" name="screen" value="reports">
+        <div class="field"><label>From</label><input type="date" name="from" value="{{ $from }}"></div>
+        <div class="field"><label>To</label><input type="date" name="to" value="{{ $to }}"></div>
+        <button class="btn">Apply dates</button>
+        <button class="btn btn--quiet" type="button" onclick="window.print()">Print report</button>
+    </form>
+    <div class="sales-report__kpis">
+        <article><small>Sales value</small><strong>UGX {{ number_format($reportTotal) }}</strong><span>{{ $reportSales->count() }} receipt{{ $reportSales->count() === 1 ? '' : 's' }}</span></article>
+        <article><small>Average receipt</small><strong>UGX {{ number_format($reportSales->count() ? $reportTotal / $reportSales->count() : 0) }}</strong><span>For the selected period</span></article>
+        <article><small>Top customer</small><strong>{{ $topCustomer['name'] ?? 'No sales yet' }}</strong><span>{{ $topCustomer ? 'UGX '.number_format($topCustomer['amount']) : 'No customer activity' }}</span></article>
+        <article><small>Best-selling product</small><strong>{{ $topProduct['name'] ?? 'No sales yet' }}</strong><span>{{ $topProduct ? number_format($topProduct['quantity'], 2).' units' : 'No product activity' }}</span></article>
+    </div>
+    <div class="sales-report__grid">
+        <section class="exec-panel"><div class="section-heading"><div><p class="card-label">Six-month trend</p><h3>Sales movement</h3></div></div><div class="sales-chart">@foreach($monthly as $month)<div><span><i style="height:{{ $month['amount'] > 0 ? max(5, $month['amount'] / $reportMax * 100) : 2 }}%"></i></span><small>{{ $month['label'] }}</small><b>UGX {{ number_format($month['amount']) }}</b></div>@endforeach</div></section>
+        <section class="exec-panel"><div class="section-heading"><div><p class="card-label">Customer analysis</p><h3>Frequent customers</h3></div></div><div class="sales-ranking">@forelse($customerReport->take(8) as $row)<div><b>{{ $row['rank'] }}</b><span><strong>{{ $row['name'] }}</strong><small>{{ $row['sales'] }} purchase{{ $row['sales'] === 1 ? '' : 's' }} &middot; {{ number_format($row['share'],1) }}%</small></span><em>UGX {{ number_format($row['amount']) }}</em></div>@empty<p class="muted">No customer sales in this period.</p>@endforelse</div></section>
+    </div>
+    <section class="exec-panel table-wrap"><div class="section-heading"><div><p class="card-label">Entry audit</p><h3>Recorded sales</h3></div></div><table><thead><tr><th>Business date</th><th>Recorded at</th><th>Recorded by</th><th>Receipt</th><th>Customer</th><th>Total</th></tr></thead><tbody>@forelse($reportSales->sortByDesc('created_at') as $sale)<tr><td>{{ $sale->sale_date->format('d M Y') }}</td><td>{{ $sale->created_at->format('d M Y, H:i') }}@if($sale->updated_at->gt($sale->created_at->copy()->addSecond()))<small class="data-sub">Updated {{ $sale->updated_at->format('d M Y, H:i') }}</small>@endif</td><td>{{ $sale->seller?->displayName() ?? 'System' }}</td><td>{{ $sale->invoice_number }}</td><td>{{ $sale->customer_name }}</td><td><strong>UGX {{ number_format($sale->total) }}</strong></td></tr>@empty<tr><td colspan="6">No sales found for these dates.</td></tr>@endforelse</tbody></table></section>
+    <section class="exec-panel table-wrap"><div class="section-heading"><div><p class="card-label">Product performance</p><h3>What was sold</h3></div></div><table><thead><tr><th>Product</th><th>Quantity</th><th>Sales value</th></tr></thead><tbody>@forelse($productReport as $row)<tr><td><strong>{{ $row['name'] }}</strong></td><td>{{ number_format($row['quantity'],2) }}</td><td>UGX {{ number_format($row['amount']) }}</td></tr>@empty<tr><td colspan="3">No sales found for these dates.</td></tr>@endforelse</tbody></table></section>
 </section>
 @endif
 @endsection

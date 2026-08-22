@@ -1,6 +1,6 @@
-@extends('layouts.app')
+﻿@extends('layouts.app')
 
-@section('title', 'Feed')
+@section('title', 'Feed Mixing')
 
 @section('content')
 
@@ -14,7 +14,7 @@
     Behind a "change" link sits everything else, because reality is untidy:
     concentrate comes in 25 kg, premix in 5 or 2, maize in 70 or 90, and a
     good deal of feed is scooped and weighed loose rather than bagged. A
-    screen that only offers 50 and 70 gets worked around — someone enters
+    screen that only offers 50 and 70 gets worked around &mdash; someone enters
     "1 bag" for a half sack and the conversion figures quietly rot.
 --}}
 
@@ -30,14 +30,42 @@
         </svg>
     </a>
     <div>
-        <h2>Feed</h2>
-        <p>{{ $batch->name ?: $batch->code }} · {{ number_format($batch->current_quantity) }} birds</p>
+        <h2>Feed taken for mixing</h2>
+        <p>{{ $batch->name ?: $batch->code }} &middot; {{ $selectedHouse->house_number }} &middot; {{ number_format($selectedHouse->bird_quantity) }} birds</p>
     </div>
 </div>
 
 @if ($errors->any())
     <div class="notice notice--alarm">{{ $errors->first() }}</div>
 @endif
+
+@if($houseChoices->count() > 1)
+    <div class="ask">
+        <p class="ask-q">Choose one of your assigned houses</p>
+        <div class="weight-pick">
+            @foreach($houseChoices as $house)
+                <a class="weight {{ $selectedHouse->id === $house->id ? 'feed--on' : '' }}"
+                   href="{{ route('daily.feed', ['batch'=>$house->animal_group_id, 'house'=>$house->id]) }}"><span>{{ $house->house_number }}</span></a>
+            @endforeach
+        </div>
+    </div>
+@endif
+
+<section class="card">
+    <p class="card-label">Feed given to chickens</p>
+    <h3>{{ $selectedHouse->house_number }} daily feeding</h3>
+    @php
+        $givenToday = $servings->sum('quantity_kg');
+    @endphp
+    <p class="field-hint">Expected daily total: {{ number_format($selectedHouse->bird_quantity * 0.125, 2) }} kg for {{ number_format($selectedHouse->bird_quantity) }} birds. Record every feeding separately.</p>
+    <div class="total-bar"><span class="total-num">{{ number_format($givenToday, 2) }}</span><span class="total-lbl">kg given so far today</span></div>
+    <form method="POST" action="{{ route('daily.feed-serving.store', $batch) }}">@csrf
+        <input type="hidden" name="poultry_house_id" value="{{ $selectedHouse->id }}">
+        <div class="form-grid"><div class="field"><label>Feeding time</label><input type="time" name="fed_at" value="{{ now()->format('H:i') }}" required></div><div class="field"><label>Final mixed feed given (kg)</label><input type="number" min="0.01" step="0.01" name="quantity_kg" required></div><div class="field field--wide"><label>Note</label><input name="notes" placeholder="Optional: morning feed, spillage..."></div></div>
+        <button class="btn">Save this feeding</button>
+    </form>
+    @if($servings->isNotEmpty())<div class="house-workers"><h4>Recorded today</h4>@foreach($servings as $serving)<div><span>{{ \Carbon\Carbon::parse($serving->fed_at)->format('H:i') }}</span><strong>{{ number_format($serving->quantity_kg,2) }} kg</strong></div>@endforeach</div>@endif
+</section>
 
 @if ($existing->isNotEmpty())
     <div class="notice">
@@ -47,14 +75,19 @@
 
 <form method="POST" action="{{ route('daily.feed.store', $batch) }}" id="feedForm">
     @csrf
+    <input type="hidden" name="poultry_house_id" value="{{ $selectedHouse->id }}">
+
+    <div class="notice">
+        Record the quantities of Bran, Broken Maize, Sunflower, Soya and Lime taken from stock to prepare the feed mixture. Do not enter the final feed given to the chickens here.
+    </div>
 
     <div class="total-bar">
         <span class="total-num" id="totalKg">0</span>
-        <span class="total-lbl">kg altogether</span>
+        <span class="total-lbl">kg of ingredients taken for mixing</span>
     </div>
 
-    <p class="ask-q" style="margin-top:22px;">Which feed did you use?</p>
-    <p class="ask-hint">Tap each one you used. You can choose more than one.</p>
+    <p class="ask-q" style="margin-top:22px;">Which ingredients were taken for mixing?</p>
+    <p class="ask-hint">Tap each ingredient taken from stock and enter its quantity.</p>
 
     @foreach ($groups as $category => $feeds)
         <p class="feed-group">{{ $feeds->first()->categoryLabel() }}</p>
@@ -90,7 +123,7 @@
                             <div class="feed-row">
                                 <span class="feed-what">Bags</span>
                                 <div class="stepper">
-                                    <button type="button" class="step" data-step="-1" aria-label="One less bag">−</button>
+                                    <button type="button" class="step" data-step="-1" aria-label="One less bag">&minus;</button>
                                     <input type="number" class="step-val" data-bags
                                            name="bags[{{ $feed->id }}]"
                                            value="{{ old("bags.{$feed->id}", $row->bags ?? 0) }}"
@@ -135,7 +168,7 @@
                             <div class="feed-row">
                                 <span class="feed-what">Weight used</span>
                                 <div class="stepper">
-                                    <button type="button" class="step" data-step="-5" aria-label="Five kg less">−</button>
+                                    <button type="button" class="step" data-step="-5" aria-label="Five kg less">&minus;</button>
                                     <input type="number" class="step-val step-val--wide" data-loose
                                            name="loose_kg[{{ $feed->id }}]"
                                            value="{{ old("loose_kg.{$feed->id}", ($row && $row->bags === 0) ? (int) $row->quantity_kg : 0) }}"
@@ -189,7 +222,7 @@
         return bags * kg;
     }
 
-    /* Whichever the worker touched last wins — the quick buttons and the
+    /* Whichever the worker touched last wins -- the quick buttons and the
        typed box would otherwise disagree silently. */
     function settleWeight(block) {
         var custom = block.querySelector('[data-kg-custom]');

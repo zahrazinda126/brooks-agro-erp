@@ -202,7 +202,7 @@ class TransactionController extends Controller
     public function cashBook(Request $r): View
     {
         abort_unless($r->user()->canAccess('cash-book'), 403);
-        $rows = FinancialTransaction::where('payment_method', 'cash')->orderBy('transaction_date')->orderBy('id')->get();
+        $rows = FinancialTransaction::with('recorder')->where('payment_method', 'cash')->orderBy('transaction_date')->orderBy('id')->get();
         $balance = 0;
         $rows->each(function ($x) use (&$balance) {
             $balance += $x->type === 'money_received' ? $x->amount : -$x->amount;
@@ -216,7 +216,7 @@ class TransactionController extends Controller
     {
         abort_unless($r->user()->canAccess('bank-book'), 403);
         $accounts = collect(['Centenary Bank - Sales', 'Centenary Bank - Operations', 'Centenary Bank - Garden'])->merge(FinancialTransaction::where('payment_method', 'bank')->distinct()->orderBy('account')->pluck('account'))->unique()->values();
-        $q = FinancialTransaction::where('payment_method', 'bank');
+        $q = FinancialTransaction::with('recorder')->where('payment_method', 'bank');
         if ($r->filled('account')) {
             $q->where('account', $r->query('account'));
         } $rows = $q->orderBy('transaction_date')->orderBy('id')->get();

@@ -3,6 +3,8 @@
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\PasswordChangeController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\AccountController;
+use App\Http\Controllers\OwnerDirectoryController;
 use App\Http\Controllers\HR\EmployeeAccountController;
 use App\Http\Controllers\HR\EmployeeController;
 use App\Http\Controllers\HR\EmployeeRecordController;
@@ -39,6 +41,8 @@ use App\Http\Controllers\SupervisorController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\CommunicationController;
 use App\Http\Controllers\ExecutiveFollowUpController;
+use App\Http\Controllers\VaccinationScheduleController;
+use App\Http\Controllers\Poultry\HouseController;
 
 
 
@@ -85,6 +89,19 @@ Route::middleware('auth')->group(function () {
     Route::middleware('password.settled')->group(function () {
 
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('/account', [AccountController::class, 'edit'])->name('account.edit');
+        Route::put('/account', [AccountController::class, 'update'])->name('account.update');
+        Route::get('/owner/customers', [OwnerDirectoryController::class, 'customers'])->name('owner.customers');
+        Route::get('/vaccination-schedule', [VaccinationScheduleController::class, 'index'])->name('vaccination-schedule.index');
+        Route::post('/vaccination-schedule', [VaccinationScheduleController::class, 'store'])->name('vaccination-schedule.store');
+        Route::post('/vaccination-records', [VaccinationScheduleController::class, 'storeRecord'])->name('vaccination-records.store');
+        Route::put('/vaccination-schedule/{plan}', [VaccinationScheduleController::class, 'update'])->name('vaccination-schedule.update');
+        Route::get('/poultry/houses', [HouseController::class, 'index'])->name('poultry-houses.index');
+        Route::post('/poultry/houses', [HouseController::class, 'store'])->name('poultry-houses.store');
+        Route::put('/poultry/houses/{house}', [HouseController::class, 'update'])->name('poultry-houses.update');
+          Route::post('/poultry/houses/assign', [HouseController::class, 'assign'])->name('poultry-houses.assign');
+          Route::post('/poultry/houses/transfer', [HouseController::class, 'transfer'])->name('poultry-houses.transfer');
+        Route::post('/poultry/houses/assignments/{assignment}/end', [HouseController::class, 'end'])->name('poultry-houses.assignments.end');
         Route::get('/inventory', [InventoryController::class, 'index'])->middleware('module:inventory')->name('inventory.index');
         Route::post('/inventory/items', [InventoryController::class, 'storeItem'])->middleware('module:inventory,create')->name('inventory.items.store');
         Route::post('/inventory/movements', [InventoryController::class, 'storeMovement'])->middleware('module:inventory,create')->name('inventory.movements.store');
@@ -134,9 +151,15 @@ Route::middleware('auth')->group(function () {
         Route::get('/operations/livestock/{unit}/{section}', [FarmUnitController::class, 'livestock'])->name('operations.livestock.section');
         Route::post('/operations/livestock/{unit}/{section}', [FarmUnitController::class, 'storeLivestock'])->name('operations.livestock.store');
         Route::get('/executive/{screen}', [ExecutiveController::class, 'index'])->name('executive.index');
+        Route::put('/executive/security/roles/{role}', [ExecutiveController::class, 'updatePermissions'])->name('executive.permissions.update');
+        Route::post('/executive/security/accounts/{account}/reset-password', [ExecutiveController::class, 'resetAccountPassword'])->name('executive.accounts.reset-password');
         Route::get('/messages', [CommunicationController::class, 'index'])->name('communications.index');
+        Route::post('/messages/{communication}/read', [CommunicationController::class, 'markRead'])->name('communications.read');
+        Route::get('/directives', [ExecutiveFollowUpController::class, 'index'])->name('directives.index');
         Route::post('/executive-follow-up/directives', [ExecutiveFollowUpController::class, 'storeDirective'])->name('executive-follow-up.directives.store');
         Route::put('/executive-follow-up/directives/{directive}', [ExecutiveFollowUpController::class, 'updateDirective'])->name('executive-follow-up.directives.update');
+        Route::post('/executive-follow-up/directives/{directive}/forward', [ExecutiveFollowUpController::class, 'forwardDirective'])->name('directives.forward');
+        Route::post('/executive-follow-up/directives/{directive}/acknowledge', [ExecutiveFollowUpController::class, 'acknowledgeDirective'])->name('directives.acknowledge');
         Route::post('/executive-follow-up/meetings', [ExecutiveFollowUpController::class, 'storeMeeting'])->name('executive-follow-up.meetings.store');
         Route::put('/executive-follow-up/meetings/{meeting}', [ExecutiveFollowUpController::class, 'updateMeeting'])->name('executive-follow-up.meetings.update');
         Route::post('/executive-follow-up/funds', [ExecutiveFollowUpController::class, 'storeFundFollowUp'])->name('executive-follow-up.funds.store');
@@ -209,6 +232,9 @@ Route::middleware('auth')->group(function () {
 
             Route::put('/employees/{employee}', [EmployeeController::class, 'update'])
                 ->middleware('module:hr,edit')->name('employees.update');
+
+            Route::delete('/employees/{employee}', [EmployeeController::class, 'destroy'])
+                ->middleware('module:hr,delete')->name('employees.destroy');
 
             /* Issuing and managing logins — deliberately its own controller. */
             Route::get('/employees/{employee}/account', [EmployeeAccountController::class, 'create'])
@@ -300,8 +326,10 @@ Route::middleware('auth')->group(function () {
 
             Route::get('/today/{batch}/feed', [DailyEntryController::class, 'feedForm'])
                 ->middleware('module:feed-consumption')->name('daily.feed');
-            Route::post('/today/{batch}/feed', [DailyEntryController::class, 'feedStore'])
-                ->middleware('module:feed-consumption,create')->name('daily.feed.store');
+              Route::post('/today/{batch}/feed', [DailyEntryController::class, 'feedStore'])
+                  ->middleware('module:feed-consumption,create')->name('daily.feed.store');
+              Route::post('/today/{batch}/feed-serving', [DailyEntryController::class, 'feedServingStore'])
+                  ->middleware('module:feed-consumption,create')->name('daily.feed-serving.store');
 
             /* --- Manager assessment --- */
             Route::get('/assess', [MortalityAssessmentController::class, 'index'])

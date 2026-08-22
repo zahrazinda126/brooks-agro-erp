@@ -1,4 +1,4 @@
-@extends('layouts.app')
+﻿@extends('layouts.app')
 
 @section('title', 'My Work')
 
@@ -8,7 +8,7 @@
     A worker's home screen.
 
     The buttons ARE the cards. There is no container around them, because a
-    white box inside a white page is a border doing no work — it just makes
+    white box inside a white page is a border doing no work -- it just makes
     the buttons smaller.
 
     How many appear depends on what this person may do and what this flock
@@ -29,7 +29,7 @@
         </svg>
         <div>
             <strong>Saved</strong>
-            <span>{{ $d['what'] }} — {{ $d['where'] }}</span>
+            <span>{{ $d['what'] }} &mdash; {{ $d['where'] }}</span>
             @if (! empty($d['note']))
                 <em>{{ $d['note'] }}</em>
             @endif
@@ -37,23 +37,31 @@
     </div>
 @endif
 
-<div class="page-head">
-    <p class="eyebrow">🌾 Production workspace</p>
-    <h2>{{ now()->format('l') }} — All Units</h2>
-    <p>{{ now()->format('j F Y') }} · Enter today’s work for poultry, livestock, and Kituntu Garden.</p>
-</div>
+@php
+$hour = now()->hour;
+$workerGreeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'Good evening');
+$workerName = $user->firstName();
+@endphp
+<section class="worker-welcome">
+    <div class="worker-welcome__copy">
+        <p class="eyebrow">Daily operations</p>
+        <h2>{{ $workerGreeting }}, {{ $workerName }}</h2>
+        <p>{{ now()->format('l, j F Y') }} &middot; Choose a unit below and record today's work.</p>
+    </div>
+    <div class="worker-welcome__mark" aria-hidden="true">{{ strtoupper(substr($workerName, 0, 1)) }}</div>
+</section>
 
 @if($showProductionPlanning)<section class="exec-panel">
     <div class="page-head page-head--split" style="margin:0">
-        <div><p class="eyebrow">💰 This week’s Finance draft</p><h3>UGX {{ number_format($productionDraftTotal) }}</h3><p>Only Poultry, Goats, Rabbits, Dogs, and Garden requirements.</p></div>
+        <div><p class="eyebrow">&#x1F4B0; This week's Finance draft</p><h3>UGX {{ number_format($productionDraftTotal) }}</h3><p>Only Poultry, Goats, Rabbits, Dogs, and Garden requirements.</p></div>
         <a class="btn" href="{{ route('production.finance-draft.index') }}">Open & edit unit budgets</a>
     </div>
 </section>@endif
 
-<div class="unit-tabs" style="margin-bottom:1.5rem">@if($visibleFarmUnits->contains('poultry'))<a href="#poultry">🐔 Poultry</a>@endif @if($visibleFarmUnits->contains('goats'))<a href="#goats">🐐 Goats</a>@endif @if($visibleFarmUnits->contains('rabbits'))<a href="#rabbits">🐇 Rabbits</a>@endif @if($visibleFarmUnits->contains('dogs'))<a href="#dogs">🐕 Dogs</a>@endif @if($visibleFarmUnits->contains('garden'))<a href="#garden">🌱 Kituntu Garden</a>@endif</div>
-@if($feedBalances->isNotEmpty())<section class="exec-panel"><div class="page-head page-head--split" style="margin:0"><div><p class="eyebrow">🌾 Feed available</p><h3>Feed received for your units</h3></div><a class="btn btn--quiet" href="{{ route('operations.feed-stock.index') }}">View feed register</a></div><div class="production-unit-grid">@foreach($feedBalances as $feed)<article class="production-unit-card"><span>🌾</span><div><small>{{ ucfirst($feed->unit_code) }} · {{ $feed->feed_name }}</small><strong>{{ number_format($feed->balance_kg,2) }}</strong><em>kg available</em></div></article>@endforeach</div></section>@endif
+<div class="unit-tabs" style="margin-bottom:1.5rem">@if($visibleFarmUnits->contains('poultry'))<a href="#poultry">&#x1F414; Poultry</a>@endif @if($visibleFarmUnits->contains('goats'))<a href="#goats">&#x1F410; Goats</a>@endif @if($visibleFarmUnits->contains('rabbits'))<a href="#rabbits">&#x1F407; Rabbits</a>@endif @if($visibleFarmUnits->contains('dogs'))<a href="#dogs">&#x1F415; Dogs</a>@endif @if($visibleFarmUnits->contains('garden'))<a href="#garden">&#x1F331; Kituntu Garden</a>@endif</div>
+@if($feedBalances->isNotEmpty())<section class="exec-panel"><div class="page-head page-head--split" style="margin:0"><div><p class="eyebrow">Feed available</p><h3>Feed received for your units</h3></div><a class="btn btn--quiet" href="{{ route('operations.feed-stock.index') }}">View feed register</a></div><div class="production-unit-grid">@foreach($feedBalances as $feed)<article class="production-unit-card"><span>&#x1F33E;</span><div><small>{{ ucfirst($feed->unit_code) }} &middot; {{ $feed->feed_name }}</small><strong>{{ number_format($feed->balance_kg,2) }}</strong><em>kg available</em></div></article>@endforeach</div></section>@endif
 @if($visibleFarmUnits->contains('poultry'))
-<div id="poultry" class="page-head"><h2>🐔 Poultry</h2><p>Eggs, feed, mortality and scheduled flock work.</p></div>
+<div id="poultry" class="page-head"><h2>&#x1F414; Poultry</h2><p>Eggs, feed, mortality and scheduled flock work.</p></div>
 
 @forelse ($batches as $batch)
 
@@ -64,7 +72,7 @@
 
         /*
          | Built as a list rather than written out four times, so adding
-         | another job later is one entry here — not another block of
+         | another job later is one entry here -- not another block of
          | markup to keep in step with the others.
          */
         $jobs = [];
@@ -102,7 +110,7 @@
 
         if ($user->canDo('feed-consumption', 'create')) {
             $jobs[] = [
-                'label' => 'Feed',
+                'label' => 'Feed mixing',
                 'icon'  => 'grain',
                 'url'   => route('daily.feed', $batch),
                 'done'  => $feedDone,
@@ -126,7 +134,12 @@
 
         <div class="flock-head">
             <h3>{{ $batch->name ?: $batch->code }}</h3>
-            <p>{{ $batch->house ?: $batch->code }} · {{ number_format($batch->current_quantity) }} birds</p>
+            @php
+                $workerHouseNumbers = ($assignedHouses ?? collect())
+                    ->where('animal_group_id', $batch->id)
+                    ->pluck('house_number');
+            @endphp
+            <p>{{ $workerHouseNumbers->isNotEmpty() ? 'House '.$workerHouseNumbers->join(' & ') : ($batch->house ?: $batch->code) }} &middot; {{ number_format($batch->current_quantity) }} birds</p>
         </div>
 
         @if (count($jobs))
@@ -181,9 +194,9 @@
 
 @php
     $unitDetails = [
-        'goats' => ['name'=>'Goats','icon'=>'🐐'],
-        'rabbits' => ['name'=>'Rabbits','icon'=>'🐇'],
-        'dogs' => ['name'=>'Dogs','icon'=>'🐕'],
+        'goats' => ['name'=>'Goats','icon'=>"\u{1F410}"],
+        'rabbits' => ['name'=>'Rabbits','icon'=>"\u{1F407}"],
+        'dogs' => ['name'=>'Dogs','icon'=>"\u{1F415}"],
     ];
     $livestockActions = [
         ['section'=>'feed','label'=>'Daily Feed','icon'=>'grain'],
@@ -198,10 +211,10 @@
 @continue(!$visibleFarmUnits->contains($code))
 <div id="{{ $code }}" class="page-head" style="margin-top:2rem"><h2>{{ $detail['icon'] }} {{ $detail['name'] }}</h2><p>Daily records are kept by group or batch, just like poultry flocks.</p></div>
 @forelse($livestockGroups->get($code, collect()) as $group)
-<section class="flock"><div class="flock-head"><h3>{{ $group->group_code }}</h3><p>{{ $group->breed ?: $detail['name'] }} · {{ number_format($group->current_quantity) }} current</p></div><div class="jobs">
+<section class="flock"><div class="flock-head"><h3>{{ $group->group_code }}</h3><p>{{ $group->breed ?: $detail['name'] }} &middot; {{ number_format($group->current_quantity) }} current</p></div><div class="jobs">
 @foreach($livestockActions as $action)
 @php $recordedToday = $dailyLivestock[$action['section']]->contains($group->id); @endphp
-<a class="job {{ $recordedToday?'job--done':'' }}" href="{{ route('operations.livestock.section',['unit'=>$code,'section'=>$action['section'],'group'=>$group->id,'create'=>1]) }}"><svg class="job-icon" aria-hidden="true"><use href="#i-{{ $action['icon'] }}"></use></svg><span class="job-label">{{ $action['label'] }}</span><span class="job-state">{{ $recordedToday?'Recorded today · add another':'Tap to enter today' }}</span></a>
+<a class="job {{ $recordedToday?'job--done':'' }}" href="{{ route('operations.livestock.section',['unit'=>$code,'section'=>$action['section'],'group'=>$group->id,'create'=>1]) }}"><svg class="job-icon" aria-hidden="true"><use href="#i-{{ $action['icon'] }}"></use></svg><span class="job-label">{{ $action['label'] }}</span><span class="job-state">{{ $recordedToday?'Recorded today - add another':'Tap to enter today' }}</span></a>
 @endforeach
 </div></section>
 @empty
@@ -212,7 +225,7 @@
 @endforelse
 @endforeach
 
-@if($visibleFarmUnits->contains('garden'))<div id="garden" class="page-head" style="margin-top:2rem"><h2>🌱 Kituntu Garden</h2><p>Record inputs, field activity, harvests and crop losses.</p></div>
+@if($visibleFarmUnits->contains('garden'))<div id="garden" class="page-head" style="margin-top:2rem"><h2>&#x1F331; Kituntu Garden</h2><p>Record inputs, field activity, harvests and crop losses.</p></div>
 <section class="flock"><div class="flock-head"><h3>Garden work</h3><p>{{ $gardenActivity }} record{{ $gardenActivity===1?'':'s' }} entered today</p></div><div class="jobs">
 @foreach([['view'=>'inputs','label'=>'Inputs & Irrigation','icon'=>'grain'],['view'=>'activity','label'=>'Field Activity','icon'=>'wrench'],['view'=>'production','label'=>'Harvest','icon'=>'egg'],['type'=>'loss','label'=>'Crop Loss','icon'=>'vet']] as $action)
 <a class="job" href="{{ route('operations.units.index',array_filter(['unit'=>'garden','view'=>$action['view']??null,'type'=>$action['type']??null])) }}"><svg class="job-icon" aria-hidden="true"><use href="#i-{{ $action['icon'] }}"></use></svg><span class="job-label">{{ $action['label'] }}</span><span class="job-state">Tap to enter</span></a>

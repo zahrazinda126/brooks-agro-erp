@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class EggCollection extends Model
 {
     protected $fillable = [
-        'animal_group_id', 'department_id', 'collected_on', 'collected_at', 'session',
+        'animal_group_id', 'poultry_house_id', 'department_id', 'collected_on', 'collected_at', 'session',
         'total_eggs', 'egg_mass_g', 'damaged_eggs', 'bird_weight_kg', 'feed_amount_kg',
         'recorded_by', 'recorded_at', 'worker_note',
         'status', 'approved_by', 'approved_at', 'query_note',
