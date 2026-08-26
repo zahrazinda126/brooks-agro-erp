@@ -22,6 +22,11 @@
     <div><p class="card-label">Recommended executive view</p><h3>Three-Statement Financial Model</h3><p>Review profitability, financial position and cash movement together in the July–June financial-year format.</p></div>
     <div class="report-feature__actions"><a class="btn" href="{{ route('finance.reports.three-statement') }}">Open model</a><a class="btn btn--quiet" href="{{ route('finance.reports.export',['report'=>'three-statement','year'=>now()->year]) }}">Download branded Excel</a></div>
 </section>
+<section class="report-feature">
+    <div class="report-feature__icon">UGX</div>
+    <div><p class="card-label">Farm-unit economics</p><h3>Unit Costs & Profitability</h3><p>Compare money spent and sales by unit, then calculate acquisition, feed and health cost per bird or animal group up to any date.</p></div>
+    <div class="report-feature__actions"><a class="btn" href="{{ route('finance.reports.profitability') }}">Open unit costing</a></div>
+</section>
 <div class="report-section-head"><div><p class="card-label">Financial statements</p><h3>Core management reports</h3></div><span>{{ now()->format('F Y') }}</span></div>
 <div class="report-card-grid">
 @foreach([

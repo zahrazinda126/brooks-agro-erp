@@ -100,6 +100,9 @@
                     <dt>Number</dt><dd class="mono">{{ $employee->mobile_money_number ?: '—' }}</dd>
                 @endif
             </dl>
+            @if ($user->canAccess('payroll'))
+                <a class="btn btn--quiet btn--inline" href="{{ route('payroll.salary-accounts.show', $employee) }}">Open salary account</a>
+            @endif
         </div>
 
         {{-- The login. Separate from everything above on purpose. --}}

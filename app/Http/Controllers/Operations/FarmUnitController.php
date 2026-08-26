@@ -38,7 +38,7 @@ class FarmUnitController extends Controller
         if ($request->filled('view')) $query->whereIn('record_type', $this->viewTypes($unit, $request->string('view')->toString()));
         $all = FarmUnitRecord::where('unit_code',$unit);
         $animals=in_array($unit,['goats','rabbits','dogs'],true) ? LivestockAnimal::where('unit_code',$unit)->latest('acquired_on')->get() : collect();
-        return view('operations.units.index', ['unit'=>$unit,'config'=>$config,'type'=>$type,'records'=>$query->paginate(30)->withQueryString(),'recordCount'=>(clone $all)->count(),'monthCount'=>(clone $all)->whereBetween('record_date',[now()->startOfMonth(),now()->endOfMonth()])->count(),'monthValue'=>(float)(clone $all)->whereBetween('record_date',[now()->startOfMonth(),now()->endOfMonth()])->sum('amount'),'animals'=>$animals]);
+        return view('operations.units.index', ['unit'=>$unit,'config'=>$config,'type'=>$type,'records'=>$query->paginate(30)->withQueryString(),'recordCount'=>(clone $all)->count(),'monthCount'=>(clone $all)->whereBetween('record_date',[now()->startOfMonth(),now()->endOfMonth()])->count(),'monthValue'=>(float)(clone $all)->whereBetween('record_date',[now()->startOfMonth(),now()->endOfMonth()])->sum('amount'),'animals'=>$animals,'gardenLocations'=>$unit==='garden'?DB::table('garden_locations')->where('is_active',true)->orderBy('name')->get():collect(),'gardenCrops'=>$unit==='garden'?DB::table('garden_crops')->where('is_active',true)->orderBy('name')->get():collect()]);
     }
 
     private function livestockOverview(Request $request,string $unit,array $config): View
@@ -50,7 +50,7 @@ class FarmUnitController extends Controller
     public function export(Request $request, string $unit): StreamedResponse
     {
         $config = self::UNITS[$unit] ?? abort(404);
-        abort_unless($request->user()->canAccess('reports') || $request->user()->canAccessFarmUnit($unit), 403);
+        abort_unless($request->user()->canViewAllReports() || $request->user()->canAccessFarmUnit($unit), 403);
         $from = $request->date('from');
         $to = $request->date('to');
 
@@ -87,7 +87,7 @@ class FarmUnitController extends Controller
     public function unitReport(Request $request, string $unit): View
     {
         $config = self::UNITS[$unit] ?? abort(404);
-        abort_unless($request->user()->canAccess('reports') || $request->user()->canAccessFarmUnit($unit), 403);
+        abort_unless($request->user()->canViewAllReports() || $request->user()->canAccessFarmUnit($unit), 403);
 
         $from = $request->date('from') ?? now()->startOfMonth();
         $to = $request->date('to') ?? now();
@@ -110,7 +110,7 @@ class FarmUnitController extends Controller
 
     public function report(Request $request): View
     {
-        abort_unless($request->user()->canAccess('production') || $request->user()->canAccess('reports'),403);
+        abort_unless($request->user()->canAccess('production') || $request->user()->canViewAllReports(),403);
         $view=$request->string('view')->toString() ?: 'overall';
         abort_unless(in_array($view,['overall','livestock','health','inputs','production'],true),404);
         $query=FarmUnitRecord::with('recorder')->where('verification_status','approved')->latest('record_date')->latest('id');
@@ -134,7 +134,7 @@ class FarmUnitController extends Controller
 
     public function reportExport(Request $request): StreamedResponse
     {
-        abort_unless($request->user()->canAccess('production') || $request->user()->canAccess('reports'),403);
+        abort_unless($request->user()->canAccess('production') || $request->user()->canViewAllReports(),403);
         $view=$request->string('view')->toString() ?: 'overall';
         abort_unless(in_array($view,['overall','livestock','health','inputs','production'],true),404);
         $farm=FarmUnitRecord::query()->where('verification_status','approved')->orderBy('record_date')->orderBy('id');
@@ -177,10 +177,16 @@ class FarmUnitController extends Controller
         $config = self::UNITS[$unit] ?? abort(404);
         abort_unless($request->user()->canAccessFarmUnit($unit), 403);
         abort_unless($request->user()->canDo($unit,'create') || $request->user()->canDo($unit,'edit'), 403);
-        $data=$request->validate(['record_type'=>['required',Rule::in(array_keys($config['types']))],'record_date'=>['required','date'],'subject'=>['required','string','max:180'],'quantity'=>['nullable','numeric','min:0'],'measure_unit'=>['nullable','string','max:40'],'amount'=>['nullable','numeric','min:0'],'status'=>['required','string','max:40'],'notes'=>['nullable','string','max:2000']]);
+        $data=$request->validate(['record_type'=>['required',Rule::in(array_keys($config['types']))],'record_date'=>['required','date'],'subject'=>['required','string','max:180'],'garden_location_id'=>[$unit==='garden'?'required':'nullable','exists:garden_locations,id'],'garden_crop_id'=>['nullable','exists:garden_crops,id'],'quantity'=>['nullable','numeric','min:0'],'measure_unit'=>['nullable','string','max:40'],'amount'=>['nullable','numeric','min:0'],'status'=>['required','string','max:40'],'notes'=>['nullable','string','max:2000']]);
+        $newCrop=false;
+        if($unit==='garden'&&empty($data['garden_crop_id'])&&in_array($data['record_type'],['planting','harvest','loss','sale'],true)){
+            $name=trim($data['subject']);$existing=DB::table('garden_crops')->whereRaw('lower(name)=?',[mb_strtolower($name)])->first();
+            if($existing)$data['garden_crop_id']=$existing->id;
+            else{$code=str($name)->slug()->limit(48,'')->toString().'-'.substr(hash('sha256',mb_strtolower($name)),0,6);$data['garden_crop_id']=DB::table('garden_crops')->insertGetId(['code'=>$code,'name'=>$name,'default_unit'=>$data['measure_unit']?:'kg','is_active'=>true,'created_at'=>now(),'updated_at'=>now()]);DB::table('sale_products')->insert(['code'=>'GARDEN-'.strtoupper(str_replace('-','_',substr($code,0,40))),'name'=>$name,'category'=>'garden','unit'=>$data['measure_unit']?:'kg','unit_price'=>0,'is_active'=>true,'notes'=>'Added from Garden entry; selling price to be set by Finance or CEO.','created_at'=>now(),'updated_at'=>now()]);$newCrop=true;}
+        }
         $record=FarmUnitRecord::create($data+['unit_code'=>$unit,'recorded_by'=>$request->user()->id]);
         AuditLog::record('farm_unit_record_created',$record,$config['name'].': '.$data['subject'],null,$data,$unit);
-        return back()->with('status',$config['types'][$data['record_type']].' recorded.');
+        return back()->with('status',$config['types'][$data['record_type']].' recorded.'.($newCrop?' The new crop was added to future garden and pricing lists.':''));
     }
 
     public function storeAnimal(Request $request, string $unit): RedirectResponse

@@ -99,10 +99,9 @@
         </div>
     @endforeach
 
-    {{-- Defects, folded away. Usually zero, and giving them the same weight
-         as good eggs makes the screen twice as long for nothing. --}}
+    {{-- The farm records one damaged category; the cause of damage is not an egg grade. --}}
     <details class="fold">
-        <summary>Any broken, cracked or dirty eggs?</summary>
+        <summary>Any damaged eggs?</summary>
 
         @foreach ($defects as $grade)
             <div class="counter-card counter-card--defect">

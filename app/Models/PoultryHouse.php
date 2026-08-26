@@ -8,4 +8,8 @@ class PoultryHouse extends Model {
     public function batch():BelongsTo{return $this->belongsTo(AnimalGroup::class,'animal_group_id');}
     public function assignments():HasMany{return $this->hasMany(PoultryHouseAssignment::class);}
     public function activeAssignments():HasMany{return $this->assignments()->whereNull('assigned_until');}
+    public function displayNumber():string
+    {
+        return trim((string) preg_replace('/\s*[-–—]\s*B-\d+\/\d+\s*$/i', '', $this->house_number));
+    }
 }

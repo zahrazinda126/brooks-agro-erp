@@ -54,7 +54,7 @@ class ExecutiveFollowUpController extends Controller
     public function forwardDirective(Request $request, ExecutiveDirective $directive): RedirectResponse
     {
         $this->authorizePa($request);
-        abort_unless($directive->tracked_by===$request->user()->id || $this->isPa($request),403);
+        abort_unless($directive->tracked_by===$request->user()->id,403,'This directive is assigned to another PA.');
         $data=$request->validate(['recipient'=>['required','string','max:80'],'responsible_team'=>['required','string','max:100'],'scheduled_for'=>['required','date']]);
         $recipient=(string)$data['recipient'];$assignedTo=null;$scope=null;$recipientLabel=null;
         if(str_starts_with($recipient,'group:')){
@@ -81,7 +81,7 @@ class ExecutiveFollowUpController extends Controller
     public function acknowledgeDirective(Request $request, ExecutiveDirective $directive): RedirectResponse
     {
         abort_unless($directive->assigned_to===$request->user()->id,403);
-        $directive->update(['acknowledged_at'=>now(),'status'=>'in_progress']);
+        $directive->update(['acknowledged_at'=>now()]);
         app(CommunicationService::class)->toUser($directive->directed_by,'Directive acknowledged: '.$directive->title,$request->user()->displayName().' confirmed receipt.','workflow',$request->user()->id,route('directives.index',absolute:false));
         app(CommunicationService::class)->toUser($directive->tracked_by,'Directive acknowledged: '.$directive->title,$request->user()->displayName().' confirmed receipt.','workflow',$request->user()->id,route('directives.index',absolute:false));
         return back()->with('status','Receipt acknowledged.');
@@ -89,15 +89,24 @@ class ExecutiveFollowUpController extends Controller
 
     public function updateDirective(Request $request, ExecutiveDirective $directive): RedirectResponse
     {
-        abort_unless($this->isPa($request)||$directive->assigned_to===$request->user()->id,403);
-        $data=$request->validate(['status'=>['required',Rule::in(['not_started','pending','in_progress','blocked','done','completed','cancelled'])],'progress'=>['required','integer','between:0,100'],'latest_feedback'=>['required','string','max:3000'],'scheduled_for'=>['nullable','date'],'reschedule_reason'=>['nullable','string','max:1000']]);
+        $this->authorizePa($request);
+        abort_unless($directive->tracked_by===$request->user()->id, 403, 'This directive is assigned to another PA.');
+        $data=$request->validate(['status'=>['required',Rule::in(['not_started','pending','rescheduled','in_progress','blocked','done','completed','cancelled'])],'latest_feedback'=>['required','string','max:3000'],'scheduled_for'=>['nullable','date'],'reschedule_reason'=>['nullable','string','max:1000']]);
         $scheduleChanged=$data['scheduled_for'] && (!$directive->scheduled_for || ! $directive->scheduled_for->equalTo(\Carbon\Carbon::parse($data['scheduled_for'])));
-        if($scheduleChanged && blank($data['reschedule_reason']??null)) return back()->withErrors(['reschedule_reason'=>'Explain why the directive date or time is being changed.'])->withInput();
+        if($data['status']==='rescheduled' && !$scheduleChanged) return back()->withErrors(['scheduled_for'=>'Choose a new date and time when marking a directive as rescheduled.'])->withInput();
+        if(in_array($data['status'],['pending','rescheduled','blocked'],true) && blank($data['reschedule_reason']??null)) {
+            $message=match($data['status']){
+                'pending'=>'Explain why the directive is still pending.',
+                'blocked'=>'Explain what is blocking the directive and what is needed to continue.',
+                default=>'Explain why the directive is being rescheduled.',
+            };
+            return back()->withErrors(['reschedule_reason'=>$message])->withInput();
+        }
         $status=match($data['status']){'completed'=>'done','not_started'=>'pending',default=>$data['status']};
-        $changes=$data+['status'=>$status,'feedback_at'=>now(),'completed_at'=>$status==='done'?now():null];
+        $changes=$data+['status'=>$status,'progress'=>$status==='done'?100:0,'feedback_at'=>now(),'completed_at'=>$status==='done'?now():null];
         if($scheduleChanged){$changes['rescheduled_by']=$request->user()->id;$changes['rescheduled_at']=now();}
         $directive->update($changes);
-        foreach(array_unique(array_filter([$directive->directed_by,$directive->tracked_by,$directive->assigned_to])) as $recipient) app(CommunicationService::class)->toUser($recipient,($scheduleChanged?'Directive rescheduled: ':'Directive progress updated: ').$directive->title,$request->user()->displayName().' reported '.str_replace('_',' ',$status).' ('.$data['progress'].'%). '.($scheduleChanged?'New schedule: '.$directive->scheduled_for->format('d M Y, H:i').'. Reason: '.$data['reschedule_reason'].'. ':'').$data['latest_feedback'],'workflow',$request->user()->id,route('directives.index',absolute:false));
+        foreach(array_unique(array_filter([$directive->directed_by,$directive->tracked_by,$directive->assigned_to])) as $recipient) app(CommunicationService::class)->toUser($recipient,($scheduleChanged?'Directive rescheduled: ':'Directive status updated: ').$directive->title,$request->user()->displayName().' marked it '.str_replace('_',' ',$status).'. '.(in_array($status,['pending','rescheduled','blocked'],true)?'Reason: '.$data['reschedule_reason'].'. ':'').($scheduleChanged?'New schedule: '.$directive->scheduled_for->format('d M Y, H:i').'. ':'').$data['latest_feedback'],'workflow',$request->user()->id,route('directives.index',absolute:false));
         return back()->with('status','Progress and feedback sent.');
     }
 

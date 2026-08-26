@@ -40,7 +40,7 @@ class UpdateEmployeeRequest extends FormRequest
             'job_title'     => ['nullable', 'string', 'max:120'],
 
             'employment_type' => ['required', Rule::in([
-                'permanent', 'contract', 'casual', 'temporary', 'intern', 'vacist',
+                'permanent', 'contract', 'casual', 'temporary', 'intern', 'student', 'vacist', 'other',
             ])],
 
             'hire_date' => ['nullable', 'date'],

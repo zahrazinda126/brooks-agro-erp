@@ -4,7 +4,7 @@
 
 @section('content')
 <div class="page-head page-head--split">
-    <div><span class="finance-panel-kicker">Owner's customer view</span><h2>Customers & buying activity</h2><p>See who buys from the farm, how often they return, and the balances that need follow-up.</p></div>
+    <div><span class="finance-panel-kicker">Company customer records</span><h2>Customer accounts & buying activity</h2><p>See who buys from the farm, how often they return, their prepayments, and balances requiring follow-up.</p></div>
     <a class="btn btn--quiet" href="{{ route('dashboard') }}">Back to dashboard</a>
 </div>
 
@@ -35,10 +35,10 @@
         <div><p class="card-label">Customer directory</p><h3>Contact and purchase details</h3></div>
         <form method="GET" action="{{ route('owner.customers') }}" class="customer-search"><input name="search" value="{{ $search }}" placeholder="Search name, phone or email"><button class="btn btn--small">Search</button>@if($search)<a href="{{ route('owner.customers') }}">Clear</a>@endif</form>
     </div>
-    <div class="table-wrap"><table><thead><tr><th>Customer</th><th>Contact</th><th>Purchases</th><th>Last purchase</th><th class="num">Total bought</th><th class="num">Balance due</th><th>Type</th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>Customer</th><th>Contact</th><th>Purchases</th><th>Last purchase</th><th class="num">Total bought</th><th class="num">Prepayment available</th><th class="num">Balance due</th><th>Type</th></tr></thead><tbody>
         @forelse($customers as $customer)
-            <tr><td><strong>{{ $customer->name }}</strong>@if($customer->address)<small class="table-sub">{{ Str::limit($customer->address, 45) }}</small>@endif</td><td>{{ $customer->phone ?: 'No phone' }}<small class="table-sub">{{ $customer->email ?: 'No email' }}</small></td><td>{{ number_format($customer->purchase_count) }}</td><td>{{ $customer->last_purchase_on ? \Illuminate\Support\Carbon::parse($customer->last_purchase_on)->format('d M Y') : 'Never' }}</td><td class="num">UGX {{ number_format((float) $customer->total_purchased) }}</td><td class="num"><strong class="{{ $customer->outstanding_balance > 0 ? 'text-alarm' : '' }}">UGX {{ number_format((float) $customer->outstanding_balance) }}</strong></td><td><span class="status-pill">{{ $customer->purchase_count >= 2 ? 'Frequent' : ($customer->purchase_count === 1 ? 'One-time' : 'No purchase') }}</span></td></tr>
-        @empty<tr><td colspan="7" class="empty">{{ $search ? 'No customer matches this search.' : 'No customers have been recorded.' }}</td></tr>@endforelse
+            <tr><td><a href="{{ route('customer-accounts.show',$customer) }}"><strong>{{ $customer->name }}</strong></a>@if($customer->address)<small class="table-sub">{{ Str::limit($customer->address, 45) }}</small>@endif</td><td>{{ $customer->phone ?: 'No phone' }}<small class="table-sub">{{ $customer->email ?: 'No email' }}</small></td><td>{{ number_format($customer->purchase_count) }}</td><td>{{ $customer->last_purchase_on ? \Illuminate\Support\Carbon::parse($customer->last_purchase_on)->format('d M Y') : 'Never' }}</td><td class="num">UGX {{ number_format((float) $customer->total_purchased) }}</td><td class="num">UGX {{ number_format((float)$customer->prepayment_received-(float)$customer->prepayment_used) }}</td><td class="num"><strong class="{{ $customer->outstanding_balance > 0 ? 'text-alarm' : '' }}">UGX {{ number_format((float) $customer->outstanding_balance) }}</strong></td><td><span class="status-pill">{{ $customer->purchase_count >= 2 ? 'Frequent' : ($customer->purchase_count === 1 ? 'One-time' : 'No purchase') }}</span></td></tr>
+        @empty<tr><td colspan="8" class="empty">{{ $search ? 'No customer matches this search.' : 'No customers have been recorded.' }}</td></tr>@endforelse
     </tbody></table></div>
     {{ $customers->links() }}
 </section>

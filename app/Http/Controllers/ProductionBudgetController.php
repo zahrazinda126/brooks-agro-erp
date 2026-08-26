@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Budget;
+use App\Models\Department;
+use App\Services\WeeklyBudgetDraftService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -16,6 +18,8 @@ class ProductionBudgetController extends Controller
         'Rabbits Unit',
         'Dogs Unit',
         'Kituntu Garden',
+        'Kituntu Tomato Garden',
+        'Kituntu Passion Fruits',
     ];
 
     private const UNITS = [
@@ -24,6 +28,8 @@ class ProductionBudgetController extends Controller
         'rabbits' => 'Rabbits Unit',
         'dogs' => 'Dogs Unit',
         'garden' => 'Kituntu Garden',
+        'kituntu-tomatoes' => 'Kituntu Tomato Garden',
+        'kituntu-passion' => 'Kituntu Passion Fruits',
     ];
 
     public function financeDraft(Request $request): View
@@ -33,6 +39,10 @@ class ProductionBudgetController extends Controller
         $unit = $request->string('unit')->toString() ?: 'poultry';
         abort_unless(isset(self::UNITS[$unit]), 404);
         $start = $request->date('week')?->startOfWeek() ?? now()->startOfWeek();
+        if ($start->isSameDay(now()->startOfWeek())) {
+            $departmentId = Department::where('code', 'production')->value('id');
+            if ($departmentId) app(WeeklyBudgetDraftService::class)->ensureForWeek($start, $request->user()->id, $departmentId);
+        }
         $availablePeriods = $this->productionBudgetQuery()
             ->select('period_start', 'period_end', 'status')
             ->selectRaw('count(*) as line_count, sum(planned_amount) as planned_total')
@@ -81,6 +91,7 @@ class ProductionBudgetController extends Controller
         );
 
         Budget::create($data + [
+            'department_id' => Department::where('code', 'production')->value('id'),
             'planned_amount' => $data['quantity'] * $data['unit_price'],
             'period_start' => $start->toDateString(),
             'period_end' => $start->copy()->endOfWeek()->toDateString(),
@@ -125,6 +136,8 @@ class ProductionBudgetController extends Controller
             'rabbits' => ['rabbit'],
             'dogs' => ['dog'],
             'garden' => ['garden', 'kituntu'],
+            'kituntu-tomatoes' => ['kituntu tomato'],
+            'kituntu-passion' => ['kituntu passion'],
         };
 
         return Budget::query()->where(function ($query) use ($words) {

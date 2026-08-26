@@ -23,10 +23,18 @@
         </p>
     </div>
 
-    @if ($user->canDo('batches', 'edit') && $batch->isActive())
-        <a class="btn btn--quiet btn--inline" href="{{ route('batches.edit', $batch) }}">Edit</a>
+    @if ($user->canDo('batches', 'edit') && $batch->isActive() && $batch->mayBeEditedBy($user))
+        <a class="btn btn--quiet btn--inline" href="{{ route('batches.edit', $batch) }}">Edit (Director allowed)</a>
     @endif
 </div>
+
+@php($roleCodes=$user->roles->pluck('code')->push($user->role?->code))
+@if($batch->isActive() && $user->canDo('batches','edit') && !$batch->mayBeEditedBy($user))
+<section class="card"><p class="card-label">Protected batch record</p><h3>Director permission is required</h3><p>Initial batch details are locked. House quantities continue to change through transfers, mortality and other recorded movements.</p><form method="POST" action="{{ route('batches.request-edit',$batch) }}">@csrf<div class="field"><label>Why must the initial batch record change?</label><textarea name="reason" required></textarea></div><button class="btn">Request editing permission</button></form></section>
+@endif
+@if($roleCodes->contains('director') && $batch->edit_requested_by && (!$batch->edit_authorized_until || $batch->edit_authorized_until->isPast()))
+<section class="card"><p class="card-label">Editing request</p><h3>A manager wants to change this batch</h3><p>Requested {{ $batch->edit_requested_at?->diffForHumans() }}.</p><form method="POST" action="{{ route('batches.authorize-edit',$batch) }}">@csrf<div class="field"><label>Allow editing for</label><select name="hours"><option value="2">2 hours</option><option value="8">8 hours</option><option value="24" selected>24 hours</option><option value="72">3 days</option></select></div><button class="btn">Allow editing</button></form></section>
+@endif
 
 {{-- Anything wrong or upcoming, said plainly and before the numbers. --}}
 @if ($batch->layingIsOverdue())
@@ -40,7 +48,7 @@
     <div class="notice notice--alarm">
         <strong>Mortality is high for this age.</strong>
         {{ number_format($batch->total_mortality) }} of
-        {{ number_format($batch->quantity_received) }} birds lost
+        {{ number_format($batch->liveReceived()) }} birds available after arrival
         ({{ $batch->mortalityRate() }}%) at {{ $weeks }} weeks.
     </div>
 @elseif ($batch->isActive() && $toLay !== null && $toLay > 0 && $toLay <= 3)
@@ -55,7 +63,7 @@
     <div class="card">
         <p class="card-label">Birds alive</p>
         <span class="figure">{{ number_format($batch->current_quantity) }}</span>
-        <span class="figure-unit">of {{ number_format($batch->quantity_received) }} received</span>
+        <span class="figure-unit">of {{ number_format($batch->liveReceived()) }} received alive</span>
     </div>
 
     <div class="card">
@@ -182,7 +190,10 @@
                     <span class="muted">(day old)</span>
                 @endif
             </dd>
-            <dt>Quantity</dt><dd>{{ number_format($batch->quantity_received) }}</dd>
+            <dt>Birds paid for</dt><dd>{{ number_format($batch->quantity_received) }}</dd>
+            <dt>Free birds</dt><dd>{{ number_format($batch->quantity_free) }}</dd>
+            <dt>Died in transit</dt><dd>{{ number_format($batch->transit_deaths) }}</dd>
+            <dt>Received alive</dt><dd><strong>{{ number_format($batch->liveReceived()) }}</strong></dd>
             <dt>Cost each</dt><dd>{{ number_format((float) $batch->unit_cost) }} UGX</dd>
             <dt>Total</dt><dd><strong>{{ number_format((float) $batch->total_cost) }} UGX</strong></dd>
             <dt>Supplier</dt><dd>{{ $batch->supplier_name ?: '—' }}</dd>

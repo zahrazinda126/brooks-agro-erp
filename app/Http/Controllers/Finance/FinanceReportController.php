@@ -1,20 +1,28 @@
 <?php
 namespace App\Http\Controllers\Finance;
-use App\Http\Controllers\Controller; use App\Models\FinancialTransaction; use App\Models\Receivable; use App\Models\Payable; use App\Models\CustomerPrepayment; use App\Models\FixedAsset; use App\Models\Budget; use App\Services\BrandedReportExport; use Illuminate\Http\Request; use Illuminate\View\View; use Symfony\Component\HttpFoundation\StreamedResponse;
+use App\Http\Controllers\Controller; use App\Models\FinancialTransaction; use App\Models\Receivable; use App\Models\Payable; use App\Models\CustomerPrepayment; use App\Models\FixedAsset; use App\Models\Budget; use App\Services\BrandedReportExport; use App\Services\UnitEconomicsService; use Illuminate\Http\Request; use Illuminate\View\View; use Symfony\Component\HttpFoundation\StreamedResponse;
 class FinanceReportController extends Controller {
  private function period(Request $r):array{return [$r->query('from',now()->startOfMonth()->toDateString()),$r->query('to',now()->toDateString())];}
  private function transactions(string $from,string $to){return FinancialTransaction::whereBetween('transaction_date',[$from,$to])->orderBy('transaction_date')->get();}
- private function metrics(string $from,string $to):array{$t=$this->transactions($from,$to);$income=(float)$t->where('type','money_received')->sum('amount');$expenses=(float)$t->where('type','money_paid')->sum('amount');return compact('income','expenses')+['net'=>$income-$expenses,'receivables'=>(float)Receivable::sum(\DB::raw('amount-amount_paid')),'payables'=>(float)Payable::sum(\DB::raw('amount-amount_paid')),'assets'=>(float)FixedAsset::where('status','active')->sum('purchase_cost'),'budget'=>(float)Budget::whereBetween('period_start',[$from,$to])->sum('planned_amount')];}
- public function overview(Request $r):View{abort_unless($r->user()->canAccess('reports'),403);[$from,$to]=$this->period($r);return view('finance.reports.overview',['m'=>$this->metrics($from,$to),'from'=>$from,'to'=>$to]);}
- public function kpis(Request $r):View{abort_unless($r->user()->canAccess('kpi-dashboards'),403);[$from,$to]=$this->period($r);$m=$this->metrics($from,$to);$m['collection_rate']=Receivable::sum('amount')>0?Receivable::sum('amount_paid')/Receivable::sum('amount')*100:0;$m['payment_rate']=Payable::sum('amount')>0?Payable::sum('amount_paid')/Payable::sum('amount')*100:0;$m['budget_variance']=$m['budget']-$m['expenses'];return view('finance.reports.kpis',compact('m','from','to'));}
- public function statement(Request $r,string $report):View{abort_unless(in_array($report,['profit-loss','balance-sheet','cash-flow','trial-balance']),404);abort_unless($r->user()->canAccess($report) || $r->user()->canAccess('reports') || $r->user()->canAccess('finance'),403);[$from,$to]=$this->period($r);$t=$this->transactions($from,$to);$m=$this->metrics($from,$to);$rows=collect();
+ private function metrics(string $from,string $to):array{$t=$this->transactions($from,$to);$income=(float)$t->filter(fn($x)=>($x->type==='money_received' && $x->transaction_category!=='customer_prepayment') || $x->type==='revenue_recognized')->sum('amount');$cashIn=(float)$t->where('type','money_received')->sum('amount');$expenses=(float)$t->where('type','money_paid')->sum('amount');return compact('income','cashIn','expenses')+['net'=>$income-$expenses,'receivables'=>(float)Receivable::sum(\DB::raw('amount-amount_paid')),'payables'=>(float)Payable::sum(\DB::raw('amount-amount_paid')),'assets'=>(float)FixedAsset::where('status','active')->sum('purchase_cost'),'budget'=>(float)Budget::whereBetween('period_start',[$from,$to])->sum('planned_amount')];}
+ public function overview(Request $r):View{abort_unless($r->user()->canViewAllReports(),403);[$from,$to]=$this->period($r);return view('finance.reports.overview',['m'=>$this->metrics($from,$to),'from'=>$from,'to'=>$to]);}
+ public function kpis(Request $r):View{abort_unless($r->user()->canViewAllReports()||$r->user()->canAccess('kpi-dashboards'),403);[$from,$to]=$this->period($r);$m=$this->metrics($from,$to);$m['collection_rate']=Receivable::sum('amount')>0?Receivable::sum('amount_paid')/Receivable::sum('amount')*100:0;$m['payment_rate']=Payable::sum('amount')>0?Payable::sum('amount_paid')/Payable::sum('amount')*100:0;$m['budget_variance']=$m['budget']-$m['expenses'];return view('finance.reports.kpis',compact('m','from','to'));}
+ public function statement(Request $r,string $report):View{abort_unless(in_array($report,['profit-loss','balance-sheet','cash-flow','trial-balance']),404);abort_unless($r->user()->canAccess($report) || $r->user()->canViewAllReports() || $r->user()->canAccess('finance'),403);[$from,$to]=$this->period($r);$t=$this->transactions($from,$to);$m=$this->metrics($from,$to);$rows=collect();
   if($report==='profit-loss'){$rows=collect([['label'=>'Cash income received','debit'=>0,'credit'=>$m['income']],['label'=>'Cash operating expenses paid','debit'=>$m['expenses'],'credit'=>0]]);}
   elseif($report==='cash-flow'){$rows=$t->whereIn('type',['money_received','money_paid'])->groupBy(fn($x)=>$x->type==='money_received'?'Cash inflows':'Cash outflows')->map(fn($g,$label)=>['label'=>$label,'debit'=>$label==='Cash inflows'?$g->sum('amount'):0,'credit'=>$label==='Cash outflows'?$g->sum('amount'):0])->values();}
-  elseif($report==='balance-sheet'){$pre=(float)CustomerPrepayment::sum(\DB::raw('amount-amount_used'));$rows=collect([['label'=>'Recorded cash and bank balance','debit'=>$m['income']-$m['expenses'],'credit'=>0],['label'=>'Accounts receivable','debit'=>$m['receivables'],'credit'=>0],['label'=>'Fixed assets at cost','debit'=>$m['assets'],'credit'=>0],['label'=>'Accounts payable','debit'=>0,'credit'=>$m['payables']],['label'=>'Customer prepayments','debit'=>0,'credit'=>$pre]]);$equity=$rows->sum('debit')-$rows->sum('credit');$rows->push(['label'=>'Net recorded assets / equity','debit'=>0,'credit'=>$equity]);}
-  else{$entries=collect();foreach($t as $x){$other=$x->counterparty?:'Unclassified';if($x->type==='money_received'){$entries->push([$x->account,$x->amount,0]);$entries->push(['Income / '.$other,0,$x->amount]);}elseif($x->type==='money_paid'){$entries->push(['Expense / '.$other,$x->amount,0]);$entries->push([$x->account,0,$x->amount]);}else{$entries->push([$x->account,$x->amount,0]);$entries->push([$other,0,$x->amount]);}}$rows=$entries->groupBy(0)->map(fn($g,$label)=>['label'=>$label,'debit'=>$g->sum(1),'credit'=>$g->sum(2)])->values();}
+  elseif($report==='balance-sheet'){$pre=(float)CustomerPrepayment::sum(\DB::raw('amount-amount_used'));$rows=collect([['label'=>'Recorded cash and bank balance','debit'=>$m['cashIn']-$m['expenses'],'credit'=>0],['label'=>'Accounts receivable','debit'=>$m['receivables'],'credit'=>0],['label'=>'Fixed assets at cost','debit'=>$m['assets'],'credit'=>0],['label'=>'Accounts payable','debit'=>0,'credit'=>$m['payables']],['label'=>'Customer prepayments','debit'=>0,'credit'=>$pre]]);$equity=$rows->sum('debit')-$rows->sum('credit');$rows->push(['label'=>'Net recorded assets / equity','debit'=>0,'credit'=>$equity]);}
+  else{$entries=collect();foreach($t as $x){$other=$x->counterparty?:'Unclassified';if($x->transaction_category==='customer_prepayment'){$entries->push([$x->account,$x->amount,0]);$entries->push(['Customer Prepayments (Liability)',0,$x->amount]);}elseif($x->type==='revenue_recognized'){$entries->push(['Customer Prepayments (Liability)',$x->amount,0]);$entries->push(['Sales Revenue',0,$x->amount]);}elseif($x->type==='money_received'){$entries->push([$x->account,$x->amount,0]);$entries->push(['Income / '.$other,0,$x->amount]);}elseif($x->type==='money_paid'){$entries->push(['Expense / '.$other,$x->amount,0]);$entries->push([$x->account,0,$x->amount]);}else{$entries->push([$x->account,$x->amount,0]);$entries->push([$other,0,$x->amount]);}}$rows=$entries->groupBy(0)->map(fn($g,$label)=>['label'=>$label,'debit'=>$g->sum(1),'credit'=>$g->sum(2)])->values();}
   return view('finance.reports.statement',compact('report','rows','from','to','m'));}
 
- public function threeStatement(Request $r):View {abort_unless($r->user()->canAccess('reports')||$r->user()->canAccess('finance'),403);$year=(int)$r->query('year',(now()->month>=7?now()->year:now()->year-1));$model=$this->threeStatementData($year);return view('finance.reports.three-statement',compact('model','year'));}
+ public function threeStatement(Request $r):View {abort_unless($r->user()->canViewAllReports()||$r->user()->canAccess('finance'),403);$year=(int)$r->query('year',(now()->month>=7?now()->year:now()->year-1));$model=$this->threeStatementData($year);return view('finance.reports.three-statement',compact('model','year'));}
+
+ public function profitability(Request $r, UnitEconomicsService $economics):View
+ {
+  abort_unless($r->user()->canViewAllReports()||$r->user()->canAccess('finance'),403);
+  [$from,$to]=$this->period($r);
+  abort_if($from>$to,422,'The report start date must be before the end date.');
+  return view('finance.reports.profitability',$economics->report($from,$to,$r->query('unit')));
+ }
 
  private function threeStatementData(int $year): array
  {
@@ -22,7 +30,8 @@ class FinanceReportController extends Controller {
   $columns=$months->map(fn($d)=>$d->format('M Y'))->all();
   $monthly=$months->map(function($d){
    $t=$this->transactions($d->toDateString(),$d->copy()->endOfMonth()->toDateString());
-   $received=(float)$t->where('type','money_received')->sum('amount');
+   $received=(float)$t->filter(fn($x)=>($x->type==='money_received' && $x->transaction_category!=='customer_prepayment') || $x->type==='revenue_recognized')->sum('amount');
+   $cashReceived=(float)$t->where('type','money_received')->sum('amount');
    $paid=$t->where('type','money_paid');
    $matches=fn($x,$words)=>str($x->description.' '.$x->counterparty)->lower()->contains($words);
    $cogs=(float)$paid->filter(fn($x)=>$matches($x,['feed','medicine','medication','vaccine','vaccination','husks','crop husbandry','direct purchase']))->sum('amount');
@@ -30,13 +39,13 @@ class FinanceReportController extends Controller {
    $tax=(float)$paid->filter(fn($x)=>$matches($x,['tax','paye']))->sum('amount');
    $operating=(float)$paid->sum('amount')-$cogs-$badDebts-$tax;
    $depreciation=0.0;$gross=$received-$cogs;$profitBeforeTax=$gross-$operating-$depreciation-$badDebts;$net=$profitBeforeTax-$tax;
-   return compact('received','cogs','gross','operating','depreciation','badDebts','profitBeforeTax','tax','net');
+   return compact('received','cashReceived','cogs','gross','operating','depreciation','badDebts','profitBeforeTax','tax','net');
   });
   $z=array_fill(0,12,0.0);$values=fn($key)=>$monthly->pluck($key)->map(fn($x)=>(float)$x)->all();
   $cumulative=function($items){$running=0;return array_map(function($x)use(&$running){return $running+=(float)$x;},$items);};
   $ppe=[];$land=[];$receivables=[];$payables=[];$unearned=[];
   foreach($months as $d){$end=$d->copy()->endOfMonth();$ppe[]=(float)FixedAsset::where('category','!=','Land')->where('purchase_date','<=',$end)->sum('purchase_cost');$land[]=(float)FixedAsset::where('category','Land')->where('purchase_date','<=',$end)->sum('purchase_cost');$receivables[]=(float)Receivable::where('invoice_date','<=',$end)->sum(\DB::raw('amount-amount_paid'));$payables[]=(float)Payable::where('invoice_date','<=',$end)->sum(\DB::raw('amount-amount_paid'));$unearned[]=(float)CustomerPrepayment::where('received_date','<=',$end)->sum(\DB::raw('amount-amount_used'));}
-  $cash=$cumulative(array_map(fn($i)=>$monthly[$i]['received']-$monthly[$i]['cogs']-$monthly[$i]['operating']-$monthly[$i]['badDebts']-$monthly[$i]['tax'],range(0,11)));
+  $cash=$cumulative(array_map(fn($i)=>$monthly[$i]['cashReceived']-$monthly[$i]['cogs']-$monthly[$i]['operating']-$monthly[$i]['badDebts']-$monthly[$i]['tax'],range(0,11)));
   $inventory=$z;$otherReceivables=$z;$otherAssets=$z;$loans=$z;$lease=$z;$contributions=$z;$deferredTax=$z;$capital=$z;$reserves=$z;$drawings=$z;
   $totalNca=array_map(fn($a,$b)=>$a+$b,$ppe,$land);$totalCa=array_map(fn($a,$b,$c,$d)=>$a+$b+$c+$d,$cash,$receivables,$inventory,$otherReceivables);$totalAssets=array_map(fn($a,$b,$c)=>$a+$b+$c,$totalNca,$totalCa,$otherAssets);
   $totalNcl=array_map(fn($a,$b,$c,$d)=>$a+$b+$c+$d,$loans,$lease,$contributions,$deferredTax);$totalCl=array_map(fn($a,$b)=>$a+$b,$payables,$unearned);$totalLiabilities=array_map(fn($a,$b)=>$a+$b,$totalNcl,$totalCl);
@@ -57,7 +66,7 @@ class FinanceReportController extends Controller {
 
  public function export(Request $r,string $report):StreamedResponse
  {
-  abort_unless($r->user()->canAccess('reports')||$r->user()->canAccess('finance'),403);
+  abort_unless($r->user()->canViewAllReports()||$r->user()->canAccess('finance'),403);
   $allowed=['overview','kpis','profit-loss','balance-sheet','cash-flow','trial-balance','three-statement'];abort_unless(in_array($report,$allowed,true),404);
   $title=str($report)->replace('-',' ')->title()->toString();
   if($report==='three-statement'){

@@ -26,14 +26,21 @@ class CommunicationService
         return $message;
     }
 
-    public function toRole(string $roleCode, string $subject, string $body, ?int $senderId = null): int
+    public function toRole(string $roleCode, string $subject, string $body, ?int $senderId = null, ?string $actionUrl = null): int
     {
         $recipients = User::where(function ($query) use ($roleCode) {
             $query->whereHas('roles', fn ($roles) => $roles->where('code', $roleCode))
                 ->orWhereHas('role', fn ($role) => $role->where('code', $roleCode));
         })->where('is_active', true)->get();
 
-        $recipients->each(fn (User $recipient) => $this->toUser($recipient, $subject, $body, 'workflow', $senderId));
+        $recipients->each(fn (User $recipient) => $this->toUser(
+            $recipient,
+            $subject,
+            $body,
+            'workflow',
+            $senderId,
+            $actionUrl,
+        ));
 
         return $recipients->count();
     }

@@ -21,6 +21,14 @@
     </form>
 </div>
 
+<section class="card">
+    <div class="section-heading"><div><p class="card-label">Department submissions</p><h3>Combined weekly draft</h3></div></div>
+    <div class="summary-grid summary-grid--compact">
+        @forelse($departmentTotals as $department=>$summary)<div class="summary-card"><span>{{ $department }}</span><strong>UGX {{ number_format((float)$summary['total']) }}</strong><small>{{ $summary['lines'] }} line(s)</small></div>@empty<div class="empty">No department has entered a draft for this week.</div>@endforelse
+    </div>
+    <p class="muted">Each department edits its own draft. Finance reviews the combined totals and submits them for approval.</p>
+</section>
+
 <section class="status-banner status-banner--{{ $budgetStatus }}">
     <div><span class="status-pill">{{ ucfirst($budgetStatus) }}</span><h3>{{ $periodStart ? $periodStart->format('d M').' – '.$periodEnd->format('d M Y') : 'No budget started for this week' }}</h3>
         @if($budgetStatus==='submitted')<p>Awaiting {{ ucwords(str_replace('-',' ',$approval?->currentStep()?->role_code ?? 'approval')) }}.</p>
@@ -36,7 +44,7 @@
 
 <nav class="unit-tabs" aria-label="Budget units">
     <a class="{{ $unit==='all'?'active':'' }}" href="{{ route('finance.budgets.index',['week'=>$selectedWeek]) }}">All</a>
-    @foreach(['poultry'=>'Poultry','kituntu'=>'Garden','goats'=>'Goats','rabbits'=>'Rabbits','dogs'=>'Dogs','staff-welfare'=>'Staff Welfare','administration'=>'Administration'] as $key=>$label)<a class="{{ $unit===$key?'active':'' }}" href="{{ route('finance.budgets.index',['unit'=>$key,'week'=>$selectedWeek]) }}">{{ $label }}</a>@endforeach
+    @foreach(['poultry'=>'Poultry','kituntu'=>'Kituntu · All','kituntu-tomatoes'=>'Kituntu · Tomatoes','kituntu-passion'=>'Kituntu · Passion Fruit','goats'=>'Goats','rabbits'=>'Rabbits','dogs'=>'Dogs','staff-welfare'=>'Staff Welfare','administration'=>'Administration'] as $key=>$label)<a class="{{ $unit===$key?'active':'' }}" href="{{ route('finance.budgets.index',['unit'=>$key,'week'=>$selectedWeek]) }}">{{ $label }}</a>@endforeach
 </nav>
 
 <div class="summary-grid summary-grid--compact">
@@ -52,19 +60,13 @@
 @endif
 
 <details class="card disclosure" @if($budgetStatus==='draft') open @endif>
-    <summary><span><strong>{{ $budgetStatus==='draft' ? 'Edit budget lines' : 'All budget lines' }}</strong><small>{{ $items->count() }} items for {{ $unit==='all'?'all units':ucfirst($unit) }}</small></span></summary>
+    <summary><span><strong>Department budget lines</strong><small>{{ $items->count() }} items for {{ $unit==='all'?'all departments':ucfirst($unit) }}</small></span></summary>
     <div class="disclosure__body">
         @if($items->isEmpty())<p class="empty">No budget lines for this selection.</p>@else
-        <form method="POST" action="{{ route('finance.budgets.update-weekly') }}">@csrf @method('PUT')
-            <div class="table-wrap"><table class="exec-table"><thead><tr><th>Section / item</th><th>Unit</th><th class="num">Quantity</th><th class="num">Unit price</th><th class="num">Total</th>@if($budgetStatus==='draft')<th></th>@endif</tr></thead><tbody>
-            @foreach($items as $item)<tr><td><strong>{{ $item->item }}</strong><small>{{ $item->category }}</small></td><td>{{ $item->unit }}</td><td class="num">@if($budgetStatus==='draft')<input name="lines[{{ $item->id }}][quantity]" type="number" min="0" step="0.01" value="{{ $item->quantity }}">@else{{ number_format((float)$item->quantity,2) }}@endif</td><td class="num">@if($budgetStatus==='draft')<input name="lines[{{ $item->id }}][unit_price]" type="number" min="0" step="0.01" value="{{ $item->unit_price }}">@else UGX {{ number_format((float)$item->unit_price,2) }}@endif</td><td class="num"><strong>UGX {{ number_format((float)$item->planned_amount) }}</strong></td>@if($budgetStatus==='draft')<td><button class="link-danger" formmethod="POST" formaction="{{ route('finance.budgets.destroy',$item) }}" name="_method" value="DELETE">Remove</button></td>@endif</tr>@endforeach
-            </tbody></table></div>
-            @if($budgetStatus==='draft')<div class="sticky-actions"><button class="btn btn--inline">Save changes</button></div>@endif
-        </form>@endif
+        <div class="table-wrap"><table class="exec-table"><thead><tr><th>Department / section</th><th>Item</th><th>Unit</th><th class="num">Quantity</th><th class="num">Unit price</th><th class="num">Total</th></tr></thead><tbody>
+        @foreach($items as $item)<tr><td><strong>{{ $item->department?->name ?? 'Unassigned' }}</strong><small>{{ $item->category }}</small></td><td>{{ $item->item }}</td><td>{{ $item->unit }}</td><td class="num">{{ number_format((float)$item->quantity,2) }}</td><td class="num">UGX {{ number_format((float)$item->unit_price,2) }}</td><td class="num"><strong>UGX {{ number_format((float)$item->planned_amount) }}</strong></td></tr>@endforeach
+        </tbody></table></div>@endif
     </div>
 </details>
 
-@if(auth()->user()->canDo('budget','create') && $budgetStatus==='draft')
-<details class="card disclosure"><summary><span><strong>Add a budget item</strong><small>Add an exception or requirement not already listed</small></span></summary><div class="disclosure__body"><form method="POST" action="{{ route('finance.budgets.store') }}">@csrf<div class="form-grid"><div class="field"><label>Section</label><select name="category">@foreach(['Poultry','Kituntu Garden','Goat Unit','Rabbits Unit','Dogs Unit','Administration'] as $category)<option>{{ $category }}</option>@endforeach</select></div><div class="field"><label>Item</label><input name="item" required></div><div class="field"><label>Unit</label><input name="unit"></div><div class="field"><label>Quantity</label><input name="quantity" type="number" min="0.01" step="0.01" required></div><div class="field"><label>Unit price</label><input name="unit_price" type="number" min="0" step="0.01" required></div><input name="period_start" type="hidden" value="{{ $selectedWeek }}"><input name="period_end" type="hidden" value="{{ \Carbon\Carbon::parse($selectedWeek)->endOfWeek()->toDateString() }}"></div><button class="btn btn--inline">Add item</button></form></div></details>
-@endif
 @endsection

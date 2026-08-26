@@ -36,11 +36,11 @@ class ExecutiveController extends Controller
         $trend = collect(range(5, 0))->map(function (int $monthsAgo) {
             $date = now()->subMonths($monthsAgo);
             $rows = FinancialTransaction::whereBetween('transaction_date', [$date->copy()->startOfMonth(), $date->copy()->endOfMonth()])->get();
-            return ['label'=>$date->format('M'), 'income'=>(float)$rows->where('type','money_received')->sum('amount'), 'spending'=>(float)$rows->where('type','money_paid')->sum('amount')];
+            return ['label'=>$date->format('M'), 'income'=>(float)$rows->filter(fn ($row) => ($row->type === 'money_received' && $row->transaction_category !== 'customer_prepayment') || $row->type === 'revenue_recognized')->sum('amount'), 'spending'=>(float)$rows->where('type','money_paid')->sum('amount')];
         });
         $data = match ($screen) {
             'kpis' => [
-                'income' => (float) $month->where('type', 'money_received')->sum('amount'),
+                'income' => (float) $month->filter(fn ($row) => ($row->type === 'money_received' && $row->transaction_category !== 'customer_prepayment') || $row->type === 'revenue_recognized')->sum('amount'),
                 'spending' => (float) $month->where('type', 'money_paid')->sum('amount'),
                 'pending' => Approval::where('status', 'pending')->count(),
                 'overdue' => Approval::where('status', 'pending')->where('due_at', '<', now())->count(),

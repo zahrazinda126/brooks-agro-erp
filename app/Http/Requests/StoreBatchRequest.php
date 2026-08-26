@@ -29,6 +29,7 @@ class StoreBatchRequest extends FormRequest
             // Extras thrown in by the supplier, not on the invoice. They
             // count as birds but never as cost.
             'quantity_free'       => ['nullable', 'integer', 'min:0', 'max:100000'],
+            'transit_deaths'      => ['nullable', 'integer', 'min:0', 'max:1000000'],
 
             'unit_cost'           => ['nullable', 'required_without:total_cost', 'numeric', 'min:0', 'max:9999999'],
             'total_cost'          => ['nullable', 'required_without:unit_cost', 'numeric', 'min:0'],
@@ -49,7 +50,13 @@ class StoreBatchRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
-            $expected = (int) $this->input('quantity_received') + (int) $this->input('quantity_free');
+            $delivered = (int) $this->input('quantity_received') + (int) $this->input('quantity_free');
+            $transitDeaths = (int) $this->input('transit_deaths');
+            $expected = $delivered - $transitDeaths;
+            if ($transitDeaths > $delivered) {
+                $validator->errors()->add('transit_deaths', 'Transit deaths cannot exceed all paid and free birds supplied.');
+                return;
+            }
             $allocated = collect($this->input('house_allocations', []))->sum(fn ($quantity) => (int) $quantity)
                 + collect($this->input('new_houses', []))->sum(fn ($house) => (int) ($house['bird_quantity'] ?? 0));
 
@@ -92,6 +99,7 @@ class StoreBatchRequest extends FormRequest
         $this->merge([
             'age_days_on_arrival' => $this->input('age_days_on_arrival') ?: 0,
             'quantity_free'       => $this->input('quantity_free') ?: 0,
+            'transit_deaths'      => $this->input('transit_deaths') ?: 0,
             'purpose'             => $this->input('purpose', 'layer'),
         ]);
     }

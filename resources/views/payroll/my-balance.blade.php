@@ -1,0 +1,7 @@
+@extends('layouts.app')
+@section('title','My Salary Balance')
+@section('content')
+<div class="page-head"><p class="eyebrow">My account</p><h1>Salary balance</h1><p>{{ $employee->fullName() }} &middot; {{ $employee->staff_no }}</p></div>
+<div class="summary-grid"><div class="summary-card"><span>Salary credited</span><strong>UGX {{ number_format($credited) }}</strong></div><div class="summary-card"><span>Collected</span><strong>UGX {{ number_format($withdrawn) }}</strong></div><div class="summary-card"><span>Available balance</span><strong>UGX {{ number_format($balance) }}</strong><small>Request collection through Finance</small></div></div>
+<section class="card table-wrap"><h2>My salary history</h2><table><thead><tr><th>Date</th><th>Entry</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded by</th></tr></thead><tbody>@forelse($transactions as $entry)<tr><td>{{ $entry->transaction_date->format('d M Y') }}</td><td>{{ Str::headline($entry->type) }}</td><td><strong>{{ $entry->type==='withdrawal' ? '-' : '+' }} UGX {{ number_format($entry->amount) }}</strong></td><td>{{ $entry->payment_method ? Str::headline($entry->payment_method) : 'Internal credit' }}</td><td>{{ $entry->reference ?: 'Not provided' }}</td><td>{{ $entry->recorder?->displayName() ?? 'System' }}</td></tr>@empty<tr><td colspan="6">No salary has been credited to your staff balance yet.</td></tr>@endforelse</tbody></table></section>
+@endsection

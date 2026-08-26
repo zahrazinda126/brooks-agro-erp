@@ -41,12 +41,10 @@ class HouseController extends Controller
         $data = $request->validate([
             'house_number' => ['required', 'string', 'max:60', 'unique:poultry_houses'],
             'house_type' => ['required', 'in:brooder,standard'],
-            'animal_group_id' => ['nullable', 'exists:animal_groups,id'],
-            'bird_quantity' => ['required', 'integer', 'min:0'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        PoultryHouse::create($data + ['is_active' => true]);
+        PoultryHouse::create($data + ['animal_group_id' => null, 'bird_quantity' => 0, 'is_active' => true]);
 
         return back()->with('status', 'Poultry house added.');
     }
@@ -57,8 +55,6 @@ class HouseController extends Controller
         $data = $request->validate([
             'house_number' => ['required', 'string', 'max:60', 'unique:poultry_houses,house_number,'.$house->id],
             'house_type' => ['required', 'in:brooder,standard'],
-            'animal_group_id' => ['nullable', 'exists:animal_groups,id'],
-            'bird_quantity' => ['required', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);

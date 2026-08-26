@@ -34,6 +34,7 @@ use App\Http\Controllers\ExecutiveController;
 use App\Http\Controllers\Operations\FarmUnitController;
 use App\Http\Controllers\Operations\FeedStockController;
 use App\Http\Controllers\ProductionBudgetController;
+use App\Http\Controllers\DepartmentBudgetController;
 use App\Http\Controllers\SalesController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\VisitorController;
@@ -43,6 +44,7 @@ use App\Http\Controllers\CommunicationController;
 use App\Http\Controllers\ExecutiveFollowUpController;
 use App\Http\Controllers\VaccinationScheduleController;
 use App\Http\Controllers\Poultry\HouseController;
+use App\Http\Controllers\DailyManagementReportController;
 
 
 
@@ -89,9 +91,14 @@ Route::middleware('auth')->group(function () {
     Route::middleware('password.settled')->group(function () {
 
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('/daily-management-report', [DailyManagementReportController::class, 'index'])->name('daily-reports.index');
+        Route::post('/daily-management-report', [DailyManagementReportController::class, 'save'])->name('daily-reports.save');
+        Route::post('/daily-management-report/{section}/review', [DailyManagementReportController::class, 'review'])->name('daily-reports.review');
+        Route::post('/daily-management-report/comments', [DailyManagementReportController::class, 'comment'])->name('daily-reports.comments');
         Route::get('/account', [AccountController::class, 'edit'])->name('account.edit');
         Route::put('/account', [AccountController::class, 'update'])->name('account.update');
         Route::get('/owner/customers', [OwnerDirectoryController::class, 'customers'])->name('owner.customers');
+        Route::get('/customer-accounts/{customer}', [OwnerDirectoryController::class, 'showCustomer'])->name('customer-accounts.show');
         Route::get('/vaccination-schedule', [VaccinationScheduleController::class, 'index'])->name('vaccination-schedule.index');
         Route::post('/vaccination-schedule', [VaccinationScheduleController::class, 'store'])->name('vaccination-schedule.store');
         Route::post('/vaccination-records', [VaccinationScheduleController::class, 'storeRecord'])->name('vaccination-records.store');
@@ -116,14 +123,20 @@ Route::middleware('auth')->group(function () {
         Route::get('/hr/fleet', [FleetController::class, 'index'])->name('hr.fleet.index');
         Route::post('/hr/fleet', [FleetController::class, 'store'])->name('hr.fleet.store');
         Route::get('/payroll', [PayrollController::class, 'index'])->name('payroll.index');
+        Route::get('/my-salary-balance', [PayrollController::class, 'myBalance'])->name('payroll.my-balance');
+        Route::get('/salary-accounts/{employee}', [PayrollController::class, 'salaryAccount'])->name('payroll.salary-accounts.show');
         Route::post('/payroll/generate', [PayrollController::class, 'generate'])->name('payroll.generate');
         Route::get('/payroll/{payroll}', [PayrollController::class, 'show'])->name('payroll.show');
         Route::put('/payroll/{payroll}/lines/{line}', [PayrollController::class, 'updateLine'])->name('payroll.lines.update');
         Route::post('/payroll/{payroll}/submit', [PayrollController::class, 'submit'])->name('payroll.submit');
-        Route::post('/payroll/{payroll}/pay', [PayrollController::class, 'pay'])->name('payroll.pay');
+        Route::post('/payroll/{payroll}/pay', [PayrollController::class, 'fund'])->name('payroll.pay');
+        Route::get('/payroll/{payroll}/lines/{line}/withdraw', [PayrollController::class, 'withdrawalForm'])->name('payroll.lines.withdraw-form');
+        Route::post('/payroll/{payroll}/lines/{line}/withdraw', [PayrollController::class, 'withdraw'])->name('payroll.lines.withdraw');
         Route::get('/sales', [SalesController::class, 'index'])->name('sales.index');
         Route::post('/sales/products', [SalesController::class, 'storeProduct'])->name('sales.products.store');
         Route::put('/sales/products/{product}/price', [SalesController::class, 'updatePrice'])->name('sales.products.price');
+        Route::get('/sales/price-approvals', [SalesController::class, 'priceApprovals'])->name('sales.price-approvals');
+        Route::post('/sales/price-approvals/{priceRequest}', [SalesController::class, 'decidePrice'])->name('sales.price-approvals.decide');
         Route::post('/sales/customers', [SalesController::class, 'storeCustomer'])->name('sales.customers.store');
         Route::post('/sales', [SalesController::class, 'storeSale'])->name('sales.store');
         Route::get('/sales/{sale}', [SalesController::class, 'show'])->name('sales.show');
@@ -143,6 +156,10 @@ Route::middleware('auth')->group(function () {
         Route::post('/production/finance-draft-budget', [ProductionBudgetController::class, 'addFinanceDraftLine'])->name('production.finance-draft.store');
         Route::put('/production/finance-draft-budget/{budget}', [ProductionBudgetController::class, 'updateFinanceDraftLine'])->name('production.finance-draft.update');
         Route::delete('/production/finance-draft-budget/{budget}', [ProductionBudgetController::class, 'deleteFinanceDraftLine'])->name('production.finance-draft.delete');
+        Route::get('/department/weekly-budget', [DepartmentBudgetController::class, 'index'])->name('department-budget.index');
+        Route::post('/department/weekly-budget', [DepartmentBudgetController::class, 'store'])->name('department-budget.store');
+        Route::put('/department/weekly-budget/{budget}', [DepartmentBudgetController::class, 'update'])->name('department-budget.update');
+        Route::delete('/department/weekly-budget/{budget}', [DepartmentBudgetController::class, 'destroy'])->name('department-budget.destroy');
         Route::get('/operations/units/{unit}', [FarmUnitController::class, 'index'])->name('operations.units.index');
         Route::get('/operations/units/{unit}/report', [FarmUnitController::class, 'unitReport'])->name('operations.units.report');
         Route::get('/operations/units/{unit}/export', [FarmUnitController::class, 'export'])->name('operations.units.export');
@@ -201,6 +218,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/finance/reports', [FinanceReportController::class, 'overview'])->name('finance.reports.index');
         Route::get('/finance/reports/kpis', [FinanceReportController::class, 'kpis'])->name('finance.reports.kpis');
         Route::get('/finance/reports/three-statement', [FinanceReportController::class, 'threeStatement'])->name('finance.reports.three-statement');
+        Route::get('/finance/reports/unit-profitability', [FinanceReportController::class, 'profitability'])->name('finance.reports.profitability');
         Route::get('/finance/reports/export/{report}', [FinanceReportController::class, 'export'])->name('finance.reports.export');
         Route::get('/finance/reports/{report}', [FinanceReportController::class, 'statement'])->name('finance.reports.statement');
         Route::get('/finance/administration/{screen}', [FinanceAdministrationController::class, 'index'])->name('finance.admin.index');
@@ -288,6 +306,11 @@ Route::middleware('auth')->group(function () {
 
             Route::put('/batches/{batch}', [BatchController::class, 'update'])
                 ->middleware('module:batches,edit')->name('batches.update');
+
+            Route::post('/batches/{batch}/request-edit', [BatchController::class, 'requestEdit'])
+                ->name('batches.request-edit');
+            Route::post('/batches/{batch}/authorize-edit', [BatchController::class, 'authorizeEdit'])
+                ->name('batches.authorize-edit');
 
             Route::post('/batches/{batch}/close', [BatchController::class, 'close'])
                 ->middleware('module:batches,edit')->name('batches.close');

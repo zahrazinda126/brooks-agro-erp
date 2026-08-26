@@ -41,7 +41,7 @@ class StoreEmployeeRequest extends FormRequest
              | permanent range.
              */
             'employment_type' => ['required', Rule::in([
-                'permanent', 'contract', 'casual', 'temporary', 'intern', 'vacist',
+                'permanent', 'contract', 'casual', 'temporary', 'intern', 'student', 'vacist', 'other',
             ])],
 
             'hire_date' => ['nullable', 'date'],

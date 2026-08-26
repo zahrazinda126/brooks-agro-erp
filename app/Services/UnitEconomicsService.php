@@ -1,0 +1,113 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\AnimalGroup;
+use App\Models\FinancialTransaction;
+use App\Models\SaleLine;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+
+class UnitEconomicsService
+{
+    private const UNITS = ['Poultry', 'Goats', 'Rabbits', 'Dogs', 'Garden'];
+
+    public function report(string $from, string $to, ?string $unit = null): array
+    {
+        $selected = $unit && in_array($unit, self::UNITS, true) ? $unit : null;
+        $expenses = FinancialTransaction::where('type', 'money_paid')
+            ->whereBetween('transaction_date', [$from, $to])->get();
+        $receipts = FinancialTransaction::where(function ($query) {
+            $query->where(function ($cash) {
+                $cash->where('type', 'money_received')->where(function ($classification) {
+                    $classification->whereNull('transaction_category')->orWhere('transaction_category', '!=', 'customer_prepayment');
+                });
+            })->orWhere('type', 'revenue_recognized');
+        })
+            ->whereBetween('transaction_date', [$from, $to])->get();
+
+        $unitRows = collect(self::UNITS)->map(function (string $name) use ($expenses, $from, $to) {
+            $spent = $expenses->filter(fn ($row) => strcasecmp((string) $row->cost_centre, $name) === 0)->sum('amount');
+            $revenue = $this->salesRevenue($name, $from, $to);
+
+            return ['unit'=>$name, 'spent'=>(float)$spent, 'revenue'=>$revenue, 'result'=>$revenue-(float)$spent];
+        });
+
+        $allocated = $unitRows->sum('spent');
+        $unallocated = max(0, (float)$expenses->sum('amount') - $allocated);
+        $lifeCycles = $selected === 'Poultry'
+            ? $this->poultryLifeCycles($to)
+            : ($selected && $selected !== 'Garden' ? $this->livestockLifeCycles(strtolower($selected), $to) : collect());
+
+        return [
+            'units'=>$unitRows,
+            'lifeCycles'=>$lifeCycles,
+            'selectedUnit'=>$selected,
+            'totalRevenue'=>(float)$receipts->sum('amount'),
+            'totalSpent'=>(float)$expenses->sum('amount'),
+            'unallocated'=>$unallocated,
+            'from'=>$from,
+            'to'=>$to,
+            'unitOptions'=>self::UNITS,
+        ];
+    }
+
+    private function salesRevenue(string $unit, string $from, string $to): float
+    {
+        $categories = match ($unit) {
+            'Poultry' => ['eggs', 'poultry', 'manure'],
+            'Goats' => ['goats', 'goat'],
+            'Rabbits' => ['rabbits', 'rabbit'],
+            'Dogs' => ['dogs', 'dog'],
+            'Garden' => ['garden'],
+        };
+
+        return (float) SaleLine::whereHas('sale', fn ($query) => $query
+            ->whereBetween('sale_date', [$from, $to])->where('status', '!=', 'void'))
+            ->where(function ($query) use ($categories) {
+                $query->whereIn('category', $categories)
+                    ->orWhereHas('product', fn ($product) => $product->whereIn('category', $categories));
+            })->sum('line_total');
+    }
+
+    private function poultryLifeCycles(string $to): Collection
+    {
+        return AnimalGroup::with('breed')->whereDate('received_date', '<=', $to)
+            ->orderByDesc('received_date')->get()->map(function (AnimalGroup $batch) use ($to) {
+                $feed = DB::table('feed_consumptions')->leftJoin('feed_types', 'feed_types.id', '=', 'feed_consumptions.feed_type_id')
+                    ->where('feed_consumptions.animal_group_id', $batch->id)->where('feed_consumptions.used_on', '<=', $to)
+                    ->where('feed_consumptions.status', 'approved')
+                    ->sum(DB::raw('feed_consumptions.quantity_kg * coalesce(feed_types.cost_per_kg, 0)'));
+                $health = DB::table('health_events')->where('animal_group_id', $batch->id)
+                    ->where('occurred_on', '<=', $to)->sum('cost');
+                $acquisition = (float)$batch->total_cost;
+                $total = $acquisition + (float)$feed + (float)$health;
+                $birds = max(1, $batch->totalReceived());
+
+                return ['code'=>$batch->code, 'description'=>$batch->breed?->name ?? $batch->name,
+                    'acquired_on'=>$batch->received_date, 'initial'=>$batch->totalReceived(),
+                    'remaining'=>$batch->current_quantity, 'acquisition'=>$acquisition, 'feed'=>(float)$feed,
+                    'health'=>(float)$health, 'total'=>$total, 'per_animal'=>$total/$birds,
+                    'stage'=>$batch->stage()];
+            });
+    }
+
+    private function livestockLifeCycles(string $unit, string $to): Collection
+    {
+        return DB::table('livestock_groups')->where('unit_code', $unit)->where('acquired_on', '<=', $to)
+            ->orderByDesc('acquired_on')->get()->map(function ($group) use ($to) {
+                $feed = (float)DB::table('livestock_feed_records')->where('livestock_group_id', $group->id)
+                    ->where('recorded_on', '<=', $to)->whereIn('action', ['issued', 'fed'])->sum('cost');
+                $health = (float)DB::table('livestock_health_records')->where('livestock_group_id', $group->id)
+                    ->where('recorded_on', '<=', $to)->sum('cost');
+                $acquisition = (float)$group->acquisition_cost;
+                $total = $acquisition + $feed + $health;
+
+                return ['code'=>$group->group_code, 'description'=>$group->breed ?: ucfirst($group->unit_code),
+                    'acquired_on'=>$group->acquired_on, 'initial'=>$group->initial_quantity,
+                    'remaining'=>$group->current_quantity, 'acquisition'=>$acquisition, 'feed'=>$feed,
+                    'health'=>$health, 'total'=>$total,
+                    'per_animal'=>$total/max(1, (int)$group->initial_quantity), 'stage'=>$group->status];
+            });
+    }
+}

@@ -24,7 +24,7 @@ class HrReportController extends Controller
 
     public function index(Request $request): View
     {
-        abort_unless($request->user()->canAccess('reports'), 403);
+        abort_unless($request->user()->canViewAllReports(), 403);
 
         [$start, $end] = $this->period($request);
         $report = $request->query('report', 'workforce');
@@ -42,7 +42,7 @@ class HrReportController extends Controller
 
     public function export(Request $request): StreamedResponse
     {
-        abort_unless($request->user()->canAccess('reports'), 403);
+        abort_unless($request->user()->canViewAllReports(), 403);
         [$start, $end] = $this->period($request);
         $report = $request->query('report', 'workforce');
         abort_unless(isset(self::REPORTS[$report]), 404);
@@ -58,7 +58,7 @@ class HrReportController extends Controller
 
     public function kpis(Request $request): View
     {
-        abort_unless($request->user()->canAccess('kpi-dashboards'), 403);
+        abort_unless($request->user()->canViewAllReports() || $request->user()->canAccess('kpi-dashboards'), 403);
 
         $start = now()->startOfMonth();
         $end = now()->endOfMonth();

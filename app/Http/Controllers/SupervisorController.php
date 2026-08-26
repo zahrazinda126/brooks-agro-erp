@@ -15,10 +15,11 @@ class SupervisorController extends Controller
     public function index(Request $request): View
     {
         $user=$request->user(); $isCeo=$this->hasRole($user,'ceo'); $isDirector=$this->hasRole($user,'director');
+        $isFallbackReviewer=$this->hasRole($user,'sales-manager')||$this->hasRole($user,'production-manager');
         $assignments=SupervisorAssignment::with(['supervisor','assigner'])->latest('starts_on')->get();
         $mine=$assignments->where('supervisor_id',$user->id)->filter(fn($a)=>$a->is_active&&$a->starts_on->lte(today())&&(!$a->ends_on||$a->ends_on->gte(today())));
-        abort_unless($isCeo||$isDirector||$mine->isNotEmpty(),403);
-        return view('supervision.index',['assignments'=>$assignments,'mine'=>$mine,'workers'=>User::with(['employee','role'])->where('is_active',true)->whereNotNull('employee_id')->orderBy('name')->get(),'pendingRecords'=>$this->pendingRecords($mine),'reviewedRecords'=>$this->reviewedRecords($user,$mine,$isCeo||$isDirector),'isCeo'=>$isCeo,'isDirector'=>$isDirector,'units'=>self::UNITS]);
+        abort_unless($isCeo||$isDirector||$mine->isNotEmpty()||$isFallbackReviewer,403);
+        return view('supervision.index',['assignments'=>$assignments,'mine'=>$mine,'workers'=>User::with(['employee','role'])->where('is_active',true)->whereNotNull('employee_id')->orderBy('name')->get(),'pendingRecords'=>$this->pendingRecords($user,$mine),'reviewedRecords'=>$this->reviewedRecords($user,$mine,$isCeo||$isDirector),'isCeo'=>$isCeo,'isDirector'=>$isDirector,'isFallbackReviewer'=>$isFallbackReviewer,'units'=>self::UNITS]);
     }
 
     public function assign(Request $request): RedirectResponse
@@ -46,7 +47,7 @@ class SupervisorController extends Controller
         $unit=$cfg['unit'] instanceof \Closure?($cfg['unit'])($row):($cfg['unit']==='unit_code'?$row->unit_code:$cfg['unit']);
         $date=$cfg['date'] instanceof \Closure?($cfg['date'])($row):$row->{$cfg['date']};
         $user=$request->user();$executive=$this->hasRole($user,'ceo')||$this->hasRole($user,'director');
-        $assigned=$this->activeAssignment($user->id,$unit,$date);abort_unless($executive||$assigned,403);
+        $assigned=$this->canReviewRecord($user,$type,$unit,$date);abort_unless($executive||$assigned,403);
         $legacy=$cfg['legacy'];$status=$legacy?$row->status:$row->verification_status;
         $excluded=['id','department_id','animal_group_id','livestock_group_id','recorded_by','approved_by','verified_by','created_at','updated_at','status','verification_status','approved_at','verified_at','query_note','verification_note'];
         $details=collect(get_object_vars($row))->except($excluded)->mapWithKeys(fn($value,$key)=>[ucwords(str_replace('_',' ',$key))=>$value]);
@@ -58,19 +59,19 @@ class SupervisorController extends Controller
 
     public function reviewRecord(Request $request,string $type,int $id):RedirectResponse
     {
-        $map=$this->recordMap();abort_unless(isset($map[$type]),404);$d=$request->validate(['decision'=>['required','in:approved,returned'],'review_note'=>['nullable','required_if:decision,returned','string','max:1000']]);$cfg=$map[$type];$row=DB::table($cfg['table'])->where('id',$id)->first();abort_unless($row,404);$unit=$cfg['unit'] instanceof \Closure?($cfg['unit'])($row):($cfg['unit']==='unit_code'?$row->unit_code:$cfg['unit']);abort_unless($this->activeAssignment($request->user()->id,$unit,$cfg['date'] instanceof \Closure?($cfg['date'])($row):$row->{$cfg['date']})&&$row->recorded_by!==$request->user()->id,403);
+        $map=$this->recordMap();abort_unless(isset($map[$type]),404);$d=$request->validate(['decision'=>['required','in:approved,returned'],'review_note'=>['nullable','required_if:decision,returned','string','max:1000']]);$cfg=$map[$type];$row=DB::table($cfg['table'])->where('id',$id)->first();abort_unless($row,404);$unit=$cfg['unit'] instanceof \Closure?($cfg['unit'])($row):($cfg['unit']==='unit_code'?$row->unit_code:$cfg['unit']);$date=$cfg['date'] instanceof \Closure?($cfg['date'])($row):$row->{$cfg['date']};abort_unless($this->canReviewRecord($request->user(),$type,$unit,$date)&&$row->recorded_by!==$request->user()->id,403);
         $values=$cfg['legacy']?['status'=>$d['decision']==='approved'?'approved':'queried','approved_by'=>$request->user()->id,'approved_at'=>now(),'query_note'=>$d['review_note']??null]:['verification_status'=>$d['decision'],'verified_by'=>$request->user()->id,'verified_at'=>now(),'verification_note'=>$d['review_note']??null];DB::table($cfg['table'])->where('id',$id)->update($values+['updated_at'=>now()]);return back()->with('status','Daily entry '.$d['decision'].'.');
     }
 
-    private function pendingRecords($mine){if($mine->isEmpty())return collect();$units=$mine->pluck('unit_code');$rows=collect();foreach($this->recordMap() as $type=>$cfg){$q=DB::table($cfg['table'])->where($cfg['legacy']?'status':'verification_status','submitted');if(is_string($cfg['unit'])){if($cfg['unit']==='poultry'&&!$units->contains('poultry'))continue;if($cfg['unit']==='unit_code')$q->whereIn('unit_code',$units);}else{$q=$cfg['scope']($q,$units);}foreach($q->latest('id')->limit(50)->get() as $r)$rows->push((object)['type'=>$type,'id'=>$r->id,'date'=>$cfg['date'] instanceof \Closure?($cfg['date'])($r):$r->{$cfg['date']},'unit'=>$cfg['unit'] instanceof \Closure?($cfg['unit'])($r):($cfg['unit']==='unit_code'?$r->unit_code:$cfg['unit']),'label'=>($cfg['label'])($r),'recorded_by'=>$r->recorded_by]);}return $rows->where('recorded_by','!=',auth()->id())->sortByDesc('date')->values();}
+    private function pendingRecords(User $user,$mine){$rows=collect();foreach($this->recordMap() as $type=>$cfg){$q=DB::table($cfg['table'])->where($cfg['legacy']?'status':'verification_status','submitted');foreach($q->latest('id')->limit(50)->get() as $r){$date=$cfg['date'] instanceof \Closure?($cfg['date'])($r):$r->{$cfg['date']};$unit=$cfg['unit'] instanceof \Closure?($cfg['unit'])($r):($cfg['unit']==='unit_code'?$r->unit_code:$cfg['unit']);if($this->canReviewRecord($user,$type,$unit,$date))$rows->push((object)['type'=>$type,'id'=>$r->id,'date'=>$date,'unit'=>$unit,'label'=>($cfg['label'])($r),'recorded_by'=>$r->recorded_by]);}}return $rows->where('recorded_by','!=',$user->id)->sortByDesc('date')->values();}
     private function reviewedRecords(User $user,$mine,bool $executive){
-        if(!$executive&&$mine->isEmpty())return collect();
+        if(!$executive&&$mine->isEmpty()&&!$this->hasRole($user,'sales-manager')&&!$this->hasRole($user,'production-manager'))return collect();
         $units=$mine->pluck('unit_code');$rows=collect();
         foreach($this->recordMap() as $type=>$cfg){
             $legacy=$cfg['legacy'];$q=DB::table($cfg['table'])->where($legacy?'status':'verification_status','!=','submitted');
             if(!$executive){
                 $q->where($legacy?'approved_by':'verified_by',$user->id);
-                if(is_string($cfg['unit'])){if($cfg['unit']==='poultry'&&!$units->contains('poultry'))continue;if($cfg['unit']==='unit_code')$q->whereIn('unit_code',$units);}else{$q=$cfg['scope']($q,$units);}
+                if($mine->isNotEmpty()){if(is_string($cfg['unit'])){if($cfg['unit']==='poultry'&&!$units->contains('poultry'))continue;if($cfg['unit']==='unit_code')$q->whereIn('unit_code',$units);}else{$q=$cfg['scope']($q,$units);}}
             }
             foreach($q->latest($legacy?'approved_at':'verified_at')->limit(50)->get() as $r){
                 $rows->push((object)[
@@ -99,5 +100,12 @@ class SupervisorController extends Controller
         'livestock_production'=>['table'=>'livestock_production_records','unit'=>$livestockUnit,'date'=>'recorded_on','legacy'=>false,'scope'=>$livestockScope('livestock_production_records'),'label'=>fn($r)=>ucfirst($r->production_type).': '.$r->quantity.' '.$r->measure_unit],
     ];}
     private function activeAssignment(int $userId,string $unit,$date):bool{return SupervisorAssignment::where('supervisor_id',$userId)->where('unit_code',$unit)->where('is_active',true)->whereDate('starts_on','<=',$date)->where(fn($q)=>$q->whereNull('ends_on')->orWhereDate('ends_on','>=',$date))->exists();}
+    private function canReviewRecord(User $user,string $type,string $unit,$date):bool
+    {
+        if($this->activeAssignment($user->id,$unit,$date))return true;
+        $fallback=$type==='eggs'?$this->hasRole($user,'sales-manager'):$this->hasRole($user,'production-manager');
+        if(!$fallback)return false;
+        return !SupervisorAssignment::where('unit_code',$unit)->where('is_active',true)->whereDate('starts_on','<=',$date)->where(fn($q)=>$q->whereNull('ends_on')->orWhereDate('ends_on','>=',$date))->exists();
+    }
     private function hasRole(User $user,string $code):bool{return $user->role?->code===$code||$user->roles->contains('code',$code);}
 }

@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
+use App\Services\CommunicationService;
 
 /*
  | Batches — the unit poultry is managed and costed by.
@@ -100,7 +101,8 @@ class BatchController extends Controller
          */
         $free = (int) ($data['quantity_free'] ?? 0);
 
-        $data['current_quantity'] = $data['quantity_received'] + $free;
+        $transitDeaths = (int) ($data['transit_deaths'] ?? 0);
+        $data['current_quantity'] = $data['quantity_received'] + $free - $transitDeaths;
         $data['expected_brooder_exit_date'] = (int) $data['age_days_on_arrival'] <= 42
             ? Carbon::parse($data['received_date'])->addDays(42 - (int) $data['age_days_on_arrival'])->toDateString()
             : null;
@@ -138,6 +140,7 @@ class BatchController extends Controller
             $batch = AnimalGroup::create($data);
             foreach ($allocations as $houseId => $quantity) {
                 $houses[$houseId]->update(['animal_group_id' => $batch->id, 'bird_quantity' => $quantity]);
+                DB::table('poultry_house_movements')->insert(['animal_group_id' => $batch->id, 'from_house_id' => null, 'to_house_id' => $houseId, 'bird_quantity' => $quantity, 'moved_on' => $batch->received_date, 'reason' => 'Initial arrival allocation', 'moved_by' => $batch->created_by, 'created_at' => now(), 'updated_at' => now()]);
             }
             $createdHouses = collect();
             foreach ($newHouses as $houseData) {
@@ -149,6 +152,9 @@ class BatchController extends Controller
                     'is_active' => true,
                 ]));
             }
+            foreach ($createdHouses as $house) {
+                DB::table('poultry_house_movements')->insert(['animal_group_id' => $batch->id, 'from_house_id' => null, 'to_house_id' => $house->id, 'bird_quantity' => $house->bird_quantity, 'moved_on' => $batch->received_date, 'reason' => 'Initial arrival allocation', 'moved_by' => $batch->created_by, 'created_at' => now(), 'updated_at' => now()]);
+            }
             $batch->update(['house' => $houses->pluck('house_number')->merge($createdHouses->pluck('house_number'))->join(', ')]);
 
             return $batch;
@@ -156,9 +162,9 @@ class BatchController extends Controller
 
         AuditLog::record(
             'created', $batch,
-            "Opened batch {$batch->code}: " . number_format($batch->totalReceived()) . ' birds'
+            "Opened batch {$batch->code}: " . number_format($batch->liveReceived()) . ' live birds'
                 . ($free > 0 ? " (including {$free} free)." : '.'),
-            null, $batch->only(['code', 'quantity_received', 'quantity_free', 'total_cost']),
+            null, $batch->only(['code', 'quantity_received', 'quantity_free', 'transit_deaths', 'total_cost']),
             'batches'
         );
 
@@ -179,6 +185,7 @@ class BatchController extends Controller
     public function edit(Request $request, AnimalGroup $batch): View
     {
         $this->assertVisible($request, $batch);
+        abort_unless($batch->mayBeEditedBy($request->user()), 403, 'The Director must allow you to edit this batch first.');
 
         return view('poultry.batches.edit', [
             'batch'       => $batch,
@@ -190,6 +197,7 @@ class BatchController extends Controller
     public function update(UpdateBatchRequest $request, AnimalGroup $batch): RedirectResponse
     {
         $this->assertVisible($request, $batch);
+        abort_unless($batch->mayBeEditedBy($request->user()), 403, 'The Director must allow you to edit this batch first.');
 
         $data   = $request->validated();
         $data['breed_id'] = $this->resolveBreed($data['breed_name'] ?? null, $data['purpose']);
@@ -209,7 +217,13 @@ class BatchController extends Controller
             (int) ($data['age_days_on_arrival'] ?? 0)
         );
 
-        $batch->update($data);
+        $batch->update($data + [
+            // Director approval covers this correction only. A later change
+            // requires a fresh request and remains independently auditable.
+            'edit_requested_by' => null, 'edit_requested_at' => null,
+            'edit_authorized_by' => null, 'edit_authorized_for' => null,
+            'edit_authorized_until' => null,
+        ]);
 
         AuditLog::record('updated', $batch, "Updated batch {$batch->code}.",
             $before, $data, 'batches');
@@ -217,6 +231,31 @@ class BatchController extends Controller
         return redirect()
             ->route('batches.show', $batch)
             ->with('status', 'Changes saved.');
+    }
+
+    public function requestEdit(Request $request, AnimalGroup $batch, CommunicationService $communications): RedirectResponse
+    {
+        $this->assertVisible($request, $batch);
+        abort_unless($request->user()->canDo('batches', 'edit'), 403);
+        $data = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
+        $batch->update(['edit_requested_by' => $request->user()->id, 'edit_requested_at' => now(), 'edit_authorized_by' => null, 'edit_authorized_for' => null, 'edit_authorized_until' => null]);
+        $communications->toRole('director', "Batch {$batch->code} edit requested", $request->user()->displayName()." requested permission to edit this batch. Reason: {$data['reason']}", $request->user()->id, route('batches.show', $batch, false));
+        AuditLog::record('edit_requested', $batch, "Edit permission requested: {$data['reason']}", null, null, 'batches');
+        return back()->with('status', 'The edit request was sent to the Director.');
+    }
+
+    public function authorizeEdit(Request $request, AnimalGroup $batch, CommunicationService $communications): RedirectResponse
+    {
+        $roles = $request->user()->roles->pluck('code')->push($request->user()->role?->code);
+        abort_unless($roles->contains('director'), 403);
+        abort_unless($batch->edit_requested_by, 422, 'No manager has requested edit access for this batch.');
+        $data = $request->validate(['hours' => ['required', 'integer', 'min:1', 'max:72']]);
+        $until = now()->addHours((int) $data['hours']);
+        $managerId = $batch->edit_requested_by;
+        $batch->update(['edit_authorized_by' => $request->user()->id, 'edit_authorized_for' => $managerId, 'edit_authorized_until' => $until]);
+        $communications->toUser($managerId, "Batch {$batch->code} editing allowed", 'The Director allowed editing until '.$until->format('d M Y, H:i').'.', 'workflow', $request->user()->id, route('batches.edit', $batch, false));
+        AuditLog::record('edit_authorized', $batch, 'Director allowed editing until '.$until->toDateTimeString().'.', null, null, 'batches');
+        return back()->with('status', 'Editing permission granted to the requesting manager.');
     }
 
     /**
@@ -256,12 +295,13 @@ class BatchController extends Controller
     {
         $user = $request->user();
 
-        if ($user->isSuperuser()) {
+        $roleCodes = $user->roles->pluck('code')->push($user->role?->code);
+        if ($user->isSuperuser() || $roleCodes->contains('director')) {
             return;
         }
 
         abort_unless(
-            in_array($batch->department_id, $user->departmentIds(), true),
+            in_array($batch->department_id, $user->operationalDepartmentIds(), true),
             403,
             'This batch belongs to a section you are not posted to.'
         );
@@ -272,7 +312,7 @@ class BatchController extends Controller
         $query = Department::where('level', 'department')->where('is_active', true);
 
         if (! $user->isSuperuser()) {
-            $query->whereIn('id', $user->departmentIds());
+            $query->whereIn('id', $user->operationalDepartmentIds());
         }
 
         return $query->orderBy('name')->get();

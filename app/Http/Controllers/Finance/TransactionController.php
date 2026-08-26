@@ -37,8 +37,8 @@ class TransactionController extends Controller
     {
         abort_unless($r->user()->canDo('transactions', 'create'), 403);
         $configured = Schema::hasTable('finance_payment_accounts') ? DB::table('finance_payment_accounts')->where('is_active', true)->orderBy('name')->pluck('name')->all() : [];
-        $farmAccounts = array_values(array_unique(array_merge($configured, ['Cash on Hand', 'Petty Cash (UGX)', 'Petty Cash (USD)', 'Centenary Bank - Sales', 'Centenary Bank - Operations', 'Centenary Bank - Garden'], FinancialTransaction::query()->whereNotNull('account')->distinct()->orderBy('account')->pluck('account')->all())));
-        $paymentMethods = Schema::hasTable('finance_payment_methods') ? DB::table('finance_payment_methods')->where('is_active', true)->orderBy('name')->get() : collect([(object) ['code' => 'cash', 'name' => 'Cash'], (object) ['code' => 'bank', 'name' => 'Bank'], (object) ['code' => 'mobile_money', 'name' => 'Mobile money'], (object) ['code' => 'credit', 'name' => 'Credit']]);
+        $farmAccounts = array_values(array_unique(array_merge($configured, ['Cash on Hand', 'Petty Cash (UGX)', 'Petty Cash (USD)', 'Centenary Bank - Sales', 'Centenary Bank - Operations', 'Centenary Bank - Garden', 'In-kind / Barter Clearing'], FinancialTransaction::query()->whereNotNull('account')->distinct()->orderBy('account')->pluck('account')->all())));
+        $paymentMethods = Schema::hasTable('finance_payment_methods') ? DB::table('finance_payment_methods')->where('is_active', true)->orderBy('name')->get() : collect([(object) ['code' => 'cash', 'name' => 'Cash'], (object) ['code' => 'bank', 'name' => 'Bank'], (object) ['code' => 'mobile_money', 'name' => 'Mobile money'], (object) ['code' => 'credit', 'name' => 'Credit'], (object) ['code' => 'in_kind', 'name' => 'In kind / barter']]);
         $receivables = Receivable::where('status', 'open')->orderBy('customer_name')->get();
         $payables = Payable::where('status', 'open')->orderBy('supplier_name')->get();
         $entryTypes = config('finance_entry.types');
@@ -56,6 +56,7 @@ class TransactionController extends Controller
         $suppliers = collect(config('finance_entry.suppliers'))
             ->merge(Payable::query()->whereNotNull('supplier_name')->pluck('supplier_name'))
             ->merge(DB::table('purchases')->whereNotNull('supplier_name')->pluck('supplier_name'))
+            ->merge(FinancialTransaction::query()->where('transaction_category', 'purchase')->whereNotNull('counterparty')->pluck('counterparty'))
             ->map(fn ($name) => trim((string) $name))->filter()->unique()->sort()->values();
         $customers = SalesCustomer::where('is_active', true)->orderBy('name')->get();
 
@@ -66,7 +67,7 @@ class TransactionController extends Controller
     {
         abort_unless($r->user()->canDo('transactions', 'create'), 403);
         $types = config('finance_entry.types');
-        $data = $r->validate(['transaction_date' => ['required', 'date'], 'transaction_category' => ['required', Rule::in(array_keys($types))], 'account_group' => ['required', 'string', 'max:120'], 'department_id' => ['required', 'exists:departments,id'], 'account' => ['required', 'string', 'max:120'], 'counterparty' => ['nullable', 'string', 'max:160'], 'amount' => ['nullable', 'numeric', 'min:0.01'], 'quantity' => ['nullable', 'numeric', 'min:0.01'], 'unit_price' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', 'in:cash,bank,mobile_money,credit'], 'reference' => ['required', 'string', 'max:80'], 'description' => ['required', 'string', 'max:1000'], 'receipt_kind' => ['nullable', 'in:general,customer_payment,customer_prepayment'], 'payment_kind' => ['nullable', 'in:general,supplier_bill'], 'receivable_id' => ['nullable', 'exists:receivables,id'], 'payable_id' => ['nullable', 'exists:payables,id']]);
+        $data = $r->validate(['transaction_date' => ['required', 'date'], 'transaction_category' => ['required', Rule::in(array_keys($types))], 'account_group' => ['required', 'string', 'max:120'], 'department_id' => ['required', 'exists:departments,id'], 'account' => ['required', 'string', 'max:120'], 'counterparty' => ['nullable', 'string', 'max:160'], 'amount' => ['nullable', 'numeric', 'min:0.01'], 'quantity' => ['nullable', 'numeric', 'min:0.01'], 'unit_price' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', 'in:cash,bank,mobile_money,credit,in_kind'], 'reference' => ['required', 'string', 'max:80'], 'description' => ['required', 'string', 'max:1000'], 'receipt_kind' => ['nullable', 'in:general,customer_payment,customer_prepayment'], 'payment_kind' => ['nullable', 'in:general,supplier_bill'], 'receivable_id' => ['nullable', 'exists:receivables,id'], 'payable_id' => ['nullable', 'exists:payables,id']]);
         $data['entry_account'] = $r->validate(['entry_account' => ['required', 'string', 'max:160']])['entry_account'];
         $inventory = $r->validate(['track_inventory' => ['nullable', 'boolean'], 'inventory_unit' => ['nullable', 'required_if:track_inventory,1', 'string', 'max:40'], 'inventory_location' => ['nullable', 'required_if:track_inventory,1', 'string', 'max:100']]);
         $departmentCode = Department::whereKey($data['department_id'])->value('code');
@@ -79,6 +80,7 @@ class TransactionController extends Controller
             : null;
         if ($data['transaction_category'] === 'purchase') {
             $data['counterparty'] = $r->validate(['counterparty' => ['required', 'string', 'max:160']])['counterparty'];
+            $data['counterparty'] = trim($data['counterparty']);
             $allowedSettlementAccounts = config('finance_entry.purchase_settlement_accounts')[$data['entry_account']] ?? [];
             $data['account'] = $r->validate(['account' => ['required', Rule::in($allowedSettlementAccounts)]])['account'];
         }
@@ -105,7 +107,7 @@ class TransactionController extends Controller
                 $data['payment_method'] = null;
             }
         }
-        if ($data['transaction_category'] === 'revenue') {
+        if (in_array($data['transaction_category'], ['revenue', 'customer_prepayment'], true)) {
             $customerName = trim($data['counterparty'] ?? '');
             if ($customerName === '' || strcasecmp($customerName, 'One-time customer') === 0) {
                 $data['counterparty'] = 'One-time customer';
@@ -119,13 +121,26 @@ class TransactionController extends Controller
             $data['amount'] = (float) $data['quantity'] * (float) $data['unit_price'];
         } if (empty($data['amount'])) {
             return back()->withErrors(['amount' => 'Enter the amount, or enter quantity and unit price.'])->withInput();
+        } if (($data['payment_method'] ?? null) === 'in_kind') {
+            $data['account'] = 'In-kind / Barter Clearing';
         } if (in_array($data['type'], ['money_received', 'money_paid'], true) && empty($data['payment_method'])) {
             return back()->withErrors(['payment_method' => 'Choose how the money moved.'])->withInput();
         } if (in_array($data['type'], ['transfer', 'journal'], true) && empty($data['counterparty'])) {
             return back()->withErrors(['counterparty' => 'Choose the destination or offset account.'])->withInput();
         } if ($data['type'] === 'transfer' && $data['account'] === $data['counterparty']) {
             return back()->withErrors(['counterparty' => 'Choose a different destination account.'])->withInput();
-        } $kind = $data['receipt_kind'] ?? 'general';
+        } $kind = $data['transaction_category'] === 'customer_prepayment'
+            ? 'customer_prepayment'
+            : ($data['receipt_kind'] ?? 'general');
+        if ($data['type'] === 'money_received' && $kind === 'customer_prepayment') {
+            // Customer advances increase cash and a liability, not earned income.
+            $data['transaction_category'] = 'customer_prepayment';
+            $data['account_group'] = 'Current Liabilities';
+            $data['entry_account'] = 'Customer Prepayments';
+            if (($data['payment_method'] ?? null) === 'credit') {
+                return back()->withErrors(['payment_method' => 'A customer prepayment must actually be received by cash, bank, mobile money, or in kind.'])->withInput();
+            }
+        }
         $payKind = $data['payment_kind'] ?? 'general';
         if ($data['type'] === 'money_received' && $kind === 'customer_payment' && empty($data['receivable_id'])) {
             return back()->withErrors(['receivable_id' => 'Choose the customer amount being paid.'])->withInput();
@@ -153,7 +168,8 @@ class TransactionController extends Controller
                     $due->save();
                     ReceivablePayment::create(['receivable_id' => $due->id, 'received_date' => $data['transaction_date'], 'amount' => $data['amount'], 'farm_account' => $data['account'], 'payment_method' => $data['payment_method'], 'reference' => $data['reference'], 'recorded_by' => $r->user()->id]);
                 } elseif ($kind === 'customer_prepayment') {
-                    CustomerPrepayment::create(['customer_name' => $data['counterparty'], 'received_date' => $data['transaction_date'], 'amount' => $data['amount'], 'amount_used' => 0, 'farm_account' => $data['account'], 'payment_method' => $data['payment_method'], 'reference' => $data['reference'], 'recorded_by' => $r->user()->id]);
+                    $customer = SalesCustomer::whereRaw('lower(name) = ?', [mb_strtolower($data['counterparty'])])->firstOrFail();
+                    CustomerPrepayment::create(['customer_id' => $customer->id, 'customer_name' => $customer->name, 'received_date' => $data['transaction_date'], 'amount' => $data['amount'], 'amount_used' => 0, 'farm_account' => $data['account'], 'payment_method' => $data['payment_method'], 'reference' => $data['reference'], 'recorded_by' => $r->user()->id]);
                 }if ($payKind === 'supplier_bill') {
                     $bill = Payable::lockForUpdate()->findOrFail($r->payable_id);
                     $balance = (float) $bill->amount - (float) $bill->amount_paid;
@@ -179,7 +195,13 @@ class TransactionController extends Controller
         FinancialTransaction::orderBy('transaction_date')->orderBy('id')->get()->each(function ($transaction) use ($entries) {
             $source = $transaction->account;
             $other = $transaction->counterparty ?: 'Unspecified account';
-            if ($transaction->type === 'money_received') {
+            if ($transaction->transaction_category === 'customer_prepayment') {
+                $entries->push((object) ['date' => $transaction->transaction_date, 'account' => $source, 'description' => $transaction->description, 'reference' => $transaction->reference, 'debit' => $transaction->amount, 'credit' => 0]);
+                $entries->push((object) ['date' => $transaction->transaction_date, 'account' => 'Customer Prepayments (Liability)', 'description' => $transaction->description, 'reference' => $transaction->reference, 'debit' => 0, 'credit' => $transaction->amount]);
+            } elseif ($transaction->type === 'revenue_recognized') {
+                $entries->push((object) ['date' => $transaction->transaction_date, 'account' => 'Customer Prepayments (Liability)', 'description' => $transaction->description, 'reference' => $transaction->reference, 'debit' => $transaction->amount, 'credit' => 0]);
+                $entries->push((object) ['date' => $transaction->transaction_date, 'account' => 'Sales Revenue', 'description' => $transaction->description, 'reference' => $transaction->reference, 'debit' => 0, 'credit' => $transaction->amount]);
+            } elseif ($transaction->type === 'money_received') {
                 $entries->push((object) ['date' => $transaction->transaction_date, 'account' => $source, 'description' => $transaction->description, 'reference' => $transaction->reference, 'debit' => $transaction->amount, 'credit' => 0]);
                 $entries->push((object) ['date' => $transaction->transaction_date, 'account' => 'Income / '.$other, 'description' => $transaction->description, 'reference' => $transaction->reference, 'debit' => 0, 'credit' => $transaction->amount]);
             } elseif ($transaction->type === 'money_paid') {

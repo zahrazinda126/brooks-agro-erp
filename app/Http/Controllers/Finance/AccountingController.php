@@ -10,6 +10,7 @@ use App\Models\FixedAsset;
 use App\Models\Payable;
 use App\Models\Approval;
 use App\Models\AuditLog;
+use App\Models\Department;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -35,18 +36,18 @@ class AccountingController extends Controller
     public function budgets(Request $request): View
     {
         abort_unless($request->user()->canAccess('budget'), 403);
+        $start = $request->date('week')?->startOfWeek()->toDateString()
+            ?? now()->startOfWeek()->toDateString();
         $availablePeriods = Budget::query()
             ->select('period_start', 'period_end', 'status')
             ->selectRaw('count(*) as line_count, sum(planned_amount) as planned_total')
             ->groupBy('period_start', 'period_end', 'status')
             ->orderByDesc('period_start')
             ->get();
-        $start = $request->date('week')?->startOfWeek()->toDateString()
-            ?? now()->startOfWeek()->toDateString();
-        $allItems=Budget::whereDate('period_start',$start)->orderBy('category')->orderBy('id')->get();
+        $allItems=Budget::with('department')->whereDate('period_start',$start)->orderBy('category')->orderBy('id')->get();
         $unit=$request->query('unit','all');
-        $needles=['poultry'=>'Poultry','kituntu'=>'Kituntu','goats'=>'Goat','rabbits'=>'Rabbit','dogs'=>'Dog','staff-welfare'=>'Staff Welfare','administration'=>'Administration'];
-        $items=isset($needles[$unit])?$allItems->filter(fn($item)=>str_contains(strtolower($item->category),strtolower($needles[$unit])))->values():$allItems;
+        $needles=['poultry'=>['poultry'],'kituntu'=>['kituntu'],'kituntu-tomatoes'=>['kituntu tomato'],'kituntu-passion'=>['kituntu passion'],'goats'=>['goat'],'rabbits'=>['rabbit'],'dogs'=>['dog'],'staff-welfare'=>['staff welfare'],'administration'=>['administration']];
+        $items=isset($needles[$unit])?$allItems->filter(fn($item)=>collect($needles[$unit])->contains(fn($needle)=>str_contains(strtolower($item->category),$needle)))->values():$allItems;
         $approval = $allItems->isEmpty() ? null : Approval::with(['submitter', 'decisionMaker', 'steps.decisionMaker'])
             ->where('approvable_type', Budget::class)
             ->whereIn('approvable_id', $allItems->pluck('id'))
@@ -58,6 +59,7 @@ class AccountingController extends Controller
             'periodStart'=>$allItems->first()?->period_start, 'periodEnd'=>$allItems->first()?->period_end,
             'selectedWeek'=>$start, 'availablePeriods'=>$availablePeriods,
             'isCurrentWeek'=>$start === now()->startOfWeek()->toDateString(),
+            'departmentTotals'=>$allItems->groupBy(fn($line)=>$line->department?->name ?? 'Unassigned')->map(fn($lines)=>['lines'=>$lines->count(),'total'=>$lines->sum('planned_amount')]),
         ]);
     }
 
@@ -66,12 +68,12 @@ class AccountingController extends Controller
         abort_unless($request->user()->canDo('budget', 'create'), 403);
         $data=$request->validate(['category'=>['required','string','max:120'],'item'=>['required','string','max:160'],'unit'=>['nullable','string','max:40'],'quantity'=>['required','numeric','min:0.01'],'unit_price'=>['required','numeric','min:0'],'period_start'=>['required','date'],'period_end'=>['required','date','after_or_equal:period_start'],'notes'=>['nullable','string','max:1000']]); $data['planned_amount']=$data['quantity']*$data['unit_price'];
         abort_if(Budget::where('period_start', $data['period_start'])->where('status', '!=', 'draft')->exists(), 422, 'An approved or submitted budget cannot be changed.');
-        Budget::create($data+['recorded_by'=>$request->user()->id]); return back()->with('status','Budget line recorded.');
+        Budget::create($data+['department_id'=>$this->financeDepartmentId(),'category'=>'Finance & Accounting','recorded_by'=>$request->user()->id]); return back()->with('status','Finance budget line recorded.');
     }
 
     public function updateBudget(Request $request, Budget $budget): RedirectResponse
     {
-        abort_unless($request->user()->canDo('budget', 'edit'), 403); abort_unless($budget->status === 'draft', 422, 'Only a draft budget can be edited.'); $data=$request->validate(['quantity'=>['required','numeric','min:0'],'unit_price'=>['required','numeric','min:0']]); $budget->update(['quantity'=>$data['quantity'],'unit_price'=>$data['unit_price'],'planned_amount'=>(float)$data['quantity']*(float)$data['unit_price']]); return back()->with('status','Budget line updated.');
+        abort_unless($request->user()->canDo('budget', 'edit'), 403); abort_unless($budget->status === 'draft' && $budget->department_id === $this->financeDepartmentId(), 403, 'Finance cannot edit another department’s draft.'); $data=$request->validate(['quantity'=>['required','numeric','min:0'],'unit_price'=>['required','numeric','min:0']]); $budget->update(['quantity'=>$data['quantity'],'unit_price'=>$data['unit_price'],'planned_amount'=>(float)$data['quantity']*(float)$data['unit_price']]); return back()->with('status','Budget line updated.');
     }
 
     public function updateWeeklyBudget(Request $request): RedirectResponse
@@ -79,8 +81,8 @@ class AccountingController extends Controller
         abort_unless($request->user()->canDo('budget', 'edit'), 403);
         $data=$request->validate(['lines'=>['required','array'],'lines.*.quantity'=>['required','numeric','min:0'],'lines.*.unit_price'=>['required','numeric','min:0']]);
         $budgets = Budget::whereIn('id', array_keys($data['lines']))->get()->keyBy('id');
-        if ($budgets->count() !== count($data['lines']) || $budgets->contains(fn (Budget $budget) => $budget->status !== 'draft')) {
-            return back()->withErrors(['budget'=>'Only draft budget lines can be edited.']);
+        if ($budgets->count() !== count($data['lines']) || $budgets->contains(fn (Budget $budget) => $budget->status !== 'draft' || $budget->department_id !== $this->financeDepartmentId())) {
+            return back()->withErrors(['budget'=>'Finance can edit only its own department draft.']);
         }
         foreach($data['lines'] as $id=>$line) { $budgets[$id]->update(['quantity'=>$line['quantity'],'unit_price'=>$line['unit_price'],'planned_amount'=>(float)$line['quantity']*(float)$line['unit_price']]); }
         return back()->with('status','Weekly budget saved.');
@@ -142,11 +144,14 @@ class AccountingController extends Controller
 
     public function seedWeeklyBudget(Request $request): RedirectResponse
     {
+        abort(403, 'Production templates must be prepared by the Production department.');
         abort_unless($request->user()->canDo('budget', 'create'), 403); $template=$request->validate(['template'=>['required','in:kituntu,nti']])['template']; $start=now()->startOfWeek()->toDateString(); $end=now()->endOfWeek()->toDateString(); abort_if(Budget::where('period_start',$start)->where('status','!=','draft')->exists(), 422, 'An approved or submitted budget cannot be changed.');
         $items=$template==='kituntu' ? [['Kituntu Tomato Garden','Mancozeb','kgs',20,17500],['Kituntu Tomato Garden','Coppermate','kgs',6,32000],['Kituntu Tomato Garden','Mistress','kgs',6,40000],['Kituntu Tomato Garden','Green Miracle','litres',6,30000],['Kituntu Tomato Garden','Iron Force','litres',3,23000],['Kituntu Tomato Garden','Labour for cutting mulches','trips',1,1000000],['Kituntu Tomato Garden','Transport for Kalimbwe','trip',1,150000],['Kituntu Tomato Garden','Drums','pcs',10,100000],['Kituntu Tomato Garden','Cabbage seeds','sachets',1,85000],['Kituntu Passion Fruits','Enkoddo','pcs',1000,3000],['Kituntu Passion Fruits','Biocure','litres',10,23000],['Kituntu Passion Fruits','Nimbercidine','litres',10,32000],['Kituntu Passion Fruits','NPK 17','bags',5,150000],['Kituntu Passion Fruits','CAN','bags',2,150000],['Kituntu Passion Fruits','Winner','bags',1.5,185000],['Kituntu Passion Fruits','Power','bags',1,190000]] : [['NTI Goat Unit','Fuel for the machine','litres',4,8750],['NTI Goat Unit','Mineral block','blocks',4,10000],['NTI Goat Unit','Gloves','bottle',1,26000],['NTI Goat Unit','Maize stalk transportation','trips',3,50000],['NTI Goat Unit','Penstrep','bottle',1,15000],['NTI Dogs Unit','Dog porridge','kgs',50,2000],['NTI Dogs Unit','Classic Milk','box',1,38000],['NTI Dogs Unit','Bravo Puppy feeds','box',25,10000],['NTI Dogs Unit','Disinfectant','5 litre jerrycan',1,60000],['NTI Dogs Unit','Liquid soap','jerrycan',1,30000]];
         foreach($items as [$category,$item,$unit,$quantity,$price]) Budget::create(['category'=>$category,'item'=>$item,'unit'=>$unit,'quantity'=>$quantity,'unit_price'=>$price,'planned_amount'=>$quantity*$price,'period_start'=>$start,'period_end'=>$end,'recorded_by'=>$request->user()->id]); return back()->with('status','Weekly budget template loaded. Edit prices, remove unneeded lines, or add exceptions.');
     }
-    public function destroyBudget(Request $request, Budget $budget): RedirectResponse { abort_unless($request->user()->canDo('budget','edit') || $request->user()->canDo('budget','delete'),403); abort_unless($budget->status === 'draft', 422, 'Only a draft budget can be changed.'); $budget->delete(); return back()->with('status','Budget item removed.'); }
+    public function destroyBudget(Request $request, Budget $budget): RedirectResponse { abort_unless($request->user()->canDo('budget','edit') || $request->user()->canDo('budget','delete'),403); abort_unless($budget->status === 'draft' && $budget->department_id === $this->financeDepartmentId(), 403, 'Finance cannot remove another department’s draft.'); $budget->delete(); return back()->with('status','Budget item removed.'); }
+
+    private function financeDepartmentId(): ?int { return Department::where('code','finance')->value('id'); }
 
     public function assets(Request $request): View
     {

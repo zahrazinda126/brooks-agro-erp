@@ -24,9 +24,10 @@ class CommunicationController extends Controller
 
     public function markRead(Request $request, Communication $communication): RedirectResponse
     {
-        abort_unless($communication->recipient_id === $request->user()->id, 403);
-        $communication->update(['read_at' => now()]);
-
-        return $communication->action_url ? redirect($communication->action_url) : back();
+        abort_unless(Communication::visibleTo($request->user())->whereKey($communication->id)->exists(), 403);
+        if ($communication->recipient_id === $request->user()->id) $communication->update(['read_at' => now()]);
+        $text=mb_strtolower($communication->subject.' '.$communication->body);
+        $target=$communication->action_url ?: (str_contains($text,'directive') ? route('directives.index',absolute:false) : (str_contains($text,'approval')||str_contains($text,'awaiting your review') ? route('approvals.index',absolute:false) : (str_contains($text,'payroll') ? route('payroll.index',absolute:false) : route('communications.index',absolute:false))));
+        return redirect($target);
     }
 }

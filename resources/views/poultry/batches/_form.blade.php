@@ -133,6 +133,17 @@
             </p>
         </div>
 
+        @if (! isset($batch))
+        <div class="field @error('transit_deaths') field--error @enderror">
+            <label for="transit_deaths">Birds that died in transit</label>
+            <input id="transit_deaths" name="transit_deaths" type="number"
+                   inputmode="numeric" min="0" max="1000000" data-transit-deaths
+                   value="{{ old('transit_deaths', $batch->transit_deaths ?? 0) }}">
+            @error('transit_deaths')<p class="field-error">{{ $message }}</p>@enderror
+            <p class="field-hint">Counted at arrival. These birds are recorded, but are not allocated to a brooder or house.</p>
+        </div>
+        @endif
+
         <div class="field @error('unit_cost') field--error @enderror">
             <label for="unit_cost">Cost per bird (UGX)</label>
             <input id="unit_cost" name="unit_cost" type="number"
@@ -156,7 +167,7 @@
             <div class="arrival-summary">
                 <div>
                     <span class="figure" data-total-birds>&mdash;</span>
-                    <span class="figure-unit">Birds in the house</span>
+                    <span class="figure-unit">Live birds to allocate</span>
                 </div>
                 <div>
                     <span class="figure" data-total-cost>&mdash;</span>
@@ -202,7 +213,7 @@
 @if (! isset($batch))
 <div class="card">
     <p class="card-label">Final step · Allocate birds to houses</p>
-    <p class="field-hint">The farm has 43 poultry houses. Enter birds only against the available houses receiving this batch. Occupied houses are omitted. The total must equal all paid and free birds received.</p>
+    <p class="field-hint">The farm has 43 poultry houses. Allocate only the live birds received: paid birds + free birds − transit deaths. Chicks aged 42 days or less must go into brooders.</p>
     @error('house_allocations')<p class="field-error">{{ $message }}</p>@enderror
     <div class="house-allocation-list">
         @forelse ($availableHouses as $house)
@@ -248,6 +259,7 @@
     var paid = document.querySelector('[data-paid]');
     var free = document.querySelector('[data-free]');
     var cost = document.querySelector('[data-cost]');
+    var transitDeaths = document.querySelector('[data-transit-deaths]');
 
     var outBirds = document.querySelector('[data-total-birds]');
     var outCost  = document.querySelector('[data-total-cost]');
@@ -261,7 +273,8 @@
         var f = parseInt(free.value, 10) || 0;
         var c = parseFloat(cost.value) || 0;
 
-        var birds = p + f;
+        var d = parseInt(transitDeaths && transitDeaths.value, 10) || 0;
+        var birds = Math.max(0, p + f - d);
         var total = p * c;
 
         outBirds.textContent = birds ? birds.toLocaleString() : '\u2014';
@@ -277,7 +290,7 @@
         }
     }
 
-    [paid, free, cost].forEach(function (el) {
+    [paid, free, transitDeaths, cost].forEach(function (el) {
         if (el) el.addEventListener('input', recalc);
     });
 

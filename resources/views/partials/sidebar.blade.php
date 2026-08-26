@@ -31,8 +31,13 @@
         ?? (request()->routeIs('mortality.assess.*') ? 'mortality-assess' : null)
         ?? (request()->routeIs('feed-types.*') ? 'feed-types' : null)
         ?? (request()->routeIs('sales.*') ? 'sales' : null)
+        ?? (request()->routeIs('owner.customers') ? 'customers' : null)
         ?? (request()->routeIs('visitors.*') ? 'visitors' : null)
         ?? (request()->routeIs('poultry.performance.*') ? 'staff-performance' : null);
+    if (request()->routeIs('daily-reports.*')) $currentKey = 'daily-management-report';
+    if (request()->routeIs('vaccination-schedule.*') || request()->routeIs('vaccination-records.*')) $currentKey = 'vaccination';
+    if (request()->routeIs('department-budget.*')) $currentKey = 'department-budget';
+    if (request()->routeIs('payroll.my-balance')) $currentKey = 'my-salary-balance';
 
     /*
      | HR has a focused, task-based menu rather than the generic module
@@ -59,7 +64,8 @@
     $isDirector = $user->role?->code === 'director' || $user->roles->contains('code', 'director');
     $isSystemAdmin = $user->role?->code === 'system-admin' || $user->roles->contains('code', 'system-admin');
     $isPersonalAssistant = $user->role?->code === 'personal-assistant'
-        || $user->roles->contains('code', 'personal-assistant');
+        || $user->roles->contains('code', 'personal-assistant')
+        || $user->role?->code === 'pa' || $user->roles->contains('code', 'pa');
     $isProductionManager = $user->role?->code === 'production-manager'
         || $user->roles->contains('code', 'production-manager')
         || (($user->role?->code === 'department-manager' || $user->roles->contains('code', 'department-manager'))
@@ -68,6 +74,8 @@
     $isAppointedSupervisor = \App\Models\SupervisorAssignment::where('supervisor_id',$user->id)
         ->where('is_active',true)->whereDate('starts_on','<=',today())
         ->where(fn($q)=>$q->whereNull('ends_on')->orWhereDate('ends_on','>=',today()))->exists();
+    $isDailyReportManager = $user->roles->pluck('code')->push($user->role?->code)->filter()
+        ->intersect(['production-manager','finance-manager','hr-manager','sales-manager'])->isNotEmpty();
     $casualUnits = collect([
         'poultry'=>['label'=>'🐔 Poultry Daily Entry','anchor'=>'poultry'],
         'goats'=>['label'=>'🐐 Goat Daily Entry','anchor'=>'goats'],
@@ -166,6 +174,16 @@
         ],
         'Reports & Briefing' => [
             ['key' => 'reports', 'label' => 'Executive Reports'],
+            ['key' => 'pa-finance-reports', 'label' => 'Financial Reports'],
+            ['key' => 'pa-profitability-reports', 'label' => 'Unit Costs & Profitability'],
+            ['key' => 'pa-sales-reports', 'label' => 'Sales Report'],
+            ['key' => 'pa-hr-reports', 'label' => 'HR Reports'],
+            ['key' => 'pa-production-reports', 'label' => 'Overall Production Report'],
+            ['key' => 'pa-poultry-reports', 'label' => 'Poultry Unit Report'],
+            ['key' => 'pa-goat-reports', 'label' => 'Goat Unit Report'],
+            ['key' => 'pa-rabbit-reports', 'label' => 'Rabbit Unit Report'],
+            ['key' => 'pa-dog-reports', 'label' => 'Dog Unit Report'],
+            ['key' => 'pa-garden-reports', 'label' => 'Garden Unit Report'],
         ],
         'Front Office' => [
             ['key' => 'visitors', 'label' => 'Visitor Register'],
@@ -175,6 +193,7 @@
     $productionSections = [
         'Monitor' => [
             ['key'=>'batches', 'label'=>'Poultry Daily Records', 'page'=>'poultry-report'],
+            ['key'=>'vaccination', 'label'=>'Poultry Vaccination Schedule', 'page'=>'schedule'],
             ['key'=>'mortality-assess', 'label'=>'Mortality Examination'],
             ['key'=>'staff-performance', 'label'=>'Attendant Performance'],
             ['key'=>'feed-received', 'label'=>'Tuesday Feed Verification'],
@@ -193,6 +212,7 @@
         'Reports' => [
             ['key'=>'reports', 'label'=>'Production Reports'],
             ['key'=>'batches', 'label'=>'Poultry Report', 'page'=>'poultry-report'],
+            ['key'=>'vaccination', 'label'=>'Poultry Vaccination Report', 'page'=>'records'],
             ['key'=>'goats', 'label'=>'Goat Report', 'page'=>'export'],
             ['key'=>'rabbits', 'label'=>'Rabbit Report', 'page'=>'export'],
             ['key'=>'dogs', 'label'=>'Dog Report', 'page'=>'export'],
@@ -239,10 +259,12 @@
     $financeSections = [
         '💵 Daily Operations' => [
             ['key' => 'transactions', 'label' => 'Data Entry & Register'],
+            ['key' => 'customers', 'label' => 'Customer Accounts'],
         ],
         '📒 Accounting' => [
             ['key' => 'payroll', 'label' => 'Payroll'],
-            ['key' => 'budget', 'label' => 'Weekly Budget'],
+            ['key' => 'department-budget', 'label' => 'Finance Department Draft'],
+            ['key' => 'budget', 'label' => 'Combined Weekly Budget'],
             ['key' => 'sales', 'label' => 'Selling Prices', 'screen' => 'setup'],
         ],
         '📈 Reports' => [
@@ -261,6 +283,7 @@
     $salesSections = [
         '🧾 Daily Sales' => [
             ['key'=>'sales','label'=>'Record Daily Sale','screen'=>'sale'],
+            ['key'=>'customers','label'=>'Customer Accounts'],
         ],
         '👥 Customers' => [
         ],
@@ -279,14 +302,18 @@
         @if (file_exists(public_path('images/logo.png')))
             <img src="{{ asset('images/logo.png') }}" alt="" class="brand-mark">
         @endif
-        <span class="brand-name">Brooks Agro</span>
+        <span class="brand-name">Brooks Agro Farm</span>
     </div>
 
-    @if($isAppointedSupervisor)
+    @if($isAppointedSupervisor || $isSalesManager || $isProductionManager)
         <a class="nav-link" href="{{ route('supervision.index') }}" @if(request()->routeIs('supervision.*')) aria-current="page" @endif><span>Daily Supervisor</span></a>
     @endif
 
     <a class="nav-link" href="{{ route('vaccination-schedule.index') }}" @if(request()->routeIs('vaccination-schedule.*')) aria-current="page" @endif><span>Vaccination Schedule</span></a>
+
+    @if($isCeo || $isDirector || $isPersonalAssistant || $isDailyReportManager)
+        <a class="nav-link" href="{{ route('daily-reports.index') }}" @if(request()->routeIs('daily-reports.*')) aria-current="page" @endif><span>Daily Management Report</span></a>
+    @endif
 
     @if ($isCeo || $isDirector)
         <div class="hr-nav" aria-label="{{ $isCeo ? 'CEO' : 'Director' }} navigation">
@@ -335,11 +362,21 @@
                 <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif><summary>{{ $section }}</summary>
                 @foreach($items as $item)
                     @continue(in_array($item['key'], ['settings', 'notifications'], true))
-                    @if($user->canAccess($item['key']) || $item['key'] === 'directives')
+                    @if($user->canAccess($item['key']) || $item['key'] === 'directives' || str_starts_with($item['key'], 'pa-'))
                         @php $href = match($item['key']) {
                             'messages' => route('communications.index'),
                             'dashboard' => route('dashboard'), 'directives' => route('directives.index'),
                             'reports', 'notifications' => route('executive.index',['screen'=>$item['key']]),
+                            'pa-finance-reports' => route('finance.reports.index'),
+                            'pa-profitability-reports' => route('finance.reports.profitability'),
+                            'pa-sales-reports' => route('sales.index',['screen'=>'reports']),
+                            'pa-hr-reports' => route('hr.reports.index'),
+                            'pa-production-reports' => route('operations.reports'),
+                            'pa-poultry-reports' => route('poultry.report.index'),
+                            'pa-goat-reports' => route('operations.units.report',['unit'=>'goats']),
+                            'pa-rabbit-reports' => route('operations.units.report',['unit'=>'rabbits']),
+                            'pa-dog-reports' => route('operations.units.report',['unit'=>'dogs']),
+                            'pa-garden-reports' => route('operations.units.report',['unit'=>'garden']),
                             'approvals' => route('approvals.index',['status'=>$item['status'] ?? 'pending']),
                             'visitors' => route('visitors.index'),
                             default => \App\Models\Module::where('key',$item['key'])->first()?->url(),
@@ -383,6 +420,7 @@
                                 'staff-performance','kpi-dashboards' => route('poultry.performance.index'),
                                 'reports' => route('operations.reports'),
                                 'feed-received' => route('operations.feed-stock.index'),
+                                'vaccination' => route('vaccination-schedule.index').(($item['page']??null)==='records'?'#vaccination-records':'#vaccination-schedule'),
                                 'approvals' => route('approvals.index'),
                                 'messages' => route('communications.index'),
                                 default => \App\Models\Module::where('key',$item['key'])->first()?->url(),
@@ -408,10 +446,10 @@
                     <summary>{{ $section }}</summary>
                     @foreach ($items as $item)
                         @continue(in_array($item['key'], ['settings', 'notifications'], true))
-                        @if ($user->canAccess($item['key']) || ($isFinanceUser && $item['key'] === 'sales'))
+                        @if ($user->canAccess($item['key']) || in_array($item['key'], ['department-budget','customers'], true) || ($isFinanceUser && $item['key'] === 'sales'))
                             @php
                                 $href = $isSalesManager
-                                    ? route('sales.index', ['screen' => $item['screen'] ?? 'sale'])
+                                    ? ($item['key']==='customers' ? route('owner.customers') : ($item['key']==='department-budget' ? route('department-budget.index') : route('sales.index', ['screen' => $item['screen'] ?? 'sale'])))
                                     : ($isHrManager
                                     ? match ($item['key']) {
                                         'hr' => route('employees.index'),
@@ -426,10 +464,12 @@
                                     }
                                     : match ($item['key']) {
                                         'transactions' => route('finance.transactions.index'),
+                                        'customers' => route('owner.customers'),
                                         'general-ledger' => route('finance.general-ledger.index'),
                                         'receivables' => route('finance.receivables.index'),
                                         'payables' => route('finance.payables.index'),
                                         'budget' => route('finance.budgets.index'),
+                                        'department-budget' => route('department-budget.index'),
                                         'assets' => route('finance.assets.index'),
                                         'cash-book' => route('finance.cash-book.index'),
                                         'bank-book' => route('finance.bank-book.index'),
@@ -580,6 +620,11 @@
             ? route('executive.index', ['screen' => 'settings'])
             : route('account.edit');
     @endphp
+    @if($user->employee_id)
+        <a class="nav-link" href="{{ route('payroll.my-balance') }}" @if($currentKey==='my-salary-balance') aria-current="page" @endif>
+            <span>My salary balance</span>
+        </a>
+    @endif
     <div class="sidebar-utilities" aria-label="Notifications and settings">
         <a href="{{ route('communications.index') }}" class="sidebar-utility" title="Notifications" aria-label="Notifications{{ $sidebarUnread ? ': '.$sidebarUnread.' unread' : '' }}" @if(request()->routeIs('communications.*')) aria-current="page" @endif>
             <svg aria-hidden="true"><use href="#i-bell"></use></svg>

@@ -194,9 +194,29 @@ class User extends Authenticatable
         return array_values(array_unique($ids));
     }
 
+    /** Direct postings plus the operating units beneath those postings. */
+    public function operationalDepartmentIds(): array
+    {
+        $direct = $this->departmentIds();
+        if ($direct === []) return [];
+
+        $children = Department::whereIn('parent_id', $direct)->pluck('id')->all();
+
+        return array_values(array_unique(array_merge($direct, $children)));
+    }
+
     public function canAccess(string $moduleKey): bool
     {
         return (bool) ($this->abilities()[$moduleKey]['view'] ?? false);
+    }
+
+    /** Personal Assistants may read every report needed for Director briefings. */
+    public function canViewAllReports(): bool
+    {
+        $codes = $this->roles->pluck('code')->push($this->role?->code)->filter();
+
+        return $this->canAccess('reports')
+            || $codes->intersect(['personal-assistant', 'pa'])->isNotEmpty();
     }
 
     public function canDo(string $moduleKey, string $action): bool

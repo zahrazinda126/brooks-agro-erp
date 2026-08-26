@@ -168,7 +168,9 @@
                     'casual'    => 'Casual worker',
                     'temporary' => 'Temporary — builder, fitter, short job',
                     'intern'    => 'Intern',
+                    'student'   => 'Student placement',
                     'vacist'    => 'Holiday worker',
+                    'other'     => 'Other worker type',
                 ] as $v => $label)
                     <option value="{{ $v }}"
                         @selected(old('employment_type', $employee->employment_type ?? 'permanent') === $v)>
@@ -322,11 +324,13 @@
         casual:    'CAS',
         temporary: 'TMP',
         intern:    'INT',
-        vacist:    'VAC'
+        student:   'STU',
+        vacist:    'VAC',
+        other:     'OTH'
     };
 
-    var TEMPORARY = ['contract', 'temporary', 'intern', 'vacist'];
-    var PLACEMENT = ['intern', 'vacist'];
+    var TEMPORARY = ['contract', 'temporary', 'intern', 'student', 'vacist', 'other'];
+    var PLACEMENT = ['intern', 'student', 'vacist'];
 
     function sync() {
         var v = select.value;

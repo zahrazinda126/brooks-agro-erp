@@ -22,11 +22,13 @@ class AnimalGroup extends Model
     protected $fillable = [
         'code', 'name', 'department_id', 'breed_id', 'purpose',
         'received_date', 'age_days_on_arrival', 'expected_brooder_exit_date',
-        'quantity_received', 'quantity_free',
+        'quantity_received', 'quantity_free', 'transit_deaths',
         'unit_cost', 'total_cost', 'supplier_id', 'supplier_name', 'invoice_no',
         'current_quantity', 'total_mortality', 'total_culled', 'total_sold',
         'expected_lay_date', 'actual_lay_date',
         'house', 'status', 'closed_date', 'notes', 'created_by',
+        'edit_requested_by', 'edit_requested_at', 'edit_authorized_by',
+        'edit_authorized_for', 'edit_authorized_until',
     ];
 
     protected function casts(): array
@@ -37,6 +39,8 @@ class AnimalGroup extends Model
             'expected_lay_date' => 'date',
             'actual_lay_date'   => 'date',
             'closed_date'       => 'date',
+            'edit_requested_at' => 'datetime',
+            'edit_authorized_until' => 'datetime',
             'unit_cost'         => 'decimal:2',
             'total_cost'        => 'decimal:2',
         ];
@@ -77,6 +81,12 @@ class AnimalGroup extends Model
     public function totalReceived(): int
     {
         return $this->quantity_received + $this->quantity_free;
+    }
+
+    /** Birds physically alive when the consignment reached the farm. */
+    public function liveReceived(): int
+    {
+        return max(0, $this->totalReceived() - $this->transit_deaths);
     }
 
     public function hasFreeExtras(): bool
@@ -240,7 +250,7 @@ class AnimalGroup extends Model
     /** Deaths as a percentage of every bird that arrived, free ones included. */
     public function mortalityRate(): float
     {
-        $received = $this->totalReceived();
+        $received = $this->liveReceived();
 
         if ($received < 1) {
             return 0;
@@ -284,7 +294,7 @@ class AnimalGroup extends Model
     /** What each bird cost on arrival, extras included. */
     public function effectiveUnitCost(): float
     {
-        $received = $this->totalReceived();
+        $received = $this->liveReceived();
 
         if ($received < 1) {
             return 0;
@@ -309,12 +319,21 @@ class AnimalGroup extends Model
             return $query;
         }
 
-        return $query->whereIn('department_id', $user->departmentIds());
+        return $query->whereIn('department_id', $user->operationalDepartmentIds());
     }
 
     public function isActive(): bool
     {
         return $this->status === 'active';
+    }
+
+    public function mayBeEditedBy(User $user): bool
+    {
+        $roles = $user->roles->pluck('code')->push($user->role?->code);
+        if ($roles->contains('director')) return true;
+
+        return $this->edit_authorized_for === $user->id
+            && $this->edit_authorized_until?->isFuture();
     }
 
     public function label(): string

@@ -16,4 +16,9 @@ class SalesCustomer extends Model
     {
         return $this->hasMany(Sale::class, 'customer_id');
     }
+
+    public function prepayments(): HasMany
+    {
+        return $this->hasMany(CustomerPrepayment::class, 'customer_id');
+    }
 }

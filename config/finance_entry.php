@@ -84,6 +84,9 @@ return ['reporting_departments' => [
         'Sales' => ['Sales Large Eggs', 'Sales Manure', 'Sales Off Layers', 'Sales Starter Eggs', 'Sales Damaged Eggs', 'Sales Medium Eggs'],
         'Other Income' => ['Garden Sales', 'Other Sales', 'Goat Sales', 'Rabbit Sales', 'Rabbit Meat Sales', 'Goat Meat Sales'],
     ]],
+    'customer_prepayment' => ['label' => 'Customer Prepayment', 'ledger_type' => 'money_received', 'party' => 'Customer Name', 'groups' => [
+        'Current Liabilities' => ['Customer Prepayments'],
+    ]],
     'purchase' => ['label' => 'Purchase / Expense', 'ledger_type' => 'money_paid', 'party' => 'Supplier Name / Liability Account', 'groups' => [
         'Cost of Sales' => ['Feeds', 'Medication', 'Vaccination', 'Vaccination Related Costs', 'Biosecurity', 'Other Direct Purchases', 'Husks', 'Crop Husbandry', 'Dogs', 'Rabbits', 'Goats'],
         'Operating Costs' => ['Depreciation - Machinery', 'Depreciation - Kitchen Equipment', 'Depreciation - Buildings', 'Depreciation - Office Equipment', 'Depreciation - Furniture & Fittings', 'Depreciation - Motor Vehicles', 'Depreciation - Vehicles', 'Depreciation - Farm Equipment', 'Electricity', 'Water', 'Staff Welfare Related Costs', 'NSSF Employer Contribution', 'Salary Expense', 'Staff Recruitment Costs', 'Dividends', 'Audit Fees', 'Professional Consultancy', 'Other Expenses', 'Internet / Email', 'Rent', 'Security', 'Stationery', 'General Office', 'Repairs & General Maintenance', 'Legal & Licence Fees', 'Board Meeting Expense', 'Travel', 'Telephone / Fax', 'Executive Prerequisites', 'Subscription', 'Bad Debts', 'Donations', 'Stipends', 'Tax Expense', 'Bank Charges', 'Fuel', 'Fringe Benefits', 'Finance Expenses'],

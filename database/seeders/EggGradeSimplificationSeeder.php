@@ -67,14 +67,10 @@ class EggGradeSimplificationSeeder extends Seeder
             'updated_at'        => now(),
         ]);
 
-        // Defect grades keep their order below the saleable ones.
-        $defects = ['cracked' => 60, 'dirty' => 70, 'broken' => 80, 'soft-shell' => 90];
-
-        foreach ($defects as $code => $order) {
-            DB::table('egg_grades')->where('code', $code)->update([
-                'sort_order' => $order,
-                'updated_at' => now(),
-            ]);
+        $damagedId = DB::table('egg_grades')->whereIn('code', ['damaged','cracked'])->orderByRaw("case when code = 'damaged' then 0 else 1 end")->value('id');
+        if ($damagedId) {
+            DB::table('egg_grades')->where('id', $damagedId)->update(['code'=>'damaged','name'=>'Damaged eggs','sort_order'=>60,'is_defect'=>true,'is_active'=>true,'updated_at'=>now()]);
+            DB::table('egg_grades')->where('is_defect', true)->where('id', '!=', $damagedId)->update(['is_active'=>false,'updated_at'=>now()]);
         }
 
         /*
@@ -94,6 +90,6 @@ class EggGradeSimplificationSeeder extends Seeder
                 'updated_at'   => now(),
             ]);
 
-        $this->command?->info('Egg grades set to Small, Medium, Large plus defects.');
+        $this->command?->info('Egg grades set to Small, Medium, Large and Damaged eggs.');
     }
 }

@@ -29,6 +29,7 @@ use App\Models\SalesCustomer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use App\Services\VaccinationReminderService;
 
 /*
  | The dashboard is assembled from what a person can ACCESS, not from a
@@ -47,6 +48,8 @@ class DashboardController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
+
+        app(VaccinationReminderService::class)->sendDueReminders($user);
 
         // Workers have no dashboard. Send them straight to their work.
         if ($user->isDataEntryOnly()) {
@@ -166,7 +169,7 @@ class DashboardController extends Controller
 
             return [
                 'label' => $date->format('M'),
-                'income' => (float) $rows->where('type', 'money_received')->sum('amount'),
+                'income' => (float) $rows->filter(fn ($row) => ($row->type === 'money_received' && $row->transaction_category !== 'customer_prepayment') || $row->type === 'revenue_recognized')->sum('amount'),
                 'spending' => (float) $rows->where('type', 'money_paid')->sum('amount'),
             ];
         });
@@ -410,12 +413,12 @@ class DashboardController extends Controller
         $monthStart = now()->startOfMonth()->toDateString();
         $monthEnd = now()->endOfMonth()->toDateString();
         $month = FinancialTransaction::whereBetween('transaction_date', [$monthStart, $monthEnd])->get();
-        $income = (float) $month->where('type', 'money_received')->sum('amount');
+        $income = (float) $month->filter(fn ($row) => ($row->type === 'money_received' && $row->transaction_category !== 'customer_prepayment') || $row->type === 'revenue_recognized')->sum('amount');
         $expenses = (float) $month->where('type', 'money_paid')->sum('amount');
         $monthly = collect(range(5, 0))->map(function ($offset) {
             $date = now()->startOfMonth()->subMonths($offset);
             $rows = FinancialTransaction::whereBetween('transaction_date', [$date->toDateString(), $date->copy()->endOfMonth()->toDateString()])->get();
-            return ['label'=>$date->format('M'),'income'=>(float)$rows->where('type','money_received')->sum('amount'),'expenses'=>(float)$rows->where('type','money_paid')->sum('amount')];
+            return ['label'=>$date->format('M'),'income'=>(float)$rows->filter(fn ($row) => ($row->type === 'money_received' && $row->transaction_category !== 'customer_prepayment') || $row->type === 'revenue_recognized')->sum('amount'),'expenses'=>(float)$rows->where('type','money_paid')->sum('amount')];
         });
         $expenseGroups = $month->where('type','money_paid')->groupBy(fn($row)=>$row->counterparty ?: $row->description ?: 'Other')->map(fn($rows,$name)=>['name'=>$name,'amount'=>(float)$rows->sum('amount')])->sortByDesc('amount')->take(5)->values();
         $budgeted = (float) Budget::whereBetween('period_start', [$monthStart, $monthEnd])->sum('planned_amount');

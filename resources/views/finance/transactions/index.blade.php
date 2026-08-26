@@ -8,6 +8,7 @@
     ['bank-book','Bank Book',route('finance.bank-book.index')],
     ['general-ledger','General Ledger',route('finance.general-ledger.index')],
     ['receivables','Customer Balances',route('finance.receivables.index')],
+    ['receivables','Customer Prepayments',route('finance.receivables.index').'#prepayments'],
     ['payables','Supplier Balances',route('finance.payables.index')],
     ['assets','Fixed Assets',route('finance.assets.index')],
     ['purchases','Farm Purchases',route('finance.farm.purchases')],

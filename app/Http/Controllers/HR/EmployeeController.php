@@ -225,7 +225,9 @@ class EmployeeController extends Controller
             'casual'    => 'hr.staff_no_prefix_casual',
             'temporary' => 'hr.staff_no_prefix_temporary',
             'intern'    => 'hr.staff_no_prefix_intern',
+            'student'   => 'hr.staff_no_prefix_student',
             'vacist'    => 'hr.staff_no_prefix_vacist',
+            'other'     => 'hr.staff_no_prefix_other',
             default     => 'hr.staff_no_prefix_permanent',
         };
 
@@ -233,7 +235,9 @@ class EmployeeController extends Controller
             'casual'    => 'CAS',
             'temporary' => 'TMP',
             'intern'    => 'INT',
+            'student'   => 'STU',
             'vacist'    => 'VAC',
+            'other'     => 'OTH',
             default     => 'BAF',
         };
 

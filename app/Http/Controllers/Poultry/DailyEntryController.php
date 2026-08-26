@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Poultry;
 
 use App\Services\FeedStockService;
+use App\Services\CommunicationService;
 
 use App\Http\Controllers\Controller;
 use App\Models\AnimalGroup;
@@ -304,7 +305,7 @@ class DailyEntryController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($batch, $house, $died, $culled, $total, $data, $request) {
+        $record = DB::transaction(function () use ($batch, $house, $died, $culled, $total, $data, $request) {
 
             $record = MortalityRecord::create([
                 'animal_group_id' => $batch->id,
@@ -328,7 +329,17 @@ class DailyEntryController extends Controller
 
             AuditLog::record('created', $record,
                 "Recorded {$total} birds lost from {$batch->code}.", null, null, 'mortality-entry');
+
+            return $record;
         });
+
+        app(CommunicationService::class)->toRole(
+            'production-manager',
+            "Mortality recorded in {$house->house_number}",
+            $request->user()->displayName()." recorded {$died} died and {$culled} culled for batch {$batch->code} in {$house->house_number}. Please assess the cause.",
+            $request->user()->id,
+            route('mortality.assess.edit', $record, absolute: false),
+        );
 
         return redirect()
             ->route('daily.index')

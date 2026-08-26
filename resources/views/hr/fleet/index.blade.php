@@ -1,26 +1,29 @@
 @extends('layouts.app')
 @section('title','Daily Fleet Management')
 @section('content')
-<div class="page-head"><p class="eyebrow">HR & Administration</p><h2>Daily Fleet Management</h2><p>Vehicle movements, drivers, fuel consumption, issues and maintenance.</p></div>
-@if($canRecord)
-<form method="POST" action="{{ route('hr.fleet.store') }}" class="exec-panel">@csrf
-<h3>Add fleet record</h3><div class="form-grid">
+<div class="page-head"><p class="eyebrow">HR & Administration</p><h2>Daily Fleet Management</h2><p>Vehicle journeys, mileage, fuel efficiency, costs and service reminders.</p></div>
+@if($vehicleSummaries->isNotEmpty())<div class="summary-grid">@foreach($vehicleSummaries as $vehicle)<div class="summary-card"><span>{{ $vehicle['vehicle'] }}</span><strong>{{ number_format($vehicle['distance'],1) }} km</strong><small>{{ $vehicle['fuel']>0?number_format($vehicle['distance']/$vehicle['fuel'],2).' km/L':'Fuel efficiency pending' }}</small>@if($vehicle['service_at']!==null)<small style="color:{{ (float)$vehicle['odometer']>=(float)$vehicle['service_at']?'#b4232a':'inherit' }}">{{ (float)$vehicle['odometer']>=(float)$vehicle['service_at']?'Service due now':number_format((float)$vehicle['service_at']-(float)$vehicle['odometer'],1).' km to service' }}</small>@endif</div>@endforeach</div>@endif
+@if($canRecord)<form method="POST" action="{{ route('hr.fleet.store') }}" class="exec-panel" enctype="multipart/form-data">@csrf
+<h3>Add fleet journey</h3><div class="form-grid">
 <div class="field"><label>Date</label><input type="date" name="recorded_on" value="{{ old('recorded_on',now()->toDateString()) }}" required></div>
-<div class="field"><label>Vehicle ID</label><input name="vehicle_id" value="{{ old('vehicle_id') }}" required></div>
+<div class="field"><label>Vehicle ID / registration</label><input name="vehicle_id" value="{{ old('vehicle_id') }}" required></div>
 <div class="field"><label>Driver name</label><input name="driver_name" value="{{ old('driver_name') }}" required></div>
 <div class="field"><label>Set-off date and time</label><input type="datetime-local" name="set_off_at" value="{{ old('set_off_at') }}"></div>
 <div class="field"><label>Pick-up point</label><input name="pickup_point" value="{{ old('pickup_point') }}"></div>
 <div class="field"><label>Destination</label><input name="destination" value="{{ old('destination') }}"></div>
 <div class="field"><label>Number of people</label><input type="number" min="0" name="people_count" value="{{ old('people_count') }}"></div>
+<div class="field"><label>Vehicle kilometre reading before journey</label><input type="number" min="0" step="0.1" name="starting_odometer_km" value="{{ old('starting_odometer_km') }}" required><small>Copy the total kilometres shown on the vehicle dashboard before leaving.</small></div>
+<div class="field"><label>Vehicle kilometre reading after journey</label><input type="number" min="0" step="0.1" name="ending_odometer_km" value="{{ old('ending_odometer_km') }}" required><small>Copy the dashboard reading after arriving.</small></div>
 <div class="field"><label>Fuel consumed (litres)</label><input type="number" min="0" step="0.01" name="fuel_consumption_litres" value="{{ old('fuel_consumption_litres') }}"></div>
-<div class="field"><label>Fuel receipt/reference</label><input name="fuel_receipt" value="{{ old('fuel_receipt') }}"></div>
+<div class="field"><label>Fuel cost (UGX)</label><input type="number" min="0" step="0.01" name="fuel_cost_ugx" value="{{ old('fuel_cost_ugx') }}"><small>Used for cost per kilometre.</small></div>
+<div class="field"><label>Upload fuel receipt</label><input type="file" name="fuel_receipt" accept="image/jpeg,image/png,image/webp,application/pdf"><small>Photo or PDF, maximum 5 MB.</small></div>
+<div class="field"><label>Next service at (km)</label><input type="number" min="0" step="0.1" name="next_service_odometer_km" value="{{ old('next_service_odometer_km') }}"><small>A reminder appears when this reading is reached.</small></div>
 <div class="field field--wide"><label>Purpose</label><textarea name="purpose" required>{{ old('purpose') }}</textarea></div>
 <div class="field field--wide"><label>Vehicle issues</label><textarea name="vehicle_issues">{{ old('vehicle_issues') }}</textarea></div>
 <div class="field field--wide"><label>Vehicle maintenance</label><textarea name="maintenance">{{ old('maintenance') }}</textarea></div>
-</div><div class="form-actions"><button class="btn">Save fleet record</button></div></form>
-@endif
-<section class="exec-panel table-wrap"><h3>Fleet records</h3><table class="exec-table"><thead><tr><th>Date</th><th>Vehicle</th><th>Driver</th><th>Journey</th><th>People</th><th>Purpose</th><th>Fuel</th><th>Issues / maintenance</th></tr></thead><tbody>
-@forelse($records as $record)<tr><td>{{ $record->recorded_on->format('d M Y') }}</td><td><strong>{{ $record->vehicle_id }}</strong></td><td>{{ $record->driver_name }}</td><td>{{ $record->pickup_point ?: '—' }} → {{ $record->destination ?: '—' }}@if($record->set_off_at)<br><small>{{ $record->set_off_at->format('d M Y, H:i') }}</small>@endif</td><td>{{ $record->people_count ?? '—' }}</td><td>{{ $record->purpose }}</td><td>{{ $record->fuel_consumption_litres !== null ? number_format((float)$record->fuel_consumption_litres,2).' L' : '—' }}@if($record->fuel_receipt)<br><small>{{ $record->fuel_receipt }}</small>@endif</td><td>{{ $record->vehicle_issues ?: 'No issues' }}@if($record->maintenance)<br><small>Maintenance: {{ $record->maintenance }}</small>@endif</td></tr>
-@empty<tr><td colspan="8">No fleet records have been entered yet.</td></tr>@endforelse
+</div><div class="form-actions"><button class="btn">Save fleet journey</button></div></form>@endif
+<section class="exec-panel table-wrap"><h3>Fleet records</h3><table class="exec-table"><thead><tr><th>Date</th><th>Vehicle / driver</th><th>Journey</th><th>Vehicle km reading</th><th>Distance</th><th>Efficiency</th><th>Fuel cost</th><th>Purpose</th><th>Issues / service</th></tr></thead><tbody>
+@forelse($records as $record)<tr><td>{{ $record->recorded_on->format('d M Y') }}@if($record->set_off_at)<br><small>{{ $record->set_off_at->format('H:i') }}</small>@endif</td><td><strong>{{ $record->vehicle_id }}</strong><br><small>{{ $record->driver_name }}</small></td><td>{{ $record->pickup_point?:'—' }} → {{ $record->destination?:'—' }}<br><small>{{ $record->people_count??0 }} people</small></td><td>{{ $record->starting_odometer_km!==null?number_format((float)$record->starting_odometer_km,1):'—' }} → {{ $record->ending_odometer_km!==null?number_format((float)$record->ending_odometer_km,1):'—' }} km</td><td><strong>{{ $record->distanceKm()!==null?number_format($record->distanceKm(),1).' km':'—' }}</strong></td><td>{{ $record->kilometresPerLitre()!==null?number_format($record->kilometresPerLitre(),2).' km/L':'—' }}@if($record->litresPerHundredKm()!==null)<br><small>{{ number_format($record->litresPerHundredKm(),2) }} L/100 km</small>@endif</td><td>{{ $record->fuel_cost_ugx!==null?'UGX '.number_format((float)$record->fuel_cost_ugx):'—' }}@if($record->costPerKm()!==null)<br><small>UGX {{ number_format($record->costPerKm()) }}/km</small>@endif @if($record->fuel_receipt)<br><a href="{{ Storage::disk('public')->url($record->fuel_receipt) }}" target="_blank" rel="noopener">View receipt</a>@endif</td><td>{{ $record->purpose }}</td><td>{{ $record->vehicle_issues?:'No issues' }}@if($record->maintenance)<br><small>Maintenance: {{ $record->maintenance }}</small>@endif @if($record->next_service_odometer_km)<br><small>Service at {{ number_format((float)$record->next_service_odometer_km,1) }} km</small>@endif</td></tr>
+@empty<tr><td colspan="9">No fleet records have been entered yet.</td></tr>@endforelse
 </tbody></table></section>{{ $records->links() }}
 @endsection
