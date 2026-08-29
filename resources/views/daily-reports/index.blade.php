@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title','Daily Department Reports')
 @section('content')
-<div class="page-head page-head--split"><div><p class="eyebrow">Daily reporting protocol</p><h1>Daily Department Reports</h1><p>Unit reports are reviewed by the CEO, then combined automatically into one report for each department.</p></div><form method="GET"><input type="date" name="date" value="{{ $date }}" onchange="this.form.submit()"></form></div>
+<x-report-header eyebrow="Daily reporting protocol" title="Daily Department Reports" description="Unit reports are reviewed by the CEO, then combined automatically into one report for each department." :period="\Carbon\Carbon::parse($date)->format('l, d F Y')"><x-slot:actions><form method="GET"><input type="date" name="date" value="{{ $date }}" onchange="this.form.submit()"></form><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button></x-slot:actions></x-report-header>
 @foreach($departments as $departmentCode=>$department)
 @php
  $departmentRows=$rows->get($departmentCode,collect()); $reviewed=$departmentRows->where('status','ceo_reviewed')->count();

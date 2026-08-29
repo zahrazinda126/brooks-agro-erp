@@ -35,7 +35,18 @@ class DailyManagementReportController extends Controller
             });
         }
         if ($roles->contains('director')) {
-            return view('daily-reports.director', ['date' => $date, 'departments' => self::DEPARTMENTS, 'rows' => $rows, 'comments' => $comments->groupBy('department_code'), 'snapshots' => $this->directorSnapshots($date)]);
+            $readyDepartments = collect(self::DEPARTMENTS)
+                ->keys()
+                ->filter(fn (string $department) => $this->departmentReady($date, $department));
+
+            return view('daily-reports.director', [
+                'date' => $date,
+                'departments' => self::DEPARTMENTS,
+                'rows' => $rows,
+                'comments' => $comments->whereIn('department_code', $readyDepartments)->groupBy('department_code'),
+                'snapshots' => $this->directorSnapshots($date, $readyDepartments),
+                'readyDepartments' => $readyDepartments,
+            ]);
         }
 
         return view('daily-reports.index', ['date' => $date, 'departments' => self::DEPARTMENTS, 'rows' => $rows, 'comments' => $comments->groupBy('department_code'), 'editable' => $editable, 'isCeo' => $roles->contains('ceo'), 'isDirector' => false, 'canViewAll' => $canViewAll]);
@@ -52,8 +63,6 @@ class DailyManagementReportController extends Controller
         if ($data['action'] === 'share') {
             $label = self::DEPARTMENTS[$data['department_code']]['units'][$data['unit_code']];
             $communications->toRole('ceo', "$label daily report needs review", 'Review the unit report and add your comment.', $request->user()->id, route('daily-reports.index', ['date' => $data['report_date']], false));
-            $department = self::DEPARTMENTS[$data['department_code']]['label'];
-            $communications->toRole('director', "$department report preview updated", 'New departmental information is available to inspect while it awaits CEO review.', $request->user()->id, route('daily-reports.index', ['date' => $data['report_date']], false));
         }
         return back()->with('status', $data['action'] === 'share' ? 'Unit report shared with the CEO.' : 'Draft saved.');
     }
@@ -77,9 +86,10 @@ class DailyManagementReportController extends Controller
         abort_unless($this->roles($request->user())->contains('director'), 403);
         $data = $request->validate(['report_date' => ['required', 'date'], 'department_code' => ['required', 'string'], 'unit_report_id' => ['nullable', 'integer', 'exists:daily_management_report_sections,id'], 'body' => ['required', 'string', 'max:5000']]);
         abort_unless(isset(self::DEPARTMENTS[$data['department_code']]), 422);
+        abort_unless($this->departmentReady($data['report_date'], $data['department_code']), 403, 'The CEO has not approved the complete departmental report yet.');
         if (! empty($data['unit_report_id'])) {
             $target = DailyManagementReportSection::findOrFail($data['unit_report_id']);
-            abort_unless($target->department_code === $data['department_code'] && $target->report_date->toDateString() === $data['report_date'], 422);
+            abort_unless($target->department_code === $data['department_code'] && $target->report_date->toDateString() === $data['report_date'] && $target->status === 'ceo_reviewed', 422);
         }
         $comment = DailyManagementReportComment::create($data + ['comment_type' => 'director', 'author_id' => $request->user()->id]);
         $recipients = $comment->unit_report_id ? collect([DailyManagementReportSection::find($comment->unit_report_id)?->prepared_by]) : DailyManagementReportSection::whereDate('report_date', $data['report_date'])->where('department_code', $data['department_code'])->pluck('prepared_by');
@@ -99,21 +109,29 @@ class DailyManagementReportController extends Controller
         return empty(array_diff($required, $reviewed));
     }
 
-    private function directorSnapshots(string $date): array
+    private function directorSnapshots(string $date, Collection $readyDepartments): array
     {
-        $production = $this->productionSnapshot($date);
+        $snapshots = [];
 
-        return [
-            'production' => $production,
-            'hr' => [
+        if ($readyDepartments->contains('production')) {
+            $snapshots['production'] = $this->productionSnapshot($date);
+        }
+
+        if ($readyDepartments->contains('hr')) {
+            $snapshots['hr'] = [
                 'records' => DB::table('employee_records')->leftJoin('employees', 'employees.id', '=', 'employee_records.employee_id')->whereDate('recorded_on', $date)->select('employee_records.*', 'employees.first_name', 'employees.last_name', 'employees.staff_no')->orderBy('type')->get(),
                 'active_leave' => DB::table('employee_records')->where('type', 'leave')->whereDate('recorded_on', '<=', $date)->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $date))->orderByDesc('recorded_on')->get()->keyBy('employee_id'),
                 'fleet' => DB::table('fleet_records')->whereDate('recorded_on', $date)->orderBy('set_off_at')->get(),
                 'active_staff' => DB::table('employees')->where('status', 'active')->count(),
                 'employees' => DB::table('employees')->leftJoin('departments', 'departments.id', '=', 'employees.department_id')->leftJoin('roles', 'roles.id', '=', 'employees.role_id')->where('employees.status', 'active')->select('employees.*', 'departments.name as department_name', 'roles.name as role_name')->orderBy('departments.name')->orderBy('employees.first_name')->get(),
-            ],
-            'finance' => $this->financeSnapshot($date),
-        ];
+            ];
+        }
+
+        if ($readyDepartments->contains('finance')) {
+            $snapshots['finance'] = $this->financeSnapshot($date);
+        }
+
+        return $snapshots;
     }
 
     private function financeSnapshot(string $date): array

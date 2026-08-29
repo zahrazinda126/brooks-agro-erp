@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SalesPayment extends Model
 {
-    protected $fillable = ['sale_id', 'receipt_number', 'paid_on', 'amount', 'payment_method', 'farm_account', 'reference', 'recorded_by'];
+    protected $fillable = ['sale_id', 'receipt_number', 'paid_on', 'amount', 'payment_method', 'farm_account', 'reference', 'merchant_code', 'receipt_path', 'recorded_by'];
 
     protected function casts(): array
     {

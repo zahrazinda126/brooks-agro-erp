@@ -90,7 +90,7 @@ $workerName = $user->firstName();
          */
         if ($user->canDo('egg-entry', 'create')) {
             $jobs[] = [
-                'label' => 'Eggs',
+                'label' => '🥚 Eggs',
                 'icon'  => 'egg',
                 'url'   => route('daily.eggs', $batch),
                 'done'  => false, // collections can be recorded any number of times
@@ -100,7 +100,7 @@ $workerName = $user->firstName();
 
         if ($user->canDo('mortality-entry', 'create')) {
             $jobs[] = [
-                'label' => 'Deaths',
+                'label' => '⚠️ Deaths',
                 'icon'  => 'vet',
                 'url'   => route('daily.deaths', $batch),
                 'done'  => false,   // deaths can happen more than once a day
@@ -110,7 +110,7 @@ $workerName = $user->firstName();
 
         if ($user->canDo('feed-consumption', 'create')) {
             $jobs[] = [
-                'label' => 'Feed mixing',
+                'label' => '🌾 Feed mixing',
                 'icon'  => 'grain',
                 'url'   => route('daily.feed', $batch),
                 'done'  => $feedDone,
@@ -121,7 +121,7 @@ $workerName = $user->firstName();
         // Monthly, so it appears only when it falls due.
         if ($needLitter && $user->canDo('litter-removal', 'create')) {
             $jobs[] = [
-                'label' => 'Litter',
+                'label' => '🧹 Litter',
                 'icon'  => 'wrench',
                 'url'   => route('daily.litter', $batch),
                 'done'  => false,
@@ -199,11 +199,11 @@ $workerName = $user->firstName();
         'dogs' => ['name'=>'Dogs','icon'=>"\u{1F415}"],
     ];
     $livestockActions = [
-        ['section'=>'feed','label'=>'Daily Feed','icon'=>'grain'],
-        ['section'=>'vaccination','label'=>'Vaccination','icon'=>'vet'],
-        ['section'=>'treatment','label'=>'Daily Health & Treatment','icon'=>'vet'],
-        ['section'=>'mortality','label'=>'Daily Mortality','icon'=>'vet'],
-        ['section'=>'production','label'=>'Daily Production & Births','icon'=>'egg'],
+        ['section'=>'feed','label'=>'🌾 Daily Feed','icon'=>'grain'],
+        ['section'=>'vaccination','label'=>'💉 Vaccination','icon'=>'vet'],
+        ['section'=>'treatment','label'=>'🩺 Daily Health & Treatment','icon'=>'vet'],
+        ['section'=>'mortality','label'=>'⚠️ Daily Mortality','icon'=>'vet'],
+        ['section'=>'production','label'=>'🐣 Daily Production & Births','icon'=>'egg'],
     ];
 @endphp
 

@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title','Vaccination Schedule')
 @section('content')
-<div class="page-head"><h2>Poultry Vaccination</h2><p>Production records vaccines administered to each poultry batch. The programme and completed history remain visible to everyone.</p></div>
+<x-report-header eyebrow="Poultry health" title="Poultry Vaccination" description="Vaccinations administered by batch, upcoming schedule and complete treatment traceability." period="Current programme and history"><x-slot:actions><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button></x-slot:actions></x-report-header>
 @if($canEdit)
 <details class="card disclosure vaccination-record-form" id="record-vaccination" @if($errors->hasAny(['animal_group_id','vaccine_batch_number','expires_on']) || request()->filled('batch')) open @endif><summary><span><strong>Record vaccination completed</strong><small>Batch, vaccine, dose and manufacturer traceability</small></span></summary><div class="disclosure__body"><form method="POST" action="{{ route('vaccination-records.store') }}">@csrf
 <div class="form-grid">

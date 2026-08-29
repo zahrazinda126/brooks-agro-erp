@@ -1,6 +1,7 @@
 @extends('layouts.app')
 @section('title','Overall Production Report')
 @section('content')
+<x-report-header eyebrow="Production management" title="Overall Production Report" description="Combined oversight of Poultry, Goats, Rabbits, Dogs and Garden operations." :period="'Current '.Str::headline($view).' view'"><x-slot:actions><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button><a class="btn" href="{{ route('operations.reports.export',['view'=>$view]) }}">Download {{ ucfirst($view) }} Excel</a></x-slot:actions></x-report-header>
 <div class="form-actions" style="float:right"><a class="btn" href="{{ route('operations.reports.export',['view'=>$view]) }}">Download {{ ucfirst($view) }} Excel</a></div>
 <div class="page-head"><p class="eyebrow">📈 Production management</p><h2>Overall Production Report</h2><p>Combined oversight of Poultry, Goats, Rabbits, Dogs and Garden operations.</p></div>
 <nav class="unit-tabs"><a class="{{ $view==='overall'?'active':'' }}" href="{{ route('operations.reports') }}">All units</a><a class="{{ $view==='livestock'?'active':'' }}" href="{{ route('operations.reports',['view'=>'livestock']) }}">Livestock</a><a class="{{ $view==='health'?'active':'' }}" href="{{ route('operations.reports',['view'=>'health']) }}">Health & losses</a><a class="{{ $view==='inputs'?'active':'' }}" href="{{ route('operations.reports',['view'=>'inputs']) }}">Feeding & inputs</a><a class="{{ $view==='production'?'active':'' }}" href="{{ route('operations.reports',['view'=>'production']) }}">Production & harvest</a></nav>

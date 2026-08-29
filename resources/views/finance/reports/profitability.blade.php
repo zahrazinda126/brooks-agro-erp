@@ -1,10 +1,7 @@
 @extends('layouts.app')
 @section('title','Unit Costs & Profitability')
 @section('content')
-<div class="page-head page-head--split">
-    <div><p class="eyebrow">Director's management report</p><h2>Unit Costs & Profitability</h2><p>See revenue, spending and the accumulated cost of each animal group up to any chosen date.</p></div>
-    <div class="form-actions"><a class="btn btn--quiet" href="{{ route('sales.index',['screen'=>'reports']) }}">Revenue analysis</a><a class="btn" href="{{ route('finance.reports.statement',['report'=>'profit-loss','from'=>$from,'to'=>$to]) }}">Income statement</a></div>
-</div>
+<x-report-header eyebrow="Director's management report" title="Unit Costs & Profitability" description="Revenue, spending and accumulated lifecycle cost for each farm unit." :period="\Carbon\Carbon::parse($from)->format('d M Y').' – '.\Carbon\Carbon::parse($to)->format('d M Y')"><x-slot:actions><a class="btn btn--quiet" href="{{ route('sales.index',['screen'=>'reports']) }}">Revenue analysis</a><a class="btn" href="{{ route('finance.reports.statement',['report'=>'profit-loss','from'=>$from,'to'=>$to]) }}">Income statement</a></x-slot:actions></x-report-header>
 
 <form class="card filters" method="GET">
     <div class="field"><label>From</label><input type="date" name="from" value="{{ $from }}" required></div>

@@ -3,7 +3,8 @@
 @section('title', 'Reports')
 
 @section('content')
-    <div class="page-head">
+    <x-report-header eyebrow="Human Resources & Administration" :title="$reports[$selectedReport]" description="HR operational records for the selected reporting period." :period="$period"><x-slot:actions><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button><a class="btn" href="{{ route('hr.reports.export', request()->only(['report', 'from', 'to'])) }}">Download Excel</a></x-slot:actions></x-report-header>
+    <div class="page-head" hidden>
         <div>
             <h2>{{ $reports[$selectedReport] }}</h2>
             <p>{{ $period }} · HR-only operational report</p>

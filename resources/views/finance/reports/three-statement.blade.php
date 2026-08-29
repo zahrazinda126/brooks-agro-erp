@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title','Three-Statement Model')
 @section('content')
-<div class="page-head page-head--split"><div><p class="eyebrow">Finance &amp; management</p><h2>Three-Statement Model</h2><p>Income Statement, Balance Sheet and Cash Flow in the workbook&rsquo;s July&ndash;June format.</p></div><a class="btn btn--inline" href="{{ route('finance.reports.export',['report'=>'three-statement','year'=>$year]) }}">Download branded Excel</a></div>
+<x-report-header eyebrow="Finance & management" title="Three-Statement Model" description="Income Statement, Balance Sheet and Cash Flow in the workbook’s July–June format." :period="'July '.$year.' – June '.($year+1)"><x-slot:actions><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button><a class="btn" href="{{ route('finance.reports.export',['report'=>'three-statement','year'=>$year]) }}">Download Excel</a></x-slot:actions></x-report-header>
 <form class="card filters"><div class="field"><label>Financial year beginning</label><input type="number" name="year" min="2000" max="2100" value="{{ $year }}"></div><div class="field field--actions"><button class="btn">Run model</button></div></form>
 <p class="model-scroll-hint">Scroll sideways to view February through June and the annual total.</p>
 <div class="three-statement-scroll" tabindex="0" aria-label="Three-statement model; scroll horizontally for all months">

@@ -1,6 +1,7 @@
 @extends('layouts.app')
 @section('title', 'Shop Sales')
 @section('content')
+@if($screen==='reports')<x-report-header eyebrow="Sales & customers" title="Sales Report" description="Sales performance, customer frequency, products sold and receipts for the selected period." :period="\Carbon\Carbon::parse($from)->format('d M Y').' – '.\Carbon\Carbon::parse($to)->format('d M Y')"><x-slot:actions><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button></x-slot:actions></x-report-header>@endif
 <div class="page-head">
     <p class="eyebrow">Retail shop</p>
     <h2>{{ ['setup' => 'Selling Prices', 'reports' => 'Sales Report'][$screen] ?? 'Record Daily Sale' }}</h2>
@@ -28,7 +29,7 @@
     </div>
 </section>
 <section class="exec-panel">
-    <form method="POST" action="{{ route('sales.store') }}" id="saleForm">
+    <form method="POST" action="{{ route('sales.store') }}" id="saleForm" enctype="multipart/form-data">
         @csrf
         <input type="hidden" name="payment_type" value="cash">
         <input type="hidden" name="amount_paid" value="0">
@@ -36,7 +37,9 @@
         <div class="form-grid">
             <div class="field"><label>Sale date</label><input type="date" name="sale_date" value="{{ old('sale_date', now()->toDateString()) }}" required></div>
             <div class="field"><label>Customer name</label><input name="walk_in_customer" value="{{ old('walk_in_customer') }}" list="sales-customer-list" placeholder="Type or choose a customer"><datalist id="sales-customer-list">@foreach($customers as $customer)<option value="{{ $customer->name }}"></option>@endforeach</datalist><span class="field-hint">Start typing to find an existing customer. A new name is saved automatically; leave blank for a one-time customer.</span></div>
-            <div class="field"><label>Payment method</label><select name="payment_method" id="sale-payment-method"><option value="cash">Cash</option><option value="bank">Bank</option><option value="mobile_money">Mobile money</option><option value="prepayment">Customer prepayment credit</option><option value="in_kind">In kind / barter</option></select><span class="field-hint">Prepayment uses money the customer paid earlier; it does not record new cash.</span></div>
+            <div class="field"><label>Payment method</label><select name="payment_method" id="sale-payment-method"><option value="cash">Cash</option><option value="bank">Bank</option><option value="agent">Agent</option><option value="mobile_money">Mobile money</option><option value="prepayment">Customer prepayment credit</option><option value="in_kind">In kind / barter</option></select><span class="field-hint">Prepayment uses money the customer paid earlier; it does not record new cash.</span></div>
+            <div class="field" id="sale-merchant-field" hidden><label>Merchant code</label><input name="merchant_code" id="sale-merchant-code" value="{{ old('merchant_code') }}" placeholder="Enter the mobile-money merchant code"><span class="field-hint">Required for Mobile Money.</span></div>
+            <div class="field" id="sale-receipt-field" hidden><label>Payment receipt</label><input type="file" name="payment_receipt" id="sale-payment-receipt" accept=".jpg,.jpeg,.png,.pdf"><span class="field-hint">Required for Bank or Agent payments. Maximum 5 MB.</span></div>
             <div class="field"><label>Customer account credit</label><div class="field-readonly">Applied automatically from the selected customer’s available prepayment balance.</div><span class="field-hint">No prepayment ID is required.</span></div>
             <div class="field"><label>Receiving account</label><select name="farm_account">@foreach($accounts as $account)<option value="{{ $account }}">{{ $account }}</option>@endforeach</select></div>
         </div>
@@ -65,6 +68,8 @@
 </section>
 <script>
 (() => {
+    const paymentMethod=document.getElementById('sale-payment-method'),merchantField=document.getElementById('sale-merchant-field'),merchantCode=document.getElementById('sale-merchant-code'),receiptField=document.getElementById('sale-receipt-field'),paymentReceipt=document.getElementById('sale-payment-receipt');
+    const syncPaymentEvidence=()=>{const mobile=paymentMethod.value==='mobile_money',evidence=['bank','agent'].includes(paymentMethod.value);merchantField.hidden=!mobile;merchantCode.required=mobile;receiptField.hidden=!evidence;paymentReceipt.required=evidence;};paymentMethod.addEventListener('change',syncPaymentEvidence);syncPaymentEvidence();
     const body = document.getElementById('saleLines'), template = document.getElementById('saleLineTemplate'); let index = 0;
     const total = () => { let sum = 0; body.querySelectorAll('.entry-line').forEach(row => { const value = (parseFloat(row.querySelector('input[data-quantity]').value) || 0) * (parseFloat(row.querySelector('input[data-price]').value) || 0); row.querySelector('[data-line-total]').textContent = 'UGX ' + Math.round(value).toLocaleString(); sum += value; }); document.getElementById('invoiceTotal').textContent = 'UGX ' + Math.round(sum).toLocaleString(); };
     const add = () => {

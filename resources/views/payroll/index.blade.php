@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'Payroll')
 @section('content')
-<div class="page-head"><div><p class="eyebrow">Human Resources & Finance</p><h1>Payroll</h1><p>HR prepares payroll; Finance Manager, CEO and Director approve it before Finance records payment.</p></div></div>
+<x-report-header eyebrow="Human Resources & Finance" title="Payroll Register" description="HR prepares payroll; Finance Manager, CEO and Director approve it before Finance records payment." :period="now()->format('F Y')"><x-slot:actions><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button></x-slot:actions></x-report-header>
 <div class="summary-grid">
  <div class="summary-card"><span>This month's gross</span><strong>UGX {{ number_format($currentGross, 2) }}</strong></div>
  <div class="summary-card"><span>This month's net</span><strong>UGX {{ number_format($currentNet, 2) }}</strong></div>

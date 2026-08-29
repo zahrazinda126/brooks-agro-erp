@@ -25,7 +25,7 @@ class SalesController extends Controller
 {
     private const CATEGORIES = ['eggs', 'poultry', 'goats', 'rabbits', 'dogs', 'milk', 'manure', 'garden', 'other'];
 
-    private const METHODS = ['cash', 'bank', 'mobile_money', 'credit', 'in_kind', 'prepayment'];
+    private const METHODS = ['cash', 'bank', 'agent', 'mobile_money', 'credit', 'in_kind', 'prepayment'];
 
     public function index(Request $request): View
     {
@@ -162,7 +162,8 @@ class SalesController extends Controller
     public function storeSale(Request $request): RedirectResponse
     {
         abort_unless($request->user()->canDo('sales', 'create'), 403);
-        $data = $request->validate(['sale_date' => ['required', 'date', 'before_or_equal:today'], 'customer_id' => ['nullable', 'exists:sales_customers,id'], 'walk_in_customer' => ['nullable', 'string', 'max:160'], 'payment_type' => ['required', 'in:cash,credit,mixed'], 'payment_method' => ['nullable', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'string', 'max:120'], 'amount_paid' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'notes' => ['nullable', 'string', 'max:2000'], 'lines' => ['required', 'array', 'min:1'], 'lines.*.product_id' => ['nullable', 'required_without:lines.*.description', 'exists:sale_products,id'], 'lines.*.category' => ['nullable', 'required_without:lines.*.product_id', Rule::in(self::CATEGORIES)], 'lines.*.description' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:180'], 'lines.*.unit' => ['nullable', 'required_without:lines.*.product_id', Rule::in(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'])], 'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required', 'numeric', 'min:0']]);
+        $data = $request->validate(['sale_date' => ['required', 'date', 'before_or_equal:today'], 'customer_id' => ['nullable', 'exists:sales_customers,id'], 'walk_in_customer' => ['nullable', 'string', 'max:160'], 'payment_type' => ['required', 'in:cash,credit,mixed'], 'payment_method' => ['nullable', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'string', 'max:120'], 'amount_paid' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'merchant_code' => ['nullable', 'required_if:payment_method,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'], 'notes' => ['nullable', 'string', 'max:2000'], 'lines' => ['required', 'array', 'min:1'], 'lines.*.product_id' => ['nullable', 'required_without:lines.*.description', 'exists:sale_products,id'], 'lines.*.category' => ['nullable', 'required_without:lines.*.product_id', Rule::in(self::CATEGORIES)], 'lines.*.description' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:180'], 'lines.*.unit' => ['nullable', 'required_without:lines.*.product_id', Rule::in(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'])], 'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required', 'numeric', 'min:0']]);
+        $receiptPath = $request->file('payment_receipt')?->store('sales-payment-receipts', 'public');
         $data['payment_type'] = 'cash';
         $data['amount_paid'] = 0;
         $data['discount'] = 0;
@@ -242,7 +243,7 @@ class SalesController extends Controller
                     Receivable::create(['customer_name' => $customerName, 'invoice_number' => $sale->invoice_number, 'invoice_date' => $sale->sale_date, 'due_date' => now()->addDays(30)->toDateString(), 'description' => 'Farm sale '.$sale->invoice_number, 'amount' => $total, 'amount_paid' => $paid, 'status' => 'open', 'recorded_by' => $request->user()->id]);
                 }
                 if ($paid > 0) {
-                    $this->recordMoney($sale, $paid, $data['sale_date'], $data['payment_method'] ?? 'cash', $data['farm_account'] ?? 'Cash on Hand', null, $request->user()->id);
+                    $this->recordMoney($sale, $paid, $data['sale_date'], $data['payment_method'] ?? 'cash', $data['farm_account'] ?? 'Cash on Hand', null, $request->user()->id, $data['merchant_code'] ?? null, $receiptPath);
                 }
 
                 return $sale;
@@ -282,7 +283,8 @@ class SalesController extends Controller
     public function payment(Request $request, Sale $sale): RedirectResponse
     {
         abort_unless($request->user()->canDo('receipts', 'create'), 403);
-        $data = $request->validate(['paid_on' => ['required', 'date', 'before_or_equal:today'], 'amount' => ['required', 'numeric', 'min:0.01', 'max:'.$sale->balance], 'payment_method' => ['required', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'required_unless:payment_method,prepayment','string','max:120'], 'reference' => ['nullable', 'string', 'max:100']]);
+        $data = $request->validate(['paid_on' => ['required', 'date', 'before_or_equal:today'], 'amount' => ['required', 'numeric', 'min:0.01', 'max:'.$sale->balance], 'payment_method' => ['required', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'required_unless:payment_method,prepayment','string','max:120'], 'reference' => ['nullable', 'string', 'max:100'], 'merchant_code' => ['nullable', 'required_if:payment_method,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120']]);
+        $receiptPath = $request->file('payment_receipt')?->store('sales-payment-receipts', 'public');
         DB::transaction(function () use ($sale, $data, $request) {
             if ($data['payment_method'] === 'prepayment') {
                 $customer=$sale->customer ?: SalesCustomer::whereRaw('lower(name) = ?', [mb_strtolower($sale->customer_name)])->first();
@@ -294,7 +296,7 @@ class SalesController extends Controller
             $sale->decrement('balance', $data['amount']);
             $sale->refresh();
             $sale->update(['status' => (float) $sale->balance <= 0 ? 'paid' : 'partly_paid']);
-            $this->recordMoney($sale, (float) $data['amount'], $data['paid_on'], $data['payment_method'], $data['farm_account'] ?? 'Customer Prepayment Credit', $data['reference'] ?? null, $request->user()->id);
+            $this->recordMoney($sale, (float) $data['amount'], $data['paid_on'], $data['payment_method'], $data['farm_account'] ?? 'Customer Prepayment Credit', $data['reference'] ?? null, $request->user()->id, $data['merchant_code'] ?? null, $receiptPath);
             $due = Receivable::where('invoice_number', $sale->invoice_number)->first();
             if ($due) {
                 $due->increment('amount_paid', $data['amount']);
@@ -326,7 +328,7 @@ class SalesController extends Controller
         return back()->with('status', 'Sales return recorded and tracked stock restored.');
     }
 
-    private function recordMoney(Sale $sale, float $amount, $date, string $method, string $account, ?string $reference, int $userId): void
+    private function recordMoney(Sale $sale, float $amount, $date, string $method, string $account, ?string $reference, int $userId, ?string $merchantCode = null, ?string $receiptPath = null): void
     {
         if ($method === 'in_kind') {
             $account = 'In-kind / Barter Clearing';
@@ -334,13 +336,40 @@ class SalesController extends Controller
         if ($method === 'prepayment') {
             $account = 'Customer Prepayment Credit';
         }
-        $payment = SalesPayment::create(['sale_id' => $sale->id, 'paid_on' => $date, 'amount' => $amount, 'payment_method' => $method, 'farm_account' => $account, 'reference' => $reference, 'recorded_by' => $userId]);
-        $payment->update(['receipt_number' => sprintf('RCT-%06d', $payment->id)]);
+        $payment = SalesPayment::create(['sale_id' => $sale->id, 'paid_on' => $date, 'amount' => $amount, 'payment_method' => $method, 'farm_account' => $account, 'reference' => $reference, 'merchant_code' => $merchantCode, 'receipt_path' => $receiptPath, 'recorded_by' => $userId]);
+        $payment->update(['receipt_number' => sprintf('%s-RCT-%06d', $this->receiptProductPrefix($sale), $payment->id)]);
         if ($method === 'prepayment') {
             FinancialTransaction::create(['transaction_date' => $date, 'type' => 'revenue_recognized', 'transaction_category' => 'revenue', 'account_group' => 'Sales', 'entry_account' => 'Sales Revenue', 'account' => 'Customer Prepayments (Liability)', 'counterparty' => $sale->customer_name, 'amount' => $amount, 'payment_method' => null, 'reference' => $payment->receipt_number, 'description' => 'Sales revenue recognized from customer prepayment for '.$sale->invoice_number, 'recorded_by' => $userId]);
             return;
         }
         FinancialTransaction::create(['transaction_date' => $date, 'type' => 'money_received', 'account' => $account, 'counterparty' => $sale->customer_name, 'amount' => $amount, 'payment_method' => $method === 'credit' ? null : $method, 'reference' => $payment->receipt_number, 'description' => 'Sales receipt '.$sale->invoice_number, 'recorded_by' => $userId]);
+    }
+
+    private function receiptProductPrefix(Sale $sale): string
+    {
+        $categories = $sale->lines()
+            ->with('product:id,category')
+            ->get()
+            ->map(fn ($line) => strtolower((string) ($line->product?->category ?: $line->category ?: 'other')))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($categories->count() !== 1) {
+            return 'MIX';
+        }
+
+        return match ($categories->first()) {
+            'eggs' => 'EGG',
+            'poultry' => 'PLT',
+            'goats' => 'GOAT',
+            'rabbits' => 'RBT',
+            'dogs' => 'DOG',
+            'milk' => 'MLK',
+            'manure' => 'MAN',
+            'garden' => 'GRD',
+            default => 'OTH',
+        };
     }
 
     private function consumeCustomerPrepayment(SalesCustomer $customer, float $amount): void

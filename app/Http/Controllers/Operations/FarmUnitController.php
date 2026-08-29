@@ -177,7 +177,9 @@ class FarmUnitController extends Controller
         $config = self::UNITS[$unit] ?? abort(404);
         abort_unless($request->user()->canAccessFarmUnit($unit), 403);
         abort_unless($request->user()->canDo($unit,'create') || $request->user()->canDo($unit,'edit'), 403);
-        $data=$request->validate(['record_type'=>['required',Rule::in(array_keys($config['types']))],'record_date'=>['required','date'],'subject'=>['required','string','max:180'],'garden_location_id'=>[$unit==='garden'?'required':'nullable','exists:garden_locations,id'],'garden_crop_id'=>['nullable','exists:garden_crops,id'],'quantity'=>['nullable','numeric','min:0'],'measure_unit'=>['nullable','string','max:40'],'amount'=>['nullable','numeric','min:0'],'status'=>['required','string','max:40'],'notes'=>['nullable','string','max:2000']]);
+        $isHarvest=$unit==='garden' && $request->input('record_type')==='harvest';
+        $data=$request->validate(['record_type'=>['required',Rule::in(array_keys($config['types']))],'record_date'=>['required','date'],'subject'=>['required','string','max:180'],'garden_location_id'=>[$unit==='garden'?'required':'nullable','exists:garden_locations,id'],'garden_crop_id'=>['nullable','exists:garden_crops,id'],'quantity'=>[$isHarvest?'required':'nullable','numeric','min:0.01'],'measure_unit'=>[$isHarvest?'required':'nullable','string','max:40'],'amount'=>['nullable','numeric','min:0'],'status'=>['required','string','max:40'],'notes'=>['nullable','string','max:2000']]);
+        if($isHarvest){$data['amount']=null;$data['status']='recorded';}
         $newCrop=false;
         if($unit==='garden'&&empty($data['garden_crop_id'])&&in_array($data['record_type'],['planting','harvest','loss','sale'],true)){
             $name=trim($data['subject']);$existing=DB::table('garden_crops')->whereRaw('lower(name)=?',[mb_strtolower($name)])->first();

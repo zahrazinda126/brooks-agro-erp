@@ -65,6 +65,10 @@
             </span>
         </div>
 
+        @if($plain)
+            @include('partials.worker-language')
+        @endif
+
         @unless($plain)
             <div class="topbar-search" role="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" placeholder="Search batches, animals, tasks…" aria-label="Search"></div>
             @php($unreadNotifications=\App\Models\Communication::where('recipient_id',$user->id)->whereNull('read_at')->latest()->get())
