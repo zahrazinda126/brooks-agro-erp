@@ -10,6 +10,7 @@ class Budget extends Model
         'department_id', 'category', 'item', 'unit', 'quantity', 'unit_price',
         'period_start', 'period_end', 'planned_amount', 'notes', 'status',
         'submitted_at', 'recorded_by', 'production_budget_line_id',
+        'source_budget_id', 'carryover_type',
         'funding_status', 'funded_amount', 'funding_note',
         'funding_decided_by', 'funding_decided_at',
     ];
@@ -23,4 +24,5 @@ class Budget extends Model
     public function fundingDecisions(): \Illuminate\Database\Eloquent\Relations\HasMany { return $this->hasMany(BudgetFundingDecision::class); }
     public function fundingDecisionMaker(): \Illuminate\Database\Eloquent\Relations\BelongsTo { return $this->belongsTo(User::class,'funding_decided_by'); }
     public function department(): \Illuminate\Database\Eloquent\Relations\BelongsTo { return $this->belongsTo(Department::class); }
+    public function sourceBudget(): \Illuminate\Database\Eloquent\Relations\BelongsTo { return $this->belongsTo(self::class, 'source_budget_id'); }
 }

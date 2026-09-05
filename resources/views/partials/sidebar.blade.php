@@ -29,6 +29,7 @@
         ?? (request()->routeIs('consumption.*') ? 'bird-consumption' : null)
         ?? (request()->routeIs('health.*') ? 'health' : null)
         ?? (request()->routeIs('mortality.assess.*') ? 'mortality-assess' : null)
+        ?? (request()->routeIs('inventory.*') ? 'inventory' : null)
         ?? (request()->routeIs('feed-types.*') ? 'feed-types' : null)
         ?? (request()->routeIs('sales.*') ? 'sales' : null)
         ?? (request()->routeIs('owner.customers') ? 'customers' : null)
@@ -259,7 +260,11 @@
     $financeSections = [
         '💵 Daily Operations' => [
             ['key' => 'transactions', 'label' => 'Data Entry & Register'],
-            ['key' => 'customers', 'label' => 'Customer Accounts'],
+        ],
+        'Customers' => [
+            ['key' => 'customers', 'label' => 'Customer Accounts', 'view' => 'accounts'],
+            ['key' => 'customers', 'label' => 'Add Customer', 'view' => 'add'],
+            ['key' => 'customers', 'label' => 'Customer Analysis', 'view' => 'analysis'],
         ],
         '📒 Accounting' => [
             ['key' => 'payroll', 'label' => 'Payroll'],
@@ -283,9 +288,11 @@
     $salesSections = [
         '🧾 Daily Sales' => [
             ['key'=>'sales','label'=>'Record Daily Sale','screen'=>'sale'],
-            ['key'=>'customers','label'=>'Customer Accounts'],
         ],
-        '👥 Customers' => [
+        'Customers' => [
+            ['key'=>'customers','label'=>'Customer Accounts','view'=>'accounts'],
+            ['key'=>'customers','label'=>'Add Customer','view'=>'add'],
+            ['key'=>'customers','label'=>'Customer Analysis','view'=>'analysis'],
         ],
         '📈 Reports' => [
             ['key'=>'sales','label'=>'Sales Report','screen'=>'reports'],
@@ -294,6 +301,24 @@
             ['key'=>'messages','label'=>'Messages & Updates'],
         ],
     ];
+
+    /* Keep the rail deliberately small. Related screens remain available in
+       the contextual navigation instead of becoming separate rail entries. */
+    $productionSections['Farm Units'] = array_merge($productionSections['Farm Units'], $productionSections['Plan & Resources']);
+    unset($productionSections['Plan & Resources']);
+
+    $hrSections = [
+        'People & Payroll' => array_merge($hrSections['👥 Employees'], $hrSections['💰 Payroll']),
+        'Welfare & Development' => array_merge($hrSections['❤️ Welfare'], $hrSections['📚 Development']),
+        'Administration & Fleet' => $hrSections['🚚 Administration & Fleet'],
+        'Reports' => $hrSections['📈 Reports'],
+        'Communication' => $hrSections['Communication'],
+    ];
+
+    $ceoSections['Oversight & Administration'] = array_merge($ceoSections['🏢 Oversight'], $ceoSections['⚙️ Administration']);
+    unset($ceoSections['🏢 Oversight'], $ceoSections['⚙️ Administration']);
+    $directorSections['Governance & Administration'] = array_merge($directorSections['🏛️ Governance'], $directorSections['⚙️ Administration']);
+    unset($directorSections['🏛️ Governance'], $directorSections['⚙️ Administration']);
 @endphp
 
 <nav class="drawer" id="drawer" data-open="false" aria-label="Main menu">
@@ -306,13 +331,19 @@
     </div>
 
     @if($isAppointedSupervisor || $isSalesManager || $isProductionManager)
-        <a class="nav-link" href="{{ route('supervision.index') }}" @if(request()->routeIs('supervision.*')) aria-current="page" @endif><span>Daily Supervisor</span></a>
+        <a class="nav-link nav-link--supplementary" href="{{ route('supervision.index') }}" @if(request()->routeIs('supervision.*')) aria-current="page" @endif><span>Daily Supervisor</span></a>
     @endif
 
-    <a class="nav-link" href="{{ route('vaccination-schedule.index') }}" @if(request()->routeIs('vaccination-schedule.*')) aria-current="page" @endif><span>Vaccination Schedule</span></a>
+    <a class="nav-link nav-link--supplementary" href="{{ route('vaccination-schedule.index') }}" @if(request()->routeIs('vaccination-schedule.*')) aria-current="page" @endif><span>Vaccination Schedule</span></a>
 
     @if($isCeo || $isDirector || $isPersonalAssistant || $isDailyReportManager)
-        <a class="nav-link" href="{{ route('daily-reports.index') }}" @if(request()->routeIs('daily-reports.*')) aria-current="page" @endif><span>Daily Management Report</span></a>
+        <a class="nav-link nav-link--supplementary" href="{{ route('daily-reports.index') }}" @if(request()->routeIs('daily-reports.*')) aria-current="page" @endif><span>Daily Management Report</span></a>
+    @endif
+
+    @if($user->canAccess('inventory'))
+        <a class="nav-link" href="{{ route('inventory.index') }}" @if(request()->routeIs('inventory.*')) aria-current="page" @endif>
+            <svg class="nav-icon" aria-hidden="true"><use href="#i-box"></use></svg><span>Inventory</span>
+        </a>
     @endif
 
     @if ($isCeo || $isDirector)
@@ -449,7 +480,7 @@
                         @if ($user->canAccess($item['key']) || in_array($item['key'], ['department-budget','customers'], true) || ($isFinanceUser && $item['key'] === 'sales'))
                             @php
                                 $href = $isSalesManager
-                                    ? ($item['key']==='customers' ? route('owner.customers') : ($item['key']==='department-budget' ? route('department-budget.index') : route('sales.index', ['screen' => $item['screen'] ?? 'sale'])))
+                                    ? ($item['key']==='customers' ? route('owner.customers', ['view'=>$item['view'] ?? 'accounts']).(($item['view'] ?? null)==='analysis' ? '#customer-analysis' : '') : ($item['key']==='department-budget' ? route('department-budget.index') : route('sales.index', ['screen' => $item['screen'] ?? 'sale'])))
                                     : ($isHrManager
                                     ? match ($item['key']) {
                                         'hr' => route('employees.index'),
@@ -464,7 +495,7 @@
                                     }
                                     : match ($item['key']) {
                                         'transactions' => route('finance.transactions.index'),
-                                        'customers' => route('owner.customers'),
+                                        'customers' => route('owner.customers', ['view'=>$item['view'] ?? 'accounts']).(($item['view'] ?? null)==='analysis' ? '#customer-analysis' : ''),
                                         'general-ledger' => route('finance.general-ledger.index'),
                                         'receivables' => route('finance.receivables.index'),
                                         'payables' => route('finance.payables.index'),
@@ -489,7 +520,7 @@
                             @endphp
                             <a class="nav-link"
                                href="{{ $href }}"
-                               @if ($currentKey === $item['key']) aria-current="page" @endif>
+                               @if ($currentKey === $item['key'] && ($item['key'] !== 'customers' || request('view', 'accounts') === ($item['view'] ?? 'accounts'))) aria-current="page" @endif>
                                 <span>{{ $item['label'] }}</span>
                             </a>
                         @endif

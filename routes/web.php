@@ -94,11 +94,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/daily-management-report', [DailyManagementReportController::class, 'index'])->name('daily-reports.index');
         Route::post('/daily-management-report', [DailyManagementReportController::class, 'save'])->name('daily-reports.save');
         Route::post('/daily-management-report/{section}/review', [DailyManagementReportController::class, 'review'])->name('daily-reports.review');
+        Route::post('/daily-management-report/close-day', [DailyManagementReportController::class, 'closeDay'])->name('daily-reports.close-day');
         Route::post('/daily-management-report/comments', [DailyManagementReportController::class, 'comment'])->name('daily-reports.comments');
         Route::get('/account', [AccountController::class, 'edit'])->name('account.edit');
         Route::put('/account', [AccountController::class, 'update'])->name('account.update');
         Route::get('/owner/customers', [OwnerDirectoryController::class, 'customers'])->name('owner.customers');
         Route::get('/customer-accounts/{customer}', [OwnerDirectoryController::class, 'showCustomer'])->name('customer-accounts.show');
+        Route::put('/customer-accounts/{customer}', [OwnerDirectoryController::class, 'updateCustomer'])->name('customer-accounts.update');
+        Route::delete('/customer-accounts/{customer}', [OwnerDirectoryController::class, 'destroyCustomer'])->name('customer-accounts.destroy');
         Route::get('/vaccination-schedule', [VaccinationScheduleController::class, 'index'])->name('vaccination-schedule.index');
         Route::post('/vaccination-schedule', [VaccinationScheduleController::class, 'store'])->name('vaccination-schedule.store');
         Route::post('/vaccination-records', [VaccinationScheduleController::class, 'storeRecord'])->name('vaccination-records.store');
@@ -112,6 +115,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/inventory', [InventoryController::class, 'index'])->middleware('module:inventory')->name('inventory.index');
         Route::post('/inventory/items', [InventoryController::class, 'storeItem'])->middleware('module:inventory,create')->name('inventory.items.store');
         Route::post('/inventory/movements', [InventoryController::class, 'storeMovement'])->middleware('module:inventory,create')->name('inventory.movements.store');
+        Route::put('/inventory/stores/{store}/roles/{role}', [InventoryController::class, 'updateStoreAccess'])->name('inventory.store-access.update');
         Route::get('/visitors', [VisitorController::class, 'index'])->name('visitors.index');
         Route::get('/supervision', [SupervisorController::class, 'index'])->name('supervision.index');
         Route::post('/supervision/assignments', [SupervisorController::class, 'assign'])->name('supervision.assignments.store');
@@ -146,6 +150,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/operations/reports', [FarmUnitController::class, 'report'])->name('operations.reports');
         Route::get('/operations/feed-stock', [FeedStockController::class, 'index'])->name('operations.feed-stock.index');
         Route::post('/operations/feed-stock', [FeedStockController::class, 'store'])->name('operations.feed-stock.store');
+        Route::post('/operations/feed-stock/{delivery}/receive', [FeedStockController::class, 'receive'])->name('operations.feed-stock.receive');
         Route::get('/hr/staff-welfare-budget', [WelfareBudgetController::class, 'index'])->name('hr.welfare-budget.index');
         Route::post('/hr/staff-welfare-budget/template', [WelfareBudgetController::class, 'loadTemplate'])->name('hr.welfare-budget.template');
         Route::post('/hr/staff-welfare-budget', [WelfareBudgetController::class, 'store'])->name('hr.welfare-budget.store');
@@ -408,6 +413,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/collections', [CollectionController::class, 'index'])
                 ->middleware('module:egg-inventory')->name('collections.index');
             Route::get('/report', [PoultryReportController::class, 'index'])->name('poultry.report.index');
+            Route::get('/report/egg-house-details', [PoultryReportController::class, 'eggHouseDetails'])->name('poultry.report.egg-house-details');
             Route::get('/report/export', [PoultryReportController::class, 'export'])->name('poultry.report.export');
             Route::get('/performance', [PoultryPerformanceController::class, 'index'])
                 ->middleware('module:staff-performance')->name('poultry.performance.index');

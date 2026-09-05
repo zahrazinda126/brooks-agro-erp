@@ -319,6 +319,14 @@ class AnimalGroup extends Model
             return $query;
         }
 
+        $roleCodes = $user->roles->pluck('code')->push($user->role?->code)->filter();
+        $departmentCodes = $user->departments->pluck('code')->push($user->department?->code)->filter();
+        if ($roleCodes->contains('production-manager')
+            || ($roleCodes->contains('department-manager')
+                && $departmentCodes->intersect(['production', 'div-production'])->isNotEmpty())) {
+            return $query;
+        }
+
         return $query->whereIn('department_id', $user->operationalDepartmentIds());
     }
 

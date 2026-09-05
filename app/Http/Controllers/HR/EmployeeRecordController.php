@@ -5,6 +5,7 @@ namespace App\Http\Controllers\HR;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\EmployeeRecord;
+use App\Models\Communication;
 use App\Models\Attachment;
 use App\Models\AuditLog;
 use Illuminate\Http\RedirectResponse;
@@ -119,6 +120,21 @@ class EmployeeRecordController extends Controller
             'approved_by' => $request->user()->id,
             'approved_at' => now(),
         ]);
+
+        $employee = $record->employee()->with('user')->first();
+        if ($employee?->user) {
+            Communication::create([
+                'kind' => 'notification',
+                'subject' => 'A payroll penalty was approved',
+                'body' => 'A penalty of UGX '.number_format((float) $record->amount)
+                    .' was approved for '.$record->recorded_on->format('d M Y').'. '
+                    .($record->details ?: 'Open your salary details for more information.'),
+                'audience' => 'individual',
+                'recipient_id' => $employee->user->id,
+                'created_by' => $request->user()->id,
+                'action_url' => route('payroll.my-balance', absolute: false),
+            ]);
+        }
 
         return redirect()->route('hr.records.index', $module)
             ->with('status', 'Penalty approved and queued for the next payroll calculation.');

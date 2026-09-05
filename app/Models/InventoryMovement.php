@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class InventoryMovement extends Model
 {
-    protected $fillable = ['inventory_item_id', 'financial_transaction_id', 'movement_date', 'movement_type', 'location', 'quantity', 'unit_cost', 'total_cost', 'supplier_or_recipient', 'reference', 'notes', 'recorded_by'];
+    protected $fillable = ['inventory_item_id', 'inventory_store_id', 'poultry_house_id', 'financial_transaction_id', 'movement_date', 'movement_type', 'location', 'quantity', 'unit_cost', 'total_cost', 'supplier_or_recipient', 'reference', 'notes', 'recorded_by'];
 
     protected function casts(): array
     {
@@ -22,5 +22,10 @@ class InventoryMovement extends Model
     public function recorder(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by');
+    }
+
+    public function poultryHouse(): BelongsTo
+    {
+        return $this->belongsTo(PoultryHouse::class);
     }
 }

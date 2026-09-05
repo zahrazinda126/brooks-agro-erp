@@ -1,6 +1,9 @@
 @extends('layouts.app')
 @section('title','Manage Unit Budgets')
 @section('content')
+@unless($locked)
+<div class="form-actions"><button type="button" class="btn btn--inline" onclick="document.querySelector('.exec-panel form')?.scrollIntoView({behavior:'smooth',block:'start'});">+ Add item</button></div>
+@endunless
 <div class="card">
     <div class="page-head"><div><p class="card-label">Saved production budgets</p><h3>Drafts and budget history</h3></div>
         <form method="GET" action="{{ route('production.finance-draft.index') }}" class="form-actions">

@@ -2,31 +2,83 @@
 @section('title','Daily Department Reports')
 @section('content')
 <x-report-header eyebrow="Daily reporting protocol" title="Daily Department Reports" description="Unit reports are reviewed by the CEO, then combined automatically into one report for each department." :period="\Carbon\Carbon::parse($date)->format('l, d F Y')"><x-slot:actions><form method="GET"><input type="date" name="date" value="{{ $date }}" onchange="this.form.submit()"></form><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button></x-slot:actions></x-report-header>
+@if($isCeo)
+@php
+    $ceoVisibleCount = $rows->sum(function ($departmentRows, $departmentCode) use ($closures) {
+        if ($departmentCode === 'finance' && ! $closures->has('finance')) return 0;
+        return $departmentRows->whereIn('status', ['manager_shared', 'changes_requested', 'ceo_reviewed'])->count();
+    });
+@endphp
+@if($ceoVisibleCount===0)<section class="exec-panel"><div class="finance-empty"><span aria-hidden="true">✓</span><strong>No unit reports submitted for this date</strong><p>There is nothing for the CEO to review yet. Drafts and units that have not started remain private to their report owners.</p></div></section>@endif
+@endif
 @foreach($departments as $departmentCode=>$department)
 @php
  $departmentRows=$rows->get($departmentCode,collect()); $reviewed=$departmentRows->where('status','ceo_reviewed')->count();
- $total=count($department['units']); $ready=$reviewed===$total; $maySee=$canViewAll || isset($editable[$departmentCode]);
+ $total=$departmentRows->count(); $closed=$closures->has($departmentCode); $ready=$closed && $total>0 && $reviewed===$total;
+ $ceoRows=($departmentCode==='finance' && !$closed)
+    ? collect()
+    : $departmentRows->whereIn('status',['manager_shared','changes_requested','ceo_reviewed']);
+ $maySee=$isCeo ? $ceoRows->isNotEmpty() : ($canViewAll || isset($editable[$departmentCode]));
 @endphp
 @if($maySee)
 <section class="card report-department">
- <div class="section-heading"><div><p class="card-label">{{ $department['label'] }}</p><h2>{{ $ready ? 'Department report ready' : 'Unit reports in progress' }}</h2><p>{{ $reviewed }} of {{ $total }} units reviewed by the CEO.</p></div><span class="status-pill">{{ $reviewed }}/{{ $total }}</span></div>
- <div class="approval-timeline">@foreach($department['units'] as $unitCode=>$unitLabel)@php($row=$departmentRows->get($unitCode))<div class="approval-step"><strong>{{ $unitLabel }}</strong><span>{{ $row ? Str::headline($row->status) : 'Not started' }}</span><small>{{ $row?->preparer?->displayName() ?? 'Waiting for unit owner' }}</small></div>@endforeach</div>
+ <div class="section-heading"><div><p class="card-label">{{ $department['label'] }}</p><h2>{{ $ready ? 'Department report ready' : ($isCeo ? 'Submitted unit reports' : 'Today’s generated unit reports') }}</h2><p>{{ $total }} unit template(s) generated · {{ $reviewed }} reviewed by the CEO. A template remains available even when no activity was recorded.</p></div><span class="status-pill">{{ $closed?'Day closed':'Open' }}</span></div>
+ @if($isCeo)
+ <div class="approval-timeline">
+  @foreach($department['units'] as $unitCode=>$unitLabel)
+   @php($timelineRow=$ceoRows->get($unitCode))
+   @if($timelineRow)
+    <div class="approval-step">
+     <strong>{{ $unitLabel }}</strong>
+     <span>{{ Str::headline($timelineRow->status) }}</span>
+     <small>{{ $timelineRow->preparer?->displayName() }}</small>
+    </div>
+   @endif
+  @endforeach
+ </div>
+ @else
+ <div class="approval-timeline">
+  @foreach($departmentRows as $unitCode=>$timelineRow)
+   @php($unitLabel=$department['units'][$unitCode]??Str::headline($unitCode))
+   <div class="approval-step">
+    <strong>{{ $unitLabel }}</strong>
+    <span>{{ Str::headline($timelineRow->status) }}</span>
+    <small>{{ $timelineRow->preparer?->displayName() }}</small>
+   </div>
+  @endforeach
+ </div>
+ @endif
+
+ @if(in_array($departmentCode,$closable??[],true) && !$closed)
+ <form method="POST" action="{{ route('daily-reports.close-day') }}" class="notice">@csrf<input type="hidden" name="report_date" value="{{ $date }}"><input type="hidden" name="department_code" value="{{ $departmentCode }}"><strong>Confirm the complete {{ $department['label'] }} report</strong><p>{{ $departmentCode==='finance' ? 'Once Sales & Collections has arrived, one confirmation combines all Finance sections, closes the report, and sends it to the CEO.' : 'Review the generated sections and save comments only where needed. One confirmation closes and sends the whole departmental report to the CEO.' }}</p><button class="btn">Confirm whole report & close</button></form>
+ @endif
 
  @foreach($department['units'] as $unitCode=>$unitLabel)
  @php($row=$departmentRows->get($unitCode))
  @if(in_array($unitCode,$editable[$departmentCode]??[],true))
- <details class="report-unit" @if($row?->status==='changes_requested') open @endif><summary><strong>{{ $unitLabel }}</strong><span>{{ $row ? Str::headline($row->status) : 'New report' }}</span></summary>
+ <details class="report-unit" @if($row?->status==='changes_requested' || data_get($row?->details,'system_source')) open @endif><summary><strong>{{ $unitLabel }}</strong><span>{{ $row ? Str::headline($row->status) : 'Generated report' }}</span></summary>
   @if($row?->status==='ceo_reviewed')<div class="notice notice--ok">Reviewed by the CEO and included in the departmental report.<br><strong>CEO comment:</strong> {{ $row->review_note }}</div>
   @else
+  @if(data_get($row?->details,'system_source'))
+  <div class="notice notice--ok"><strong>Daily report generated automatically</strong><p>The sheet below is filled from records entered elsewhere in the system. Do not enter the work again; review it and add a comment only if necessary.</p></div>
+  <div class="daily-sheet" role="region" aria-label="{{ $unitLabel }} daily report sheet">
+   <h3>BROOKS AGRO FARM LIMITED</h3><h4>{{ Str::upper($unitLabel) }} DAILY REPORT — {{ \Carbon\Carbon::parse($date)->format('d F Y') }}</h4>
+   <table><thead><tr><th>Unit</th><th>System-generated summary</th><th>Activities and results recorded</th></tr></thead><tbody><tr><td><strong>{{ $unitLabel }}</strong></td><td>{{ $row->summary }}</td><td style="white-space:pre-line">{{ $row->activities }}</td></tr></tbody></table>
+  </div>
+  @if($row?->status==='changes_requested')<div class="notice"><strong>CEO requested a correction:</strong> {{ $row->review_note }}</div>@endif
+  <form method="POST" action="{{ route('daily-reports.save') }}">@csrf<input type="hidden" name="report_date" value="{{ $date }}"><input type="hidden" name="department_code" value="{{ $departmentCode }}"><input type="hidden" name="unit_code" value="{{ $unitCode }}"><input type="hidden" name="summary" value="{{ $row->summary }}"><textarea name="activities" hidden>{{ $row->activities }}</textarea><div class="form-grid"><div class="field"><label>Owner comment / challenge (optional)</label><textarea name="challenges" placeholder="Add context only when the generated report needs explanation">{{ old('challenges',$row->challenges) }}</textarea></div><div class="field"><label>Recommendation / follow-up (optional)</label><textarea name="recommendations" placeholder="Add any action the CEO should know about">{{ old('recommendations',$row->recommendations) }}</textarea></div></div>@if($departmentCode==='finance' && $unitCode==='sales_collections')<button class="btn" name="action" value="share">Submit Sales report to Finance</button>@else<button class="btn btn--quiet" name="action" value="draft">Save comment</button>@endif</form>
+  @else
   <form method="POST" action="{{ route('daily-reports.save') }}">@csrf
+   @if(data_get($row?->details,'system_source')==='sales')<div class="notice notice--ok"><strong>Filled automatically from recorded sales</strong><p>The transactions below already exist in the Sales Register. Review them, add any comment if needed, then share with the CEO—do not enter the sales again.</p></div>@endif
    <input type="hidden" name="report_date" value="{{ $date }}"><input type="hidden" name="department_code" value="{{ $departmentCode }}"><input type="hidden" name="unit_code" value="{{ $unitCode }}">
    @if($row?->status==='changes_requested')<div class="notice"><strong>CEO requested a correction:</strong> {{ $row->review_note }}</div>@endif
    <div class="form-grid"><div class="field field--wide"><label>{{ $unitLabel }} summary</label><textarea name="summary" required>{{ old('summary',$row?->summary) }}</textarea></div><div class="field"><label>Activities / results</label><textarea name="activities">{{ old('activities',$row?->activities) }}</textarea></div><div class="field"><label>Challenges</label><textarea name="challenges">{{ old('challenges',$row?->challenges) }}</textarea></div><div class="field field--wide"><label>Recommendations / action required</label><textarea name="recommendations">{{ old('recommendations',$row?->recommendations) }}</textarea></div></div>
    @include('daily-reports.partials.structured-fields',['details'=>$row?->details ?? []])
    <div class="form-actions"><button class="btn btn--quiet" name="action" value="draft">Save draft</button><button class="btn" name="action" value="share">Share with CEO</button></div>
   </form>@endif
+  @endif
  </details>
- @elseif(($isCeo && $row && in_array($row->status,['manager_shared','changes_requested','ceo_reviewed'])) || (($isDirector || $canViewAll) && $row?->status==='ceo_reviewed'))
+ @elseif(($isFinanceManager && $departmentCode==='finance' && $unitCode==='sales_collections' && $row?->status==='manager_shared') || ($isCeo && $row && in_array($row->status,['manager_shared','changes_requested','ceo_reviewed'])) || (($isDirector || $canViewAll) && $row?->status==='ceo_reviewed'))
  <article class="report-unit card"><div class="section-heading"><div><p class="card-label">{{ $unitLabel }}</p><h3>{{ Str::headline($row->status) }}</h3></div><small>{{ $row->preparer?->displayName() }} · {{ $row->shared_at?->format('d M Y, H:i') }}</small></div>
   <p style="white-space:pre-line">{{ $row->summary }}</p>
   @if($row->activities)<h4>Activities / results</h4><p style="white-space:pre-line">{{ $row->activities }}</p>@endif
@@ -44,4 +96,7 @@
 </section>
 @endif
 @endforeach
+<style>
+.daily-sheet{margin:14px 0 18px;padding:14px;background:#fff;border:1px solid #b8b1a8;overflow-x:auto;color:#17120f}.daily-sheet h3,.daily-sheet h4{text-align:center;margin:2px 0 8px}.daily-sheet h3{font-size:16px}.daily-sheet h4{font-size:14px}.daily-sheet table{width:100%;min-width:760px;border-collapse:collapse}.daily-sheet th,.daily-sheet td{border:1px solid #322b26;padding:10px;text-align:left;vertical-align:top}.daily-sheet th{background:#d9ead0;font-weight:800}.daily-sheet td:first-child{width:18%}.daily-sheet td:nth-child(2){width:30%}
+</style>
 @endsection

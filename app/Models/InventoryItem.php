@@ -7,7 +7,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class InventoryItem extends Model
 {
-    protected $fillable=['code','name','category','unit','reorder_level','default_location','notes','is_active','created_by'];
+    protected $fillable=['inventory_store_id','code','name','category','unit','reorder_level','default_location','notes','is_active','created_by'];
     protected function casts():array{return ['reorder_level'=>'decimal:2','is_active'=>'boolean'];}
     public function movements():HasMany{return $this->hasMany(InventoryMovement::class);}
+    public function store(){return $this->belongsTo(InventoryStore::class,'inventory_store_id');}
 }

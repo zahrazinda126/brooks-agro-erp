@@ -24,10 +24,12 @@ class DailyManagementReportController extends Controller
     {
         $date = $request->date('date')?->toDateString() ?? now()->toDateString();
         $roles = $this->roles($request->user());
+        $this->seedDailyUnitReports($date);
         $rows = DailyManagementReportSection::with('preparer')->whereDate('report_date', $date)->get()->groupBy('department_code')->map->keyBy('section_code');
         $canViewAll = $roles->intersect(['ceo', 'director', 'personal-assistant'])->isNotEmpty();
         $editable = $this->editableUnits($roles);
         $comments = DailyManagementReportComment::with(['author', 'unitReport'])->whereDate('report_date', $date)->oldest()->get();
+        $closures = DB::table('daily_department_report_closures')->whereDate('report_date',$date)->get()->keyBy('department_code');
         if (! $canViewAll) {
             $comments = $comments->filter(function (DailyManagementReportComment $comment) use ($editable, $request) {
                 if ($comment->unit_report_id) return $comment->unitReport?->prepared_by === $request->user()->id;
@@ -49,7 +51,7 @@ class DailyManagementReportController extends Controller
             ]);
         }
 
-        return view('daily-reports.index', ['date' => $date, 'departments' => self::DEPARTMENTS, 'rows' => $rows, 'comments' => $comments->groupBy('department_code'), 'editable' => $editable, 'isCeo' => $roles->contains('ceo'), 'isDirector' => false, 'canViewAll' => $canViewAll]);
+        return view('daily-reports.index', ['date' => $date, 'departments' => self::DEPARTMENTS, 'rows' => $rows, 'comments' => $comments->groupBy('department_code'), 'editable' => $editable, 'closures'=>$closures, 'closable'=>$this->closableDepartments($roles), 'isCeo' => $roles->contains('ceo'), 'isFinanceManager'=>$roles->contains('finance-manager'), 'isDirector' => false, 'canViewAll' => $canViewAll]);
     }
 
     public function save(Request $request, CommunicationService $communications): RedirectResponse
@@ -57,14 +59,23 @@ class DailyManagementReportController extends Controller
         $data = $request->validate(['report_date' => ['required', 'date'], 'department_code' => ['required', 'string'], 'unit_code' => ['required', 'string'], 'summary' => ['required', 'string', 'max:10000'], 'activities' => ['nullable', 'string', 'max:15000'], 'challenges' => ['nullable', 'string', 'max:10000'], 'recommendations' => ['nullable', 'string', 'max:10000'], 'details' => ['nullable', 'array'], 'details.*' => ['nullable', 'array'], 'details.*.*' => ['nullable', 'array'], 'details.*.*.*' => ['nullable', 'string', 'max:2000'], 'action' => ['required', 'in:draft,share']]);
         abort_unless($this->mayEdit($request->user(), $data['department_code'], $data['unit_code']), 403);
         $row = DailyManagementReportSection::firstOrNew(['report_date' => $data['report_date'], 'department_code' => $data['department_code'], 'section_code' => $data['unit_code']]);
+        abort_if(!$row->exists && DB::table('daily_department_report_closures')->whereDate('report_date',$data['report_date'])->where('department_code',$data['department_code'])->exists(),422,'The department manager already closed reporting for this date. Ask them to reopen it before adding another activity.');
         abort_if($row->exists && $row->status === 'ceo_reviewed', 422, 'A CEO-reviewed unit report is locked.');
         $details = collect($data['details'] ?? [])->map(fn ($rows) => collect($rows)->filter(fn ($item) => collect($item)->filter(fn ($value) => filled($value))->isNotEmpty())->values()->all())->all();
+        if(data_get($row->details,'system_source') && empty($details)) $details=$row->details;
         $row->fill(['summary' => $data['summary'], 'activities' => $data['activities'] ?? null, 'challenges' => $data['challenges'] ?? null, 'recommendations' => $data['recommendations'] ?? null, 'details' => $details, 'prepared_by' => $request->user()->id, 'status' => $data['action'] === 'share' ? 'manager_shared' : 'draft', 'shared_at' => $data['action'] === 'share' ? now() : null, 'reviewed_by' => null, 'reviewed_at' => null, 'review_note' => null])->save();
         if ($data['action'] === 'share') {
             $label = self::DEPARTMENTS[$data['department_code']]['units'][$data['unit_code']];
-            $communications->toRole('ceo', "$label daily report needs review", 'Review the unit report and add your comment.', $request->user()->id, route('daily-reports.index', ['date' => $data['report_date']], false));
+            if ($data['department_code'] === 'finance' && $data['unit_code'] === 'sales_collections') {
+                $communications->toRole('finance-manager', 'Sales & Collections report is ready', 'Combine the confirmed sales figures with the other Finance unit reports, then close and send the Finance Department report to the CEO.', $request->user()->id, route('daily-reports.index', ['date' => $data['report_date']], false));
+            } elseif ($data['department_code'] !== 'finance') {
+                $communications->toRole('ceo', "$label daily report needs review", 'Review the unit report and add your comment.', $request->user()->id, route('daily-reports.index', ['date' => $data['report_date']], false));
+            }
         }
-        return back()->with('status', $data['action'] === 'share' ? 'Unit report shared with the CEO.' : 'Draft saved.');
+        $sharedMessage = $data['department_code'] === 'finance' && $data['unit_code'] === 'sales_collections'
+            ? 'Sales report submitted to Finance for combination.'
+            : ($data['department_code'] === 'finance' ? 'Finance section confirmed. Complete all three sections, then send the combined department report to the CEO.' : 'Unit report shared with the CEO.');
+        return back()->with('status', $data['action'] === 'share' ? $sharedMessage : 'Draft saved.');
     }
 
     public function review(Request $request, DailyManagementReportSection $section, CommunicationService $communications): RedirectResponse
@@ -79,6 +90,29 @@ class DailyManagementReportController extends Controller
             $communications->toRole('director', "$label daily report is ready", 'All unit reports have been reviewed by the CEO. The departmental report is ready.', $request->user()->id, route('daily-reports.index', ['date' => $section->report_date->toDateString()], false));
         }
         return back()->with('status', $data['decision'] === 'review' ? 'Unit reviewed and included in the departmental report.' : 'Report returned with your comment.');
+    }
+
+    public function closeDay(Request $request, CommunicationService $communications): RedirectResponse
+    {
+        $data=$request->validate(['report_date'=>['required','date'],'department_code'=>['required','string']]);
+        abort_unless(in_array($data['department_code'],$this->closableDepartments($this->roles($request->user())),true),403);
+        $reports=DailyManagementReportSection::whereDate('report_date',$data['report_date'])->where('department_code',$data['department_code'])->get();
+        abort_if($reports->isEmpty(),422,'Record and share at least one activity before closing the department report.');
+        if ($data['department_code'] === 'finance') {
+            $sales = $reports->firstWhere('section_code', 'sales_collections');
+            abort_if($sales?->status === 'draft', 422, 'The Sales Manager has not submitted the Sales & Collections report to Finance yet.');
+        }
+        abort_if($reports->contains(fn($row)=>$row->status==='changes_requested'),422,'A report returned by the CEO still needs attention before the department can close the day.');
+        DailyManagementReportSection::whereDate('report_date',$data['report_date'])
+            ->where('department_code',$data['department_code'])
+            ->where('status','draft')
+            ->when($data['department_code']==='finance',fn($query)=>$query->where('section_code','!=','sales_collections'))
+            ->update(['status'=>'manager_shared','prepared_by'=>$request->user()->id,'shared_at'=>now(),'updated_at'=>now()]);
+        DB::table('daily_department_report_closures')->updateOrInsert(['report_date'=>$data['report_date'],'department_code'=>$data['department_code']],['closed_by'=>$request->user()->id,'closed_at'=>now(),'created_at'=>now(),'updated_at'=>now()]);
+        $label=self::DEPARTMENTS[$data['department_code']]['label'];
+        $communications->toRole('ceo',"$label daily activity report is complete",'The department has confirmed that all activities recorded for this date have been shared.',$request->user()->id,route('daily-reports.index',['date'=>$data['report_date']],false));
+        if($this->departmentReady($data['report_date'],$data['department_code'])) $communications->toRole('director',"$label daily report is ready",'All activities submitted for the day have already been reviewed by the CEO.',$request->user()->id,route('daily-reports.index',['date'=>$data['report_date']],false));
+        return back()->with('status','Today’s activity reporting is closed and ready for CEO review.');
     }
 
     public function comment(Request $request, CommunicationService $communications): RedirectResponse
@@ -104,9 +138,9 @@ class DailyManagementReportController extends Controller
 
     private function departmentReady(string $date, string $department): bool
     {
-        $required = array_keys(self::DEPARTMENTS[$department]['units']);
-        $reviewed = DailyManagementReportSection::whereDate('report_date', $date)->where('department_code', $department)->where('status', 'ceo_reviewed')->pluck('section_code')->all();
-        return empty(array_diff($required, $reviewed));
+        if(!DB::table('daily_department_report_closures')->whereDate('report_date',$date)->where('department_code',$department)->exists()) return false;
+        $reports=DailyManagementReportSection::whereDate('report_date',$date)->where('department_code',$department)->get();
+        return $reports->isNotEmpty() && $reports->every(fn($report)=>$report->status==='ceo_reviewed');
     }
 
     private function directorSnapshots(string $date, Collection $readyDepartments): array
@@ -250,6 +284,82 @@ class DailyManagementReportController extends Controller
         if ($roles->contains('finance-manager')) $result['finance'] = ['cash_banking', 'expenses_payables'];
         if ($roles->contains('sales-manager')) $result['finance'][] = 'sales_collections';
         return $result;
+    }
+
+    private function closableDepartments(Collection $roles):array
+    {
+        return collect(['production-manager'=>'production','hr-manager'=>'hr','finance-manager'=>'finance'])->filter(fn($department,$role)=>$roles->contains($role))->values()->all();
+    }
+
+    /** Generate every unit's daily sheet before its owner opens the reporting page. */
+    private function seedDailyUnitReports(string $date): void
+    {
+        $owners = [
+            'production' => $this->userForRole('production-manager'),
+            'hr' => $this->userForRole('hr-manager'),
+            'finance' => $this->userForRole('finance-manager'),
+            'sales' => $this->userForRole('sales-manager'),
+        ];
+
+        foreach (self::DEPARTMENTS as $departmentCode => $department) {
+            if (DB::table('daily_department_report_closures')->whereDate('report_date', $date)->where('department_code', $departmentCode)->exists()) continue;
+            foreach ($department['units'] as $unitCode => $unitLabel) {
+                [$summary, $activities] = $this->automaticUnitContent($date, $departmentCode, $unitCode, $unitLabel);
+                $row = DailyManagementReportSection::whereDate('report_date', $date)->where('department_code', $departmentCode)->where('section_code', $unitCode)->first();
+                if ($row && data_get($row->details, 'system_source') !== 'auto_daily') continue;
+                $owner = $unitCode === 'sales_collections' ? ($owners['sales'] ?: $owners['finance']) : $owners[$departmentCode];
+                $values = ['summary'=>$summary, 'activities'=>$activities, 'details'=>['system_source'=>'auto_daily', 'generated_for'=>$date], 'prepared_by'=>$owner?->id];
+                if ($row) {
+                    if (in_array($row->status, ['draft', 'changes_requested'], true)) $row->update($values);
+                } else {
+                    DailyManagementReportSection::create($values + ['report_date'=>$date, 'department_code'=>$departmentCode, 'section_code'=>$unitCode, 'status'=>'draft']);
+                }
+            }
+        }
+    }
+
+    private function userForRole(string $roleCode): ?User
+    {
+        return User::query()->where('is_active', true)->where(function ($query) use ($roleCode) {
+            $query->whereHas('role', fn ($role) => $role->where('code', $roleCode))
+                ->orWhereHas('roles', fn ($role) => $role->where('code', $roleCode));
+        })->orderBy('id')->first();
+    }
+
+    private function automaticUnitContent(string $date, string $department, string $unit, string $label): array
+    {
+        $rows = collect(); $activities = '';
+        if ($department === 'production' && in_array($unit, ['goats','rabbits','dogs','garden'], true)) {
+            $rows = DB::table('farm_unit_records')->whereDate('record_date', $date)->where('unit_code', $unit)->orderBy('created_at')->get();
+            $activities = $rows->map(fn ($row) => $row->subject.($row->quantity !== null ? ' - '.number_format((float)$row->quantity, 2).' '.($row->measure_unit ?: 'units') : '').($row->notes ? ' - '.$row->notes : ''))->join("\n");
+        } elseif ($department === 'production' && $unit === 'poultry') {
+            $eggs = DB::table('egg_collections')->whereDate('collected_on', $date)->get();
+            $deaths = DB::table('mortality_records')->whereDate('occurred_on', $date)->get();
+            $activities = $eggs->count().' egg collection record(s); '.$deaths->sum(fn ($row) => (int)$row->quantity_died + (int)$row->quantity_culled).' bird loss(es) recorded.';
+            $rows = $eggs->concat($deaths);
+        } elseif ($department === 'production' && $unit === 'feed_store') {
+            $rows = DB::table('feed_consumptions')->whereDate('used_on', $date)->orderBy('created_at')->get();
+            $activities = $rows->map(fn ($row) => number_format((float)$row->quantity_kg, 2).' kg '.str_replace('_', ' ', $row->feed_type).' recorded'.($row->worker_note ? ' - '.$row->worker_note : ''))->join("\n");
+        } elseif ($department === 'hr' && $unit === 'fleet') {
+            $rows = DB::table('fleet_records')->whereDate('recorded_on', $date)->orderBy('set_off_at')->get();
+            $activities = $rows->map(fn ($row) => $row->vehicle_id.' - '.$row->purpose)->join("\n");
+        } elseif ($department === 'hr') {
+            $types = ['attendance'=>'attendance','security'=>'security','welfare'=>'welfare','construction'=>'construction','ad_hoc'=>'ad_hoc'];
+            $rows = DB::table('employee_records')->whereDate('recorded_on', $date)->where('type', $types[$unit])->orderBy('created_at')->get();
+            $activities = $rows->map(fn ($row) => ($row->details ?: ucfirst(str_replace('_', ' ', $row->type))).' - '.ucfirst($row->status))->join("\n");
+        } elseif ($unit === 'sales_collections') {
+            $sales = DB::table('sales')->whereDate('sale_date', $date)->where('status', '!=', 'void')->orderBy('created_at')->get();
+            $lines = $sales->isEmpty() ? collect() : DB::table('sale_lines')->whereIn('sale_id', $sales->pluck('id'))->orderBy('sale_id')->orderBy('id')->get()->groupBy('sale_id');
+            $activities = $sales->map(function ($sale) use ($lines) { $products=$lines->get($sale->id,collect())->map(fn($line)=>rtrim(rtrim(number_format((float)$line->quantity,2),'0'),'.').' '.$line->unit.' '.$line->description)->join(', '); return $sale->invoice_number.' - '.$sale->customer_name.' - '.($products ?: 'Sale').' - UGX '.number_format((float)$sale->total); })->join("\n");
+            $rows = $sales;
+        } else {
+            $query = DB::table('financial_transactions')->whereDate('transaction_date', $date);
+            $query = $unit === 'expenses_payables' ? $query->where('type', 'money_paid') : $query->where('type', '!=', 'money_paid');
+            $rows = $query->orderBy('created_at')->get();
+            $activities = $rows->map(fn ($row) => ($row->reference ? $row->reference.' - ' : '').$row->description.' - UGX '.number_format((float)$row->amount))->join("\n");
+        }
+        $summary = $rows->isEmpty() ? "No {$label} activity has been recorded for {$date}." : $rows->count()." {$label} record(s) captured for {$date}.";
+        return [$summary, $activities ?: 'No entries recorded in this unit register for the day.'];
     }
 
     private function mayEdit(User $user, string $department, string $unit): bool { return in_array($unit, $this->editableUnits($this->roles($user))[$department] ?? [], true); }

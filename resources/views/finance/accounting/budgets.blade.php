@@ -26,7 +26,7 @@
     <div class="summary-grid summary-grid--compact">
         @forelse($departmentTotals as $department=>$summary)<div class="summary-card"><span>{{ $department }}</span><strong>UGX {{ number_format((float)$summary['total']) }}</strong><small>{{ $summary['lines'] }} line(s)</small></div>@empty<div class="empty">No department has entered a draft for this week.</div>@endforelse
     </div>
-    <p class="muted">Each department edits its own draft. Finance reviews the combined totals and submits them for approval.</p>
+    <p class="muted">Departments prepare their requests. Finance may adjust the working draft, and the CEO may adjust it during CEO review. Every adjustment is recorded.</p>
 </section>
 
 <section class="status-banner status-banner--{{ $budgetStatus }}">
@@ -63,8 +63,24 @@
     <summary><span><strong>Department budget lines</strong><small>{{ $items->count() }} items for {{ $unit==='all'?'all departments':ucfirst($unit) }}</small></span></summary>
     <div class="disclosure__body">
         @if($items->isEmpty())<p class="empty">No budget lines for this selection.</p>@else
-        <div class="table-wrap"><table class="exec-table"><thead><tr><th>Department / section</th><th>Item</th><th>Unit</th><th class="num">Quantity</th><th class="num">Unit price</th><th class="num">Total</th></tr></thead><tbody>
-        @foreach($items as $item)<tr><td><strong>{{ $item->department?->name ?? 'Unassigned' }}</strong><small>{{ $item->category }}</small></td><td>{{ $item->item }}</td><td>{{ $item->unit }}</td><td class="num">{{ number_format((float)$item->quantity,2) }}</td><td class="num">UGX {{ number_format((float)$item->unit_price,2) }}</td><td class="num"><strong>UGX {{ number_format((float)$item->planned_amount) }}</strong></td></tr>@endforeach
+        <div class="table-wrap"><table class="exec-table"><thead><tr><th>Department / section</th><th>Item</th><th>Unit</th><th class="num">Quantity</th><th class="num">Unit price</th><th class="num">Total</th>@if($canAdjustBudget)<th>Adjustment</th>@endif</tr></thead><tbody>
+        @foreach($items->groupBy(fn($line)=>($line->department?->name ?? 'Unassigned').'|'.$line->category) as $sectionItems)
+            @foreach($sectionItems as $item)
+                <tr>
+                    <td><strong>{{ $item->department?->name ?? 'Unassigned' }}</strong><small>{{ $item->category }}</small></td>
+                    <td>{{ $item->item }}</td><td>{{ $item->unit }}</td>
+                    @if($canAdjustBudget)
+                        <td class="num"><input class="budget-adjust-input" form="adjust-budget-{{ $item->id }}" aria-label="Quantity for {{ $item->item }}" name="quantity" type="number" min="0" step="0.01" value="{{ $item->quantity }}" required></td>
+                        <td class="num"><input class="budget-adjust-input" form="adjust-budget-{{ $item->id }}" aria-label="Unit price for {{ $item->item }}" name="unit_price" type="number" min="0" step="0.01" value="{{ $item->unit_price }}" required></td>
+                    @else
+                        <td class="num">{{ number_format((float)$item->quantity,2) }}</td><td class="num">UGX {{ number_format((float)$item->unit_price,2) }}</td>
+                    @endif
+                    <td class="num"><strong>UGX {{ number_format((float)$item->planned_amount) }}</strong></td>
+                    @if($canAdjustBudget)<td><form id="adjust-budget-{{ $item->id }}" method="POST" action="{{ route('finance.budgets.update',$item) }}">@csrf @method('PUT')<input name="adjustment_note" placeholder="Reason for adjustment" required><button class="btn btn--small btn--inline">Save</button></form></td>@endif
+                </tr>
+            @endforeach
+            <tr class="budget-section-subtotal"><th colspan="5">{{ $sectionItems->first()->department?->name ?? 'Unassigned' }} · {{ $sectionItems->first()->category }} subtotal</th><th class="num">UGX {{ number_format((float)$sectionItems->sum('planned_amount')) }}</th>@if($canAdjustBudget)<th></th>@endif</tr>
+        @endforeach
         </tbody></table></div>@endif
     </div>
 </details>

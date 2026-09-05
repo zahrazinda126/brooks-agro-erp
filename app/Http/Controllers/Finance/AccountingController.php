@@ -52,6 +52,10 @@ class AccountingController extends Controller
             ->where('approvable_type', Budget::class)
             ->whereIn('approvable_id', $allItems->pluck('id'))
             ->latest('submitted_at')->first();
+        $roleCodes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique();
+        $canAdjustBudget = ($roleCodes->contains('finance-manager') && ($allItems->first()?->status ?? 'draft') === 'draft')
+            || ($roleCodes->contains('ceo') && in_array(($allItems->first()?->status ?? 'draft'), ['draft', 'submitted'], true)
+                && (($allItems->first()?->status ?? 'draft') === 'draft' || $approval?->currentStep()?->role_code === 'ceo'));
 
         return view('finance.accounting.budgets', [
             'items'=>$items, 'plannedTotal'=>$items->sum('planned_amount'), 'allTotal'=>$allItems->sum('planned_amount'),
@@ -59,6 +63,7 @@ class AccountingController extends Controller
             'periodStart'=>$allItems->first()?->period_start, 'periodEnd'=>$allItems->first()?->period_end,
             'selectedWeek'=>$start, 'availablePeriods'=>$availablePeriods,
             'isCurrentWeek'=>$start === now()->startOfWeek()->toDateString(),
+            'canAdjustBudget'=>$canAdjustBudget,
             'departmentTotals'=>$allItems->groupBy(fn($line)=>$line->department?->name ?? 'Unassigned')->map(fn($lines)=>['lines'=>$lines->count(),'total'=>$lines->sum('planned_amount')]),
         ]);
     }
@@ -73,7 +78,32 @@ class AccountingController extends Controller
 
     public function updateBudget(Request $request, Budget $budget): RedirectResponse
     {
-        abort_unless($request->user()->canDo('budget', 'edit'), 403); abort_unless($budget->status === 'draft' && $budget->department_id === $this->financeDepartmentId(), 403, 'Finance cannot edit another department’s draft.'); $data=$request->validate(['quantity'=>['required','numeric','min:0'],'unit_price'=>['required','numeric','min:0']]); $budget->update(['quantity'=>$data['quantity'],'unit_price'=>$data['unit_price'],'planned_amount'=>(float)$data['quantity']*(float)$data['unit_price']]); return back()->with('status','Budget line updated.');
+        $roleCodes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique();
+        $approval = Approval::with('steps')->where('approvable_type', Budget::class)
+            ->whereIn('approvable_id', Budget::whereDate('period_start', $budget->period_start)->pluck('id'))
+            ->latest('submitted_at')->first();
+        $financeMayEdit = $roleCodes->contains('finance-manager') && $budget->status === 'draft';
+        $ceoMayEdit = $roleCodes->contains('ceo') && ($budget->status === 'draft'
+            || ($budget->status === 'submitted' && $approval?->currentStep()?->role_code === 'ceo'));
+        abort_unless($financeMayEdit || $ceoMayEdit, 403, 'This budget is not at a stage where you may adjust it.');
+
+        $data=$request->validate([
+            'quantity'=>['required','numeric','min:0'],
+            'unit_price'=>['required','numeric','min:0'],
+            'adjustment_note'=>['required','string','max:1000'],
+        ]);
+        $old = $budget->only(['quantity','unit_price','planned_amount']);
+        $new = [
+            'quantity'=>$data['quantity'],
+            'unit_price'=>$data['unit_price'],
+            'planned_amount'=>(float)$data['quantity']*(float)$data['unit_price'],
+        ];
+        $budget->update($new);
+        AuditLog::record('budget_line_adjusted', $budget,
+            $request->user()->displayName().' adjusted '.$budget->item.'. Reason: '.$data['adjustment_note'],
+            $old, $new + ['adjustment_note'=>$data['adjustment_note']], 'budget');
+
+        return back()->with('status','Budget line adjusted and recorded in the audit trail.');
     }
 
     public function updateWeeklyBudget(Request $request): RedirectResponse

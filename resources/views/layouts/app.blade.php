@@ -85,6 +85,13 @@
         </form>
     </header>
 
+    @unless($plain)
+        <nav class="context-nav" id="contextNav" aria-label="Current workspace navigation" hidden>
+            <strong id="contextNavTitle"></strong>
+            <div id="contextNavLinks"></div>
+        </nav>
+    @endunless
+
     <main class="content">
         @if (session('status'))
             <div class="notice notice--ok">{{ session('status') }}</div>
@@ -94,6 +101,20 @@
         @endif
 
         @unless($plain)@if($unreadNotifications->isNotEmpty())@php($latestNotification=$unreadNotifications->first())<div class="login-notification"><div><b>{{ $unreadNotifications->count() }} unread {{ Str::plural('notification',$unreadNotifications->count()) }}</b><span>{{ $latestNotification->subject }} &middot; {{ $latestNotification->created_at->diffForHumans() }}</span></div><form method="POST" action="{{ route('communications.read',$latestNotification) }}">@csrf<button class="btn btn--small">Open notification</button></form></div>@endif @endunless
+        @if($directiveReminders->isNotEmpty())
+            @php($overdueDirectiveCount = $directiveReminders->filter(fn($directive) => $directive->due_on?->isPast())->count())
+            <aside class="directive-reminder {{ $overdueDirectiveCount ? 'directive-reminder--overdue' : '' }}" role="alert" aria-live="polite">
+                <div class="directive-reminder__icon"><svg aria-hidden="true"><use href="#i-bell"></use></svg></div>
+                <div class="directive-reminder__body">
+                    <strong>{{ $directiveReminders->count() }} unfinished {{ Str::plural('directive', $directiveReminders->count()) }}</strong>
+                    @foreach($directiveReminders->take(3) as $directive)
+                        <span><b>{{ $directive->title }}</b> · {{ Str::headline($directive->status) }}@if($directive->scheduled_for) · Scheduled {{ $directive->scheduled_for->format('d M Y, H:i') }}@elseif($directive->due_on) · Due {{ $directive->due_on->format('d M Y') }}@endif @if($directive->due_on?->isPast())<em>OVERDUE</em>@endif</span>
+                    @endforeach
+                    @if($directiveReminders->count() > 3)<small>And {{ $directiveReminders->count() - 3 }} more unfinished.</small>@endif
+                </div>
+                <a class="btn btn--small" href="{{ route('directives.index') }}">Open directives</a>
+            </aside>
+        @endif
         @yield('content')
     </main>
 </div>
@@ -146,6 +167,121 @@
             document.addEventListener('keydown', function (e) {
                 if (e.key === 'Escape') setOpen(false);
             });
+        })();
+    </script>
+
+    <script>
+        /* Two-level workspace navigation: the sidebar selects a function;
+           its permitted screens appear in the contextual bar. */
+        (function () {
+            var drawer = document.getElementById('drawer');
+            var bar = document.getElementById('contextNav');
+            var title = document.getElementById('contextNavTitle');
+            var links = document.getElementById('contextNavLinks');
+            if (!drawer || !bar || !title || !links) return;
+
+            var sections = Array.from(drawer.querySelectorAll('details.hr-nav-section, details.nav-group'));
+            var supplementary = Array.from(drawer.querySelectorAll(':scope > a.nav-link--supplementary'));
+            var clean = function (value) {
+                return (value || '').replace(/^[^A-Za-z0-9]+/, '').trim();
+            };
+            var iconFor = function (label) {
+                var value = label.toLowerCase();
+                if (/dashboard/.test(value)) return 'home';
+                if (/operational report/.test(value)) return 'factory';
+                if (/executive view|board view/.test(value)) return 'chart';
+                if (/vaccin/.test(value)) return 'syringe';
+                if (/report/.test(value)) return 'file';
+                if (/analytic|view/.test(value)) return 'chart';
+                if (/decision|approval|follow/.test(value)) return 'check-circle';
+                if (/people|employee|customer|staff|welfare|human/.test(value)) return 'users';
+                if (/account|payroll|finance|budget|resource/.test(value)) return 'coins';
+                if (/sales|receipt/.test(value)) return 'receipt';
+                if (/stock|inventory|store/.test(value)) return 'box';
+                if (/monitor/.test(value)) return 'vet';
+                if (/farm|production|unit/.test(value)) return 'grain';
+                if (/communication|message|update/.test(value)) return 'message';
+                if (/admin|govern|setting|security/.test(value)) return 'gear';
+                if (/fleet|transport/.test(value)) return 'truck';
+                if (/daily|operation|work/.test(value)) return 'clipboard';
+                return 'file';
+            };
+            var addIcon = function (element, label) {
+                if (element.querySelector(':scope > svg')) return;
+                var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                var use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                svg.setAttribute('class', 'rail-icon');
+                svg.setAttribute('aria-hidden', 'true');
+                use.setAttribute('href', '#i-' + iconFor(label));
+                svg.appendChild(use);
+                element.prepend(svg);
+            };
+            var selectSection = function (section) {
+                sections.forEach(function (item) { item.removeAttribute('data-context-active'); item.open = false; });
+                section.setAttribute('data-context-active', 'true');
+                var label = clean(section.querySelector(':scope > summary')?.textContent);
+                title.textContent = label;
+                links.replaceChildren();
+                section.querySelectorAll(':scope > a.nav-link, :scope > details > a.nav-link').forEach(function (source) {
+                    var link = source.cloneNode(true);
+                    link.querySelectorAll('svg').forEach(function (icon) { icon.remove(); });
+                    link.textContent = clean(link.textContent);
+                    links.appendChild(link);
+                });
+                supplementary.forEach(function (source) {
+                    var sourceLabel = clean(source.textContent);
+                    var belongsHere = (/vaccin|supervisor/i.test(sourceLabel) && /monitor|operation|work|production|people|daily/i.test(label))
+                        || (/management report/i.test(sourceLabel) && /report/i.test(label));
+                    if (!belongsHere) return;
+                    var link = source.cloneNode(true);
+                    link.classList.remove('nav-link--supplementary');
+                    link.querySelectorAll('svg').forEach(function (icon) { icon.remove(); });
+                    link.textContent = sourceLabel;
+                    links.appendChild(link);
+                });
+                bar.hidden = links.children.length === 0;
+            };
+
+            sections.forEach(function (section) {
+                var summary = section.querySelector(':scope > summary');
+                var label = clean(summary?.textContent);
+                if (!summary) return;
+                summary.title = label;
+                summary.setAttribute('aria-label', label);
+                addIcon(summary, label);
+                summary.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    selectSection(section);
+                    /* A primary navigation choice must open a workspace, not
+                       merely repaint the menu while leaving the dashboard in
+                       place. The first permitted link is the section landing
+                       page; the contextual bar then exposes its other screens. */
+                    var destination = section.querySelector(':scope > a.nav-link, :scope > details > a.nav-link');
+                    if (destination && destination.href && destination.href !== window.location.href) {
+                        window.location.assign(destination.href);
+                    }
+                });
+            });
+
+            drawer.querySelectorAll(':scope > a.nav-link, .hr-nav > a.nav-link').forEach(function (link) {
+                var label = clean(link.textContent);
+                link.title = label;
+                addIcon(link, label);
+            });
+
+            var activeSupplementary = supplementary.find(function (link) { return link.matches('[aria-current="page"]'); });
+            var supplementarySection = activeSupplementary ? sections.find(function (section) {
+                var sectionLabel = clean(section.querySelector(':scope > summary')?.textContent);
+                var sourceLabel = clean(activeSupplementary.textContent);
+                return (/management report/i.test(sourceLabel) && /report/i.test(sectionLabel))
+                    || (/vaccin|supervisor/i.test(sourceLabel) && /monitor|operation|work|production|people|daily/i.test(sectionLabel));
+            }) : null;
+            var topLevelCurrent = drawer.querySelector(':scope > a:not(.nav-link--supplementary)[aria-current="page"], .hr-nav > a[aria-current="page"]');
+            var current = sections.find(function (section) { return section.querySelector('[aria-current="page"]'); })
+                || supplementarySection
+                || (!topLevelCurrent ? sections.find(function (section) { return section.open; }) : null)
+                || (!topLevelCurrent ? sections[0] : null);
+            if (current) selectSection(current);
         })();
     </script>
 @endunless

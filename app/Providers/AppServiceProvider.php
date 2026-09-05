@@ -5,6 +5,8 @@ namespace App\Providers;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Auth;
+use App\Models\Communication;
+use App\Models\ExecutiveDirective;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -24,6 +26,31 @@ class AppServiceProvider extends ServiceProvider
          */
         View::composer('*', function ($view) {
             $view->with('user', Auth::user());
+        });
+
+        View::composer('layouts.app', function ($view) {
+            $user = Auth::user();
+            if (! $user) {
+                $view->with('directiveReminders', collect());
+                return;
+            }
+
+            $audiences = Communication::audiencesFor($user);
+            $directiveReminders = ExecutiveDirective::query()
+                ->whereNotIn('status', ['done', 'completed', 'cancelled'])
+                ->where(function ($assigned) use ($user, $audiences) {
+                    $assigned->where('assigned_to', $user->id)
+                        ->orWhere('tracked_by', $user->id);
+                    if ($audiences->isNotEmpty()) {
+                        $assigned->orWhereIn('recipient_scope', $audiences);
+                    }
+                })
+                ->orderByRaw('case when due_on is not null and due_on < ? then 0 else 1 end', [today()->toDateString()])
+                ->orderBy('due_on')
+                ->orderBy('scheduled_for')
+                ->get();
+
+            $view->with('directiveReminders', $directiveReminders);
         });
     }
 }

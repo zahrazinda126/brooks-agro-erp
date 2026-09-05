@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Approval,AuditLog,Employee,EmployeeRecord,FinancialTransaction,PayrollLine,PayrollRun,StaffSalaryWalletTransaction};
+use App\Models\{Approval,AuditLog,Communication,Employee,EmployeeRecord,FinancialTransaction,PayrollLine,PayrollRun,StaffSalaryWalletTransaction};
 use Illuminate\Http\{RedirectResponse,Request};
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -27,8 +27,9 @@ class PayrollController extends Controller
         $employee=$request->user()->employee;
         abort_unless($employee,404,'Your login is not linked to an employee record. Ask HR to link it.');
         $transactions=StaffSalaryWalletTransaction::where('employee_id',$employee->id)->with('recorder')->latest('transaction_date')->latest('id')->get();
+        $payrollLines=PayrollLine::where('employee_id',$employee->id)->with('run')->latest('id')->limit(12)->get();
         $credited=(float)$transactions->where('type','credit')->sum('amount');$withdrawn=(float)$transactions->where('type','withdrawal')->sum('amount');
-        return view('payroll.my-balance',compact('employee','transactions','credited','withdrawn')+['balance'=>$credited-$withdrawn]);
+        return view('payroll.my-balance',compact('employee','transactions','payrollLines','credited','withdrawn')+['balance'=>$credited-$withdrawn]);
     }
 
     public function salaryAccount(Request $request, Employee $employee): View
@@ -93,7 +94,13 @@ class PayrollController extends Controller
     public function updateLine(Request $request,PayrollRun $payroll,PayrollLine $line):RedirectResponse
     {
         abort_unless($line->payroll_run_id===$payroll->id&&$payroll->status==='draft'&&$this->hasRole($request,'hr-manager'),403);
-        $d=$request->validate(['basic_pay'=>['required','numeric','min:0'],'allowances'=>['required','numeric','min:0'],'overtime_pay'=>['required','numeric','min:0'],'sacco'=>['required','numeric','min:0'],'salary_advance'=>['required','numeric','min:0'],'performance_adjustment'=>['required','numeric','min:0'],'penalties'=>['required','numeric','min:0'],'arrears'=>['required','numeric','min:0'],'other_deductions'=>['required','numeric','min:0'],'payment_method'=>['nullable','in:cash,bank,mobile_money'],'payment_account'=>['nullable','string','max:120'],'payment_status'=>['required','in:pending,cleared,held'],'notes'=>['nullable','string','max:1000']]);$gross=(float)$d['basic_pay']+(float)$d['allowances']+(float)$d['overtime_pay']+(float)$d['arrears'];$nssf=round($gross*$this->setting('nssf_employee_rate',5)/100,2);$employer=round($gross*$this->setting('nssf_employer_rate',10)/100,2);$paye=$this->payeForRun($line->employee_id,$gross,$payroll->period_end,$payroll->id);$deductions=$nssf+$paye+(float)$d['sacco']+(float)$d['salary_advance']+(float)$d['performance_adjustment']+(float)$d['penalties']+(float)$d['other_deductions'];$line->update($d+['gross_pay'=>$gross,'nssf_employee'=>$nssf,'nssf_employer'=>$employer,'paye'=>$paye,'total_deductions'=>$deductions,'net_pay'=>max(0,$gross-$deductions)]);$this->recalculate($payroll);return back()->with('status','Payroll line updated and PAYE recalculated.');
+        $d=$request->validate(['basic_pay'=>['required','numeric','min:0'],'allowances'=>['required','numeric','min:0'],'overtime_pay'=>['required','numeric','min:0'],'sacco'=>['required','numeric','min:0'],'salary_advance'=>['required','numeric','min:0'],'performance_adjustment'=>['required','numeric','min:0'],'penalties'=>['required','numeric','min:0'],'arrears'=>['required','numeric','min:0'],'other_deductions'=>['required','numeric','min:0'],'payment_method'=>['nullable','in:cash,bank,mobile_money'],'payment_account'=>['nullable','string','max:120'],'payment_status'=>['required','in:pending,cleared,held'],'notes'=>['nullable','string','max:1000']]);
+        $previousPenalty=(float)$line->penalties;$gross=(float)$d['basic_pay']+(float)$d['allowances']+(float)$d['overtime_pay']+(float)$d['arrears'];$nssf=round($gross*$this->setting('nssf_employee_rate',5)/100,2);$employer=round($gross*$this->setting('nssf_employer_rate',10)/100,2);$paye=$this->payeForRun($line->employee_id,$gross,$payroll->period_end,$payroll->id);$deductions=$nssf+$paye+(float)$d['sacco']+(float)$d['salary_advance']+(float)$d['performance_adjustment']+(float)$d['penalties']+(float)$d['other_deductions'];$line->update($d+['gross_pay'=>$gross,'nssf_employee'=>$nssf,'nssf_employer'=>$employer,'paye'=>$paye,'total_deductions'=>$deductions,'net_pay'=>max(0,$gross-$deductions)]);$this->recalculate($payroll);
+        if ((float)$d['penalties'] > $previousPenalty) {
+            $employee=$line->employee()->with('user')->first();
+            if ($employee?->user) Communication::create(['kind'=>'notification','subject'=>'A penalty was added to your payroll','body'=>'A penalty of UGX '.number_format((float)$d['penalties']).' is recorded on payroll '.$payroll->payroll_number.'.'.(filled($d['notes'])?' Reason: '.$d['notes']:''),'audience'=>'individual','recipient_id'=>$employee->user->id,'created_by'=>$request->user()->id,'action_url'=>route('payroll.my-balance',absolute:false)]);
+        }
+        return back()->with('status','Payroll line updated and PAYE recalculated.');
     }
 
     public function submit(Request $request,PayrollRun $payroll):RedirectResponse

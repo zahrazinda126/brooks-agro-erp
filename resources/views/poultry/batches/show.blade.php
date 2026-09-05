@@ -28,7 +28,9 @@
     @endif
 </div>
 
-@php($roleCodes=$user->roles->pluck('code')->push($user->role?->code))
+@php
+    $roleCodes = $user->roles->pluck('code')->push($user->role?->code);
+@endphp
 @if($batch->isActive() && $user->canDo('batches','edit') && !$batch->mayBeEditedBy($user))
 <section class="card"><p class="card-label">Protected batch record</p><h3>Director permission is required</h3><p>Initial batch details are locked. House quantities continue to change through transfers, mortality and other recorded movements.</p><form method="POST" action="{{ route('batches.request-edit',$batch) }}">@csrf<div class="field"><label>Why must the initial batch record change?</label><textarea name="reason" required></textarea></div><button class="btn">Request editing permission</button></form></section>
 @endif

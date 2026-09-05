@@ -8,6 +8,7 @@ use App\Models\Department;
 use App\Models\FinancialTransaction;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
+use App\Models\InventoryStore;
 use App\Models\Payable;
 use App\Models\PayablePayment;
 use App\Models\Receivable;
@@ -25,12 +26,34 @@ class TransactionController extends Controller
     public function index(Request $r): View
     {
         abort_unless($r->user()->canAccess('transactions'), 403);
-        $q = FinancialTransaction::with('recorder')->latest('transaction_date');
+        $q = FinancialTransaction::with(['recorder','department']);
         if ($r->filled('type')) {
             $q->where('type', $r->query('type'));
         }
+        if ($r->filled('from')) $q->whereDate('transaction_date', '>=', $r->date('from')->toDateString());
+        if ($r->filled('to')) $q->whereDate('transaction_date', '<=', $r->date('to')->toDateString());
+        if ($r->filled('department')) $q->where('department_id', $r->integer('department'));
+        if ($r->filled('item')) {
+            $item = $r->string('item')->trim()->toString();
+            $q->where(fn($query) => $query->where('entry_account', $item)->orWhere('sub_account', $item));
+        }
+        if ($r->filled('search')) {
+            $search = '%'.$r->string('search')->trim()->toString().'%';
+            $q->where(fn($query) => $query->where('entry_account','ilike',$search)
+                ->orWhere('sub_account','ilike',$search)->orWhere('description','ilike',$search)
+                ->orWhere('counterparty','ilike',$search)->orWhere('reference','ilike',$search));
+        }
 
-        return view('finance.transactions.index', ['transactions' => $q->paginate(30)->withQueryString(), 'type' => $r->query('type')]);
+        $filteredTotal = (clone $q)->sum('amount');
+        $expenseItems = FinancialTransaction::query()->where('type','money_paid')
+            ->get(['entry_account','sub_account'])->flatMap(fn($row)=>[$row->entry_account,$row->sub_account])
+            ->filter()->unique()->sort()->values();
+        $departments = Department::where('is_active',true)->orderBy('name')->get(['id','name']);
+
+        return view('finance.transactions.index', [
+            'transactions'=>$q->latest('transaction_date')->latest('id')->paginate(30)->withQueryString(), 'type'=>$r->query('type'),
+            'filteredTotal'=>$filteredTotal, 'expenseItems'=>$expenseItems, 'departments'=>$departments,
+        ]);
     }
 
     public function create(Request $r): View
@@ -60,7 +83,8 @@ class TransactionController extends Controller
             ->map(fn ($name) => trim((string) $name))->filter()->unique()->sort()->values();
         $customers = SalesCustomer::where('is_active', true)->orderBy('name')->get();
 
-        return view('finance.transactions.create', compact('farmAccounts', 'paymentMethods', 'receivables', 'payables', 'entryTypes', 'departments', 'costCentres', 'purchaseSubAccounts', 'purchaseSettlementAccounts', 'suppliers', 'customers'));
+        $inventoryStores = InventoryStore::where('is_active', true)->orderBy('section')->orderBy('name')->get();
+        return view('finance.transactions.create', compact('farmAccounts', 'paymentMethods', 'receivables', 'payables', 'entryTypes', 'departments', 'costCentres', 'purchaseSubAccounts', 'purchaseSettlementAccounts', 'suppliers', 'customers', 'inventoryStores'));
     }
 
     public function store(Request $r): RedirectResponse
@@ -69,7 +93,7 @@ class TransactionController extends Controller
         $types = config('finance_entry.types');
         $data = $r->validate(['transaction_date' => ['required', 'date'], 'transaction_category' => ['required', Rule::in(array_keys($types))], 'account_group' => ['required', 'string', 'max:120'], 'department_id' => ['required', 'exists:departments,id'], 'account' => ['required', 'string', 'max:120'], 'counterparty' => ['nullable', 'string', 'max:160'], 'amount' => ['nullable', 'numeric', 'min:0.01'], 'quantity' => ['nullable', 'numeric', 'min:0.01'], 'unit_price' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', 'in:cash,bank,mobile_money,credit,in_kind'], 'reference' => ['required', 'string', 'max:80'], 'description' => ['required', 'string', 'max:1000'], 'receipt_kind' => ['nullable', 'in:general,customer_payment,customer_prepayment'], 'payment_kind' => ['nullable', 'in:general,supplier_bill'], 'receivable_id' => ['nullable', 'exists:receivables,id'], 'payable_id' => ['nullable', 'exists:payables,id']]);
         $data['entry_account'] = $r->validate(['entry_account' => ['required', 'string', 'max:160']])['entry_account'];
-        $inventory = $r->validate(['track_inventory' => ['nullable', 'boolean'], 'inventory_unit' => ['nullable', 'required_if:track_inventory,1', 'string', 'max:40'], 'inventory_location' => ['nullable', 'required_if:track_inventory,1', 'string', 'max:100']]);
+        $inventory = $r->validate(['track_inventory' => ['nullable', 'boolean'], 'inventory_store_id'=>['nullable','required_if:track_inventory,1','exists:inventory_stores,id'], 'inventory_unit' => ['nullable', 'required_if:track_inventory,1', 'string', 'max:40'], 'inventory_location' => ['nullable', 'required_if:track_inventory,1', 'string', 'max:100']]);
         $departmentCode = Department::whereKey($data['department_id'])->value('code');
         $allowedCostCentres = config('finance_entry.cost_centres')[$departmentCode] ?? [];
         $data['cost_centre'] = $r->validate(['cost_centre' => ['required', Rule::in($allowedCostCentres)]])['cost_centre'];
@@ -155,8 +179,9 @@ class TransactionController extends Controller
                 if ($trackInventory) {
                     $itemName = $data['sub_account'] ?: $data['entry_account'];
                     $code = 'AUTO-'.strtoupper(substr(hash('sha256', strtolower($data['entry_account'].'|'.$itemName.'|'.$inventory['inventory_unit'])), 0, 10));
-                    $item = InventoryItem::firstOrCreate(['code' => $code], ['name' => $itemName, 'category' => strtolower($data['entry_account']), 'unit' => $inventory['inventory_unit'], 'reorder_level' => 0, 'default_location' => $inventory['inventory_location'], 'notes' => 'Created automatically from Finance Data Entry.', 'created_by' => $r->user()->id]);
-                    InventoryMovement::create(['inventory_item_id' => $item->id, 'financial_transaction_id' => $transaction->id, 'movement_date' => $data['transaction_date'], 'movement_type' => 'received', 'location' => $inventory['inventory_location'], 'quantity' => $data['quantity'], 'unit_cost' => $data['unit_price'], 'total_cost' => $data['amount'], 'supplier_or_recipient' => $data['counterparty'], 'reference' => $data['reference'], 'notes' => $data['description'], 'recorded_by' => $r->user()->id]);
+                    $item = InventoryItem::firstOrCreate(['code' => $code], ['inventory_store_id'=>$inventory['inventory_store_id'],'name' => $itemName, 'category' => strtolower($data['entry_account']), 'unit' => $inventory['inventory_unit'], 'reorder_level' => 0, 'default_location' => $inventory['inventory_location'], 'notes' => 'Created automatically from Finance Data Entry.', 'created_by' => $r->user()->id]);
+                    if(!$item->inventory_store_id)$item->update(['inventory_store_id'=>$inventory['inventory_store_id']]);
+                    InventoryMovement::create(['inventory_item_id' => $item->id, 'inventory_store_id'=>$item->inventory_store_id,'financial_transaction_id' => $transaction->id, 'movement_date' => $data['transaction_date'], 'movement_type' => 'received', 'location' => $inventory['inventory_location'], 'quantity' => $data['quantity'], 'unit_cost' => $data['unit_price'], 'total_cost' => $data['amount'], 'supplier_or_recipient' => $data['counterparty'], 'reference' => $data['reference'], 'notes' => $data['description'], 'recorded_by' => $r->user()->id]);
                 }
                 if ($kind === 'customer_payment') {
                     $due = Receivable::lockForUpdate()->findOrFail($r->receivable_id);

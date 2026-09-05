@@ -25,7 +25,9 @@ class DepartmentBudgetController extends Controller
             'department' => $department,
             'start' => $start,
             'end' => $start->copy()->endOfWeek(),
-            'lines' => Budget::where('department_id', $department->id)->whereDate('period_start', $start)->orderBy('category')->orderBy('id')->get(),
+            'lines' => Budget::where('department_id', $department->id)->whereDate('period_start', $start)
+                ->orderByRaw("case when carryover_type = 'unfunded' then 0 else 1 end")
+                ->orderBy('category')->orderBy('id')->get(),
             'periods' => Budget::where('department_id', $department->id)->select('period_start', 'period_end', 'status')->selectRaw('count(*) as line_count')->groupBy('period_start', 'period_end', 'status')->orderByDesc('period_start')->get(),
             'locked' => Budget::whereDate('period_start', $start)->where('status', '!=', 'draft')->exists(),
         ]);

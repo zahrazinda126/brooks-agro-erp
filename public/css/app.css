@@ -3140,3 +3140,41 @@ body{background:var(--paper);color:var(--ink);font-family:Inter,"Segoe UI",Arial
 /* Casual-worker language control: large enough for gloved hands and visible
    only in the plain worker layout where the Blade partial is rendered. */
 .worker-language{display:flex;align-items:center;gap:.45rem;margin-left:auto;padding:.35rem .55rem;border:1px solid #e7d8c8;border-radius:10px;background:#fff8ef;color:#5b321d;font-weight:700}.worker-language select{border:0;background:transparent;color:inherit;font:inherit;min-height:34px}.worker-language select:focus{outline:2px solid #ed9b3a;outline-offset:2px}
+.customer-name-link,.customer-name-link:visited{color:#922631;text-decoration:none}.customer-name-link:hover{text-decoration:underline}
+.budget-section-subtotal th{border-top:2px solid #d9862f;background:#fff3e2;color:#6f1b25}.budget-adjust-input{width:115px;min-height:38px;padding:7px 9px;border:1px solid #dfcdbb;border-radius:7px}.exec-table form[id^="adjust-budget-"]{display:flex;align-items:center;gap:7px;min-width:270px}.exec-table form[id^="adjust-budget-"] input{min-width:155px;min-height:38px;padding:7px 9px;border:1px solid #dfcdbb;border-radius:7px}
+.spending-filter{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px;margin-bottom:16px}.spending-filter .field{margin:0}.spending-filter .field--actions{display:flex;align-items:end;gap:8px}.spending-filter .field--actions .btn{width:auto}@media(max-width:850px){.spending-filter{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:540px){.spending-filter{grid-template-columns:1fr}}
+
+/* Compact two-level navigation shared by every authenticated account. */
+.context-nav{grid-column:2;display:flex;align-items:center;gap:16px;min-width:0;padding:10px 24px;border-bottom:1px solid #eadfd5;background:#fff;box-shadow:0 4px 12px rgba(45,29,20,.04)}
+.context-nav[hidden]{display:none}.context-nav>strong{flex:0 0 auto;color:#76202a;font-size:.75rem;letter-spacing:.08em;text-transform:uppercase}.context-nav>div{display:flex;gap:7px;min-width:0;overflow-x:auto;scrollbar-width:thin}.context-nav .nav-link{flex:0 0 auto;width:auto;min-height:36px;margin:0;padding:7px 12px;border:1px solid #eadfd5;border-radius:9px;background:#fff;color:#4c3b31;font-size:.8rem;white-space:nowrap}.context-nav .nav-link:hover{border-color:#d9862f;background:#fff8ed;color:#76202a}.context-nav .nav-link[aria-current="page"]{border-color:#8b1e2d;background:#8b1e2d;color:#fff}
+
+/* One restrained Brooks palette: charcoal, burgundy and logo orange only. */
+.drawer .nav-icon,.drawer summary,.drawer .nav-link,.sidebar-utility{color:#d9c9bc}.drawer .nav-link[aria-current="page"]{color:#fff}.drawer .hr-nav-section .nav-link::before{background:#8c7868}.drawer .hr-nav-section .nav-link:hover::before,.drawer .hr-nav-section .nav-link[aria-current="page"]::before{background:#d9862f}.sidebar-utility:hover,.sidebar-utility[aria-current="page"]{color:#8b1e2d}
+
+@media(min-width:900px){
+  .shell{grid-template-columns:76px minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr)}
+  .drawer{width:76px;overflow-x:hidden;align-items:stretch}
+  .brand{justify-content:center;padding:12px 7px}.brand-mark{width:46px;height:46px;flex-basis:46px;border-radius:50%}.brand-name{display:none}
+  .drawer>.nav-link,.hr-nav>.nav-link{position:relative;justify-content:center;width:48px!important;min-height:48px;margin:5px auto!important;padding:0!important;border:1px solid transparent!important;border-radius:13px!important;background:transparent}
+  .drawer>.nav-link--supplementary{display:none!important}
+  .drawer>.nav-link:hover,.hr-nav>.nav-link:hover{border-color:rgba(217,134,47,.35)!important;background:rgba(255,255,255,.05)}
+  .drawer>.nav-link[aria-current="page"],.hr-nav>.nav-link[aria-current="page"]{border-color:#d9862f!important;background:#8b1e2d!important;box-shadow:0 0 0 2px rgba(217,134,47,.13)}
+  .drawer>.nav-link .nav-icon,.hr-nav>.nav-link .nav-icon,.rail-icon{display:block;width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8}.drawer>.nav-link span,.hr-nav>.nav-link span{display:none}
+  .hr-nav{width:100%;padding:3px 7px}.hr-nav::before{display:none!important}.hr-nav-section,.nav-group{margin:4px 0!important;border:0!important;background:transparent!important;box-shadow:none!important;overflow:visible}
+  .hr-nav-section>summary,.nav-group>summary{display:grid!important;place-items:center;width:48px;min-height:48px!important;margin:0 auto;padding:0!important;border:1px solid transparent!important;border-radius:13px!important;font-size:0!important;color:#d9c9bc!important;background:transparent!important}
+  .hr-nav-section>summary:hover,.nav-group>summary:hover{border-color:rgba(217,134,47,.35)!important;background:rgba(255,255,255,.05)!important}
+  .hr-nav-section>summary::before,.nav-group>summary::before{display:none!important}
+  .hr-nav-section>summary::after,.nav-group>summary::after,.nav-group>summary>span,.nav-group>summary>em{display:none!important}
+  .hr-nav-section[data-context-active="true"]>summary,.nav-group[data-context-active="true"]>summary{border-color:#d9862f!important;background:#8b1e2d!important;color:#fff!important;box-shadow:0 0 0 2px rgba(217,134,47,.13)!important}
+  .drawer details>.nav-link,.drawer details>.nav-sub,.drawer .nav-filter,.drawer .nav-none,.drawer .nav-empty{display:none!important}
+  .sidebar-utilities{justify-content:center;flex-wrap:wrap;gap:7px;padding:10px 8px;background:#17120f;border-top-color:rgba(255,255,255,.08)}.sidebar-utility{width:38px;height:38px;background:#241d18;border-color:rgba(255,255,255,.12)}
+  .nav-signout{width:100%}.nav-signout .nav-link{justify-content:center;width:58px;margin:4px auto}.nav-signout .nav-link span{display:none}
+  .topbar{grid-column:2;grid-row:1}.context-nav{grid-column:2;grid-row:2}.content{grid-column:2;grid-row:3}
+}
+@media(max-width:899px){.context-nav{grid-column:1;padding:9px 14px}.context-nav>strong{display:none}}
+
+.directive-reminder{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:14px;margin-bottom:16px;padding:14px 16px;border:1px solid #e4a052;border-left:6px solid #d9862f;border-radius:13px;background:#fff5e6;box-shadow:0 7px 18px rgba(83,43,20,.1)}
+.directive-reminder--overdue{border-color:#a92d35;border-left-color:#a92d35;background:#fff0ef}
+.directive-reminder__icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#8b1e2d;color:#fff}.directive-reminder__icon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8}
+.directive-reminder__body{display:flex;min-width:0;flex-direction:column;gap:3px}.directive-reminder__body>strong{color:#711b25}.directive-reminder__body span{font-size:.76rem;color:#664c3b}.directive-reminder__body span b{color:#30231c}.directive-reminder__body em{margin-left:5px;color:#a51f2c;font-size:.65rem;font-style:normal;font-weight:900}.directive-reminder__body small{color:#826958}
+@media(max-width:680px){.directive-reminder{grid-template-columns:40px 1fr}.directive-reminder>.btn{grid-column:1/-1;width:100%}}

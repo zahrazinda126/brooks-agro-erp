@@ -28,7 +28,19 @@ class ApprovalController extends Controller
 
         if ($status === 'pending') {
             $roleCodes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique();
-            $query->whereHas('steps', fn ($q) => $q->where('status', 'pending')->whereIn('role_code', $roleCodes));
+            if ($roleCodes->contains('director')) {
+                // The Director can track every submitted request that is routed to
+                // their stage, even while an earlier approval level is outstanding.
+                // The detail page still prevents a decision until the Director's
+                // own step becomes the current pending step.
+                $query->whereHas('steps', fn ($q) => $q
+                    ->where('role_code', 'director')
+                    ->whereIn('status', ['waiting', 'pending']));
+            } else {
+                $query->whereHas('steps', fn ($q) => $q
+                    ->where('status', 'pending')
+                    ->whereIn('role_code', $roleCodes));
+            }
         }
 
         if ($request->filled('type')) {

@@ -1,8 +1,77 @@
 <?php
-namespace App\Http\Controllers\Operations;
-use App\Http\Controllers\Controller;use App\Models\AuditLog;use Illuminate\Http\RedirectResponse;use Illuminate\Http\Request;use Illuminate\Support\Carbon;use Illuminate\Support\Facades\DB;use Illuminate\Validation\Rule;use Illuminate\View\View;
-class FeedStockController extends Controller{
-private const FEEDS=['Bran','Broken Maize','Sunflower','Soya','Lime','Hendrix'];
-public function index(Request $r):View{$u=$r->user();abort_unless($u->canAccess('feed-received')||$u->canAccess('inventory')||$u->canAccess('production'),403);$rows=DB::table('feed_stock_movements')->where('unit_code','poultry')->latest('movement_date')->latest('id')->paginate(30);$balances=DB::table('feed_stock_movements')->where('unit_code','poultry')->select('feed_name',DB::raw("sum(case when movement_type='received' then quantity_kg else -quantity_kg end) as balance_kg"))->groupBy('feed_name')->orderBy('feed_name')->get();$deliveries=DB::table('feed_delivery_verifications')->latest('delivery_date')->latest('id')->get()->map(function($d){$d->bags=DB::table('feed_delivery_bags')->where('feed_delivery_verification_id',$d->id)->orderBy('feed_name')->orderBy('bag_number')->get();$d->quantity_received_kg=(float)$d->bags->sum('farm_weight_kg');$d->delivery_variance_kg=round($d->quantity_received_kg-(float)($d->quantity_ordered_kg??0),2);return $d;});$canReceive=!$u->isDataEntryOnly()&&($u->canDo('feed-received','create')||$u->canDo('inventory','create')||$u->canAccess('production'));return view('operations.feed-stock.index',['feeds'=>self::FEEDS,'rows'=>$rows,'balances'=>$balances,'deliveries'=>$deliveries,'canReceive'=>$canReceive]);}
-public function store(Request $r):RedirectResponse{$u=$r->user();abort_if($u->isDataEntryOnly(),403);abort_unless($u->canDo('feed-received','create')||$u->canDo('inventory','create')||$u->canAccess('production'),403);$d=$r->validate(['delivery_date'=>['required','date','before_or_equal:today',fn($a,$v,$f)=>Carbon::parse($v)->dayOfWeekIso!==2?$f('Feed deliveries must be recorded on a Tuesday.'):null],'quantity_ordered_kg'=>['required','numeric','min:0.01'],'vehicle_number'=>['nullable','string','max:60'],'driver_name'=>['nullable','string','max:160'],'farm_representative'=>['nullable','string','max:160'],'supplier'=>['nullable','string','max:160'],'reference'=>['nullable','string','max:100'],'notes'=>['nullable','string','max:2000'],'bags'=>['required','array','min:1'],'bags.*.feed_name'=>['required',Rule::in(self::FEEDS)],'bags.*.supplier_weight_kg'=>['required','numeric','min:0.01'],'bags.*.farm_weight_kg'=>['required','numeric','min:0.01']]);DB::transaction(function()use($d,$u){$bags=$d['bags'];unset($d['bags']);$deliveryId=DB::table('feed_delivery_verifications')->insertGetId($d+['recorded_by'=>$u->id,'created_at'=>now(),'updated_at'=>now()]);foreach(collect($bags)->groupBy('feed_name') as $feed=>$feedBags){$farmTotal=0;foreach($feedBags->values() as $index=>$bag){$variance=round((float)$bag['farm_weight_kg']-(float)$bag['supplier_weight_kg'],2);$farmTotal+=(float)$bag['farm_weight_kg'];DB::table('feed_delivery_bags')->insert($bag+['bag_number'=>$index+1,'feed_delivery_verification_id'=>$deliveryId,'variance_kg'=>$variance,'created_at'=>now(),'updated_at'=>now()]);}DB::table('feed_stock_movements')->insert(['unit_code'=>'poultry','movement_date'=>$d['delivery_date'],'movement_type'=>'received','feed_name'=>$feed,'quantity_kg'=>$farmTotal,'supplier'=>$d['supplier']??null,'reference'=>$d['reference']?:'FEED-'.str_pad($deliveryId,5,'0',STR_PAD_LEFT),'notes'=>'Verified supplier and farm weights.','recorded_by'=>$u->id,'created_at'=>now(),'updated_at'=>now()]);}AuditLog::record('poultry_feed_delivery_verified',null,'Tuesday poultry feed delivery verified.',null,['delivery_id'=>$deliveryId],'feed-received');});return back()->with('status','Tuesday poultry feed delivery weights and variances recorded.');}}
 
+namespace App\Http\Controllers\Operations;
+
+use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
+use App\Services\CommunicationService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\View\View;
+
+class FeedStockController extends Controller
+{
+    private const FEEDS=['Bran','Broken Maize','Sunflower','Soya','Lime','Hendrix'];
+
+    public function index(Request $request): View
+    {
+        $user=$request->user();
+        abort_unless($user->canAccess('feed-received')||$user->canAccess('inventory')||$user->canAccess('production'),403);
+        $balances=DB::table('feed_stock_movements')->where('unit_code','poultry')->select('feed_name',DB::raw("sum(case when movement_type='received' then quantity_kg else -quantity_kg end) as balance_kg"))->groupBy('feed_name')->orderBy('feed_name')->get();
+        $deliveries=DB::table('feed_delivery_verifications')->leftJoin('users as supplier_user','supplier_user.id','=','feed_delivery_verifications.supplier_recorded_by')->leftJoin('users as farm_user','farm_user.id','=','feed_delivery_verifications.farm_received_by')->select('feed_delivery_verifications.*','supplier_user.name as supplier_recorder','farm_user.name as farm_receiver')->latest('delivery_date')->latest('feed_delivery_verifications.id')->get()->map(function($delivery){
+            $delivery->bags=DB::table('feed_delivery_bags')->where('feed_delivery_verification_id',$delivery->id)->orderBy('feed_name')->orderBy('bag_number')->get();
+            $delivery->supplier_total_kg=(float)$delivery->bags->sum('supplier_weight_kg');
+            $delivery->quantity_received_kg=(float)$delivery->bags->sum('farm_weight_kg');
+            $delivery->delivery_variance_kg=$delivery->status==='received_at_farm'?round($delivery->quantity_received_kg-$delivery->supplier_total_kg,2):null;
+            return $delivery;
+        });
+        return view('operations.feed-stock.index',[
+            'feeds'=>self::FEEDS,'balances'=>$balances,'deliveries'=>$deliveries,
+            'canDispatch'=>$this->hasRole($user,'production-manager'),
+            'canFarmReceive'=>$this->hasRole($user,'store-keeper')||$this->hasRole($user,'inventory-officer'),
+        ]);
+    }
+
+    /** Production Manager records the supplier's weights before the vehicle leaves. */
+    public function store(Request $request, CommunicationService $communications): RedirectResponse
+    {
+        $user=$request->user(); abort_unless($this->hasRole($user,'production-manager'),403,'Only the Production Manager records supplier weights.');
+        $data=$request->validate([
+            'delivery_date'=>['required','date','before_or_equal:today',fn($a,$v,$fail)=>Carbon::parse($v)->dayOfWeekIso!==2?$fail('Feed deliveries must be recorded on a Tuesday.'):null],
+            'quantity_ordered_kg'=>['required','numeric','min:0.01'],'vehicle_number'=>['nullable','string','max:60'],'driver_name'=>['nullable','string','max:160'],'farm_representative'=>['nullable','string','max:160'],'supplier'=>['required','string','max:160'],'reference'=>['nullable','string','max:100'],'notes'=>['nullable','string','max:2000'],
+            'bags'=>['required','array','min:1'],'bags.*.feed_name'=>['required',Rule::in(self::FEEDS)],'bags.*.supplier_weight_kg'=>['required','numeric','min:0.01'],
+        ]);
+        DB::transaction(function()use($data,$user){
+            $bags=$data['bags']; unset($data['bags']);
+            $deliveryId=DB::table('feed_delivery_verifications')->insertGetId($data+['recorded_by'=>$user->id,'supplier_recorded_by'=>$user->id,'supplier_recorded_at'=>now(),'status'=>'awaiting_farm_receipt','created_at'=>now(),'updated_at'=>now()]);
+            foreach(collect($bags)->groupBy('feed_name') as $feed=>$feedRows) foreach($feedRows->values() as $index=>$bag) DB::table('feed_delivery_bags')->insert(['feed_delivery_verification_id'=>$deliveryId,'feed_name'=>$feed,'bag_number'=>$index+1,'supplier_weight_kg'=>$bag['supplier_weight_kg'],'farm_weight_kg'=>null,'variance_kg'=>null,'created_at'=>now(),'updated_at'=>now()]);
+            AuditLog::record('feed_dispatched_from_supplier',null,'Supplier feed weights recorded before dispatch.',null,['delivery_id'=>$deliveryId],'feed-received');
+        });
+        $communications->toRole('store-keeper','Feed delivery is on its way','Production recorded the supplier weights. Weigh and receive the delivery when it reaches the farm.',$user->id,route('operations.feed-stock.index',[],false));
+        return back()->with('status','Supplier weights saved. The Farm Store Manager has been notified to receive and weigh the delivery.');
+    }
+
+    /** Farm Store Manager records the independent arrival weights. */
+    public function receive(Request $request, int $delivery, CommunicationService $communications): RedirectResponse
+    {
+        $user=$request->user(); abort_unless($this->hasRole($user,'store-keeper')||$this->hasRole($user,'inventory-officer'),403,'Only the Farm Store Manager can record farm receipt weights.');
+        $header=DB::table('feed_delivery_verifications')->where('id',$delivery)->first(); abort_unless($header,404); abort_unless($header->status==='awaiting_farm_receipt',422,'This delivery has already been received at the farm.');
+        $bagIds=DB::table('feed_delivery_bags')->where('feed_delivery_verification_id',$delivery)->pluck('id');
+        $data=$request->validate(['farm_weights'=>['required','array','size:'.$bagIds->count()],'farm_weights.*'=>['required','numeric','min:0.01'],'farm_notes'=>['nullable','string','max:2000']]);
+        abort_unless(collect(array_keys($data['farm_weights']))->map(fn($id)=>(int)$id)->sort()->values()->all()===$bagIds->map(fn($id)=>(int)$id)->sort()->values()->all(),422,'Farm weights must be recorded for every feed line in this delivery.');
+        DB::transaction(function()use($delivery,$header,$bagIds,$data,$user){
+            foreach($bagIds as $id){$supplier=(float)DB::table('feed_delivery_bags')->where('id',$id)->value('supplier_weight_kg');$farm=(float)$data['farm_weights'][$id];DB::table('feed_delivery_bags')->where('id',$id)->update(['farm_weight_kg'=>$farm,'variance_kg'=>round($farm-$supplier,2),'updated_at'=>now()]);}
+            DB::table('feed_delivery_verifications')->where('id',$delivery)->update(['status'=>'received_at_farm','farm_received_by'=>$user->id,'farm_received_at'=>now(),'notes'=>trim((string)($header->notes??'').($data['farm_notes']?"\nFarm receipt: ".$data['farm_notes']:''))?:null,'updated_at'=>now()]);
+            $received=DB::table('feed_delivery_bags')->where('feed_delivery_verification_id',$delivery)->get()->groupBy('feed_name');
+            foreach($received as $feed=>$bags)DB::table('feed_stock_movements')->insert(['unit_code'=>'poultry','movement_date'=>$header->delivery_date,'movement_type'=>'received','feed_name'=>$feed,'quantity_kg'=>$bags->sum('farm_weight_kg'),'supplier'=>$header->supplier,'reference'=>$header->reference?:'FEED-'.str_pad($delivery,5,'0',STR_PAD_LEFT),'notes'=>'Farm Store Manager received and independently weighed the delivery.','recorded_by'=>$user->id,'created_at'=>now(),'updated_at'=>now()]);
+            AuditLog::record('feed_received_at_farm',null,'Farm receipt weights recorded and variance calculated.',null,['delivery_id'=>$delivery],'feed-received');
+        });
+        if($header->supplier_recorded_by)$communications->toUser($header->supplier_recorded_by,'Feed delivery received at farm','The Farm Store Manager recorded arrival weights. Variances are now available for review.','workflow',$user->id,route('operations.feed-stock.index',[],false));
+        return back()->with('status','Farm weights saved. Variances were calculated and the received quantities were added to feed stock.');
+    }
+
+    private function hasRole($user,string $code):bool{return $user->role?->code===$code||$user->roles->contains('code',$code);}
+}
