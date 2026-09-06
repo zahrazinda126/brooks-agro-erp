@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Poultry;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\FeedType;
+use App\Models\InventoryItem;
+use App\Models\InventoryStore;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -46,6 +48,7 @@ class FeedTypeController extends Controller
         }
 
         $feed = FeedType::create($data);
+        $this->syncInventoryItem($feed, $request->user()->id);
 
         AuditLog::record('created', $feed, "Added feed type {$feed->name}.",
             null, null, 'feed-types');
@@ -67,6 +70,7 @@ class FeedTypeController extends Controller
         $before = $feedType->only(['name', 'category', 'default_kg_per_bag', 'cost_per_kg']);
 
         $feedType->update($this->validated($request));
+        $this->syncInventoryItem($feedType, $request->user()->id);
 
         AuditLog::record('updated', $feedType, "Updated feed type {$feedType->name}.",
             $before, null, 'feed-types');
@@ -107,5 +111,16 @@ class FeedTypeController extends Controller
         ], [
             'to_week.gte' => 'The end week cannot be before the start week.',
         ]);
+    }
+
+    private function syncInventoryItem(FeedType $feed, int $userId): void
+    {
+        $store = InventoryStore::where('code', 'feed')->first();
+        if (! $store) return;
+
+        InventoryItem::updateOrCreate(
+            ['inventory_store_id'=>$store->id, 'code'=>'FEED-'.strtoupper($feed->code)],
+            ['name'=>$feed->name, 'category'=>'feed', 'unit'=>'kg', 'reorder_level'=>0, 'default_location'=>$store->name, 'notes'=>'Linked to the registered feed type.', 'is_active'=>$feed->is_active, 'created_by'=>$userId]
+        );
     }
 }

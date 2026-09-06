@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Operations;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\InventoryStore;
 use App\Services\CommunicationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -28,10 +29,14 @@ class FeedStockController extends Controller
             $delivery->delivery_variance_kg=$delivery->status==='received_at_farm'?round($delivery->quantity_received_kg-$delivery->supplier_total_kg,2):null;
             return $delivery;
         });
+        $canFarmReceive=$this->hasRole($user,'store-keeper')||$this->hasRole($user,'inventory-officer');
+        $storeCards=$canFarmReceive ? InventoryStore::where('is_active',true)
+            ->whereIn('id',DB::table('inventory_store_role')->whereIn('role_id',$user->roleIds())->where('can_view',true)->select('inventory_store_id'))
+            ->orderBy('section')->orderBy('name')->get() : collect();
         return view('operations.feed-stock.index',[
-            'feeds'=>self::FEEDS,'balances'=>$balances,'deliveries'=>$deliveries,
+            'feeds'=>self::FEEDS,'balances'=>$balances,'deliveries'=>$deliveries,'storeCards'=>$storeCards,
             'canDispatch'=>$this->hasRole($user,'production-manager'),
-            'canFarmReceive'=>$this->hasRole($user,'store-keeper')||$this->hasRole($user,'inventory-officer'),
+            'canFarmReceive'=>$canFarmReceive,
         ]);
     }
 

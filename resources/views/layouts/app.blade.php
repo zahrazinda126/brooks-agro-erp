@@ -103,14 +103,14 @@
         @unless($plain)@if($unreadNotifications->isNotEmpty())@php($latestNotification=$unreadNotifications->first())<div class="login-notification"><div><b>{{ $unreadNotifications->count() }} unread {{ Str::plural('notification',$unreadNotifications->count()) }}</b><span>{{ $latestNotification->subject }} &middot; {{ $latestNotification->created_at->diffForHumans() }}</span></div><form method="POST" action="{{ route('communications.read',$latestNotification) }}">@csrf<button class="btn btn--small">Open notification</button></form></div>@endif @endunless
         @if($directiveReminders->isNotEmpty())
             @php($overdueDirectiveCount = $directiveReminders->filter(fn($directive) => $directive->due_on?->isPast())->count())
-            <aside class="directive-reminder {{ $overdueDirectiveCount ? 'directive-reminder--overdue' : '' }}" role="alert" aria-live="polite">
+            <aside class="directive-reminder directive-reminder--recurring {{ $overdueDirectiveCount ? 'directive-reminder--overdue' : '' }}" role="alert" aria-live="polite">
                 <div class="directive-reminder__icon"><svg aria-hidden="true"><use href="#i-bell"></use></svg></div>
                 <div class="directive-reminder__body">
                     <strong>{{ $directiveReminders->count() }} unfinished {{ Str::plural('directive', $directiveReminders->count()) }}</strong>
-                    @foreach($directiveReminders->take(3) as $directive)
+                    @foreach($directiveReminders->take(1) as $directive)
                         <span><b>{{ $directive->title }}</b> · {{ Str::headline($directive->status) }}@if($directive->scheduled_for) · Scheduled {{ $directive->scheduled_for->format('d M Y, H:i') }}@elseif($directive->due_on) · Due {{ $directive->due_on->format('d M Y') }}@endif @if($directive->due_on?->isPast())<em>OVERDUE</em>@endif</span>
                     @endforeach
-                    @if($directiveReminders->count() > 3)<small>And {{ $directiveReminders->count() - 3 }} more unfinished.</small>@endif
+                    @if($directiveReminders->count() > 1)<small>And {{ $directiveReminders->count() - 1 }} more unfinished.</small>@endif
                 </div>
                 <a class="btn btn--small" href="{{ route('directives.index') }}">Open directives</a>
             </aside>
@@ -188,6 +188,8 @@
             var iconFor = function (label) {
                 var value = label.toLowerCase();
                 if (/dashboard/.test(value)) return 'home';
+                if (/receive/.test(value)) return 'box';
+                if (/issue/.test(value)) return 'clipboard';
                 if (/operational report/.test(value)) return 'factory';
                 if (/executive view|board view/.test(value)) return 'chart';
                 if (/vaccin/.test(value)) return 'syringe';
@@ -195,6 +197,8 @@
                 if (/analytic|view/.test(value)) return 'chart';
                 if (/decision|approval|follow/.test(value)) return 'check-circle';
                 if (/people|employee|customer|staff|welfare|human/.test(value)) return 'users';
+                if (/supplier|vendor|payable/.test(value)) return 'truck';
+                if (/cash|bank/.test(value)) return 'cash';
                 if (/account|payroll|finance|budget|resource/.test(value)) return 'coins';
                 if (/sales|receipt/.test(value)) return 'receipt';
                 if (/stock|inventory|store/.test(value)) return 'box';

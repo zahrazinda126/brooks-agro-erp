@@ -20,9 +20,15 @@ class AccountingController extends Controller
     public function payables(Request $request): View
     {
         abort_unless($request->user()->canAccess('payables'), 403);
-        $items = Payable::query()->latest('invoice_date')->paginate(30);
+        $items = Payable::query()
+            ->when($request->filled('from'), fn($q)=>$q->whereDate('invoice_date','>=',$request->input('from')))
+            ->when($request->filled('to'), fn($q)=>$q->whereDate('invoice_date','<=',$request->input('to')))
+            ->latest('invoice_date')->paginate(30)->withQueryString();
         $outstanding = Payable::where('status', 'open')->get()->sum(fn (Payable $item) => (float) $item->amount - (float) $item->amount_paid);
-        return view('finance.accounting.payables', compact('items', 'outstanding'));
+        $suppliers = collect(config('finance_entry.suppliers', []))
+            ->merge(Payable::query()->whereNotNull('supplier_name')->pluck('supplier_name'))
+            ->map(fn ($name) => trim((string) $name))->filter()->unique(fn ($name) => mb_strtolower($name))->sort()->values();
+        return view('finance.accounting.payables', compact('items', 'outstanding', 'suppliers'));
     }
 
     public function storePayable(Request $request): RedirectResponse

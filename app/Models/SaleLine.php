@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SaleLine extends Model
 {
-    protected $fillable = ['sale_id','product_id','category','description','unit','quantity','unit_price','line_total'];
+    protected $fillable = ['sale_id','product_id','animal_group_id','poultry_house_id','category','description','unit','quantity','unit_price','line_total'];
 
     protected function casts(): array
     {
@@ -22,5 +22,15 @@ class SaleLine extends Model
     public function sale(): BelongsTo
     {
         return $this->belongsTo(Sale::class);
+    }
+
+    public function batch(): BelongsTo
+    {
+        return $this->belongsTo(AnimalGroup::class, 'animal_group_id');
+    }
+
+    public function poultryHouse(): BelongsTo
+    {
+        return $this->belongsTo(PoultryHouse::class, 'poultry_house_id');
     }
 }

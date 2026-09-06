@@ -51,7 +51,16 @@ class DailyManagementReportController extends Controller
             ]);
         }
 
-        return view('daily-reports.index', ['date' => $date, 'departments' => self::DEPARTMENTS, 'rows' => $rows, 'comments' => $comments->groupBy('department_code'), 'editable' => $editable, 'closures'=>$closures, 'closable'=>$this->closableDepartments($roles), 'isCeo' => $roles->contains('ceo'), 'isFinanceManager'=>$roles->contains('finance-manager'), 'isDirector' => false, 'canViewAll' => $canViewAll]);
+        $summaryMode = $roles->contains('finance-manager') ? 'finance' : ($roles->contains('sales-manager') ? 'sales' : ($roles->contains('production-manager') ? 'production' : ($roles->contains('hr-manager') ? 'hr' : ($roles->contains('ceo') && $closures->has('finance') ? 'finance' : null))));
+        $dailySummary = match ($summaryMode) {
+            'production' => $this->productionSnapshot($date),
+            'hr' => $this->hrSnapshot($date),
+            'finance', 'sales' => $this->financeSnapshot($date),
+            default => null,
+        };
+        $productionSummary = $roles->contains('ceo') && $closures->has('production') ? $this->productionSnapshot($date) : null;
+        $hrSummary = $roles->contains('ceo') && $closures->has('hr') ? $this->hrSnapshot($date) : null;
+        return view('daily-reports.index', ['date' => $date, 'departments' => self::DEPARTMENTS, 'rows' => $rows, 'comments' => $comments->groupBy('department_code'), 'editable' => $editable, 'closures'=>$closures, 'closable'=>$this->closableDepartments($roles), 'isCeo' => $roles->contains('ceo'), 'isFinanceManager'=>$roles->contains('finance-manager'), 'isProductionManager'=>$roles->contains('production-manager'), 'isHrManager'=>$roles->contains('hr-manager'), 'isDirector' => false, 'canViewAll' => $canViewAll, 'dailySummary'=>$dailySummary, 'summaryMode'=>$summaryMode, 'productionSummary'=>$productionSummary, 'hrSummary'=>$hrSummary]);
     }
 
     public function save(Request $request, CommunicationService $communications): RedirectResponse
@@ -90,6 +99,78 @@ class DailyManagementReportController extends Controller
             $communications->toRole('director', "$label daily report is ready", 'All unit reports have been reviewed by the CEO. The departmental report is ready.', $request->user()->id, route('daily-reports.index', ['date' => $section->report_date->toDateString()], false));
         }
         return back()->with('status', $data['decision'] === 'review' ? 'Unit reviewed and included in the departmental report.' : 'Report returned with your comment.');
+    }
+
+    public function reviewDepartment(Request $request, CommunicationService $communications): RedirectResponse
+    {
+        abort_unless($this->roles($request->user())->contains('ceo'), 403);
+        $data = $request->validate([
+            'report_date' => ['required', 'date'],
+            'department_code' => ['required', 'string', 'in:production,hr,finance'],
+            'decision' => ['required', 'in:approve,changes'],
+            'review_note' => ['nullable', 'required_if:decision,changes', 'string', 'max:5000'],
+        ]);
+        abort_unless(DB::table('daily_department_report_closures')->whereDate('report_date', $data['report_date'])->where('department_code', $data['department_code'])->exists(), 422, 'This department has not submitted its complete daily report yet.');
+
+        $reports = DailyManagementReportSection::whereDate('report_date', $data['report_date'])
+            ->where('department_code', $data['department_code'])
+            ->whereIn('status', ['manager_shared', 'changes_requested', 'ceo_reviewed'])
+            ->get();
+        abort_if($reports->isEmpty(), 422, 'There is no submitted report to review.');
+
+        $approved = $data['decision'] === 'approve';
+        DailyManagementReportSection::whereIn('id', $reports->pluck('id'))->update([
+            'status' => $approved ? 'ceo_reviewed' : 'changes_requested',
+            'reviewed_by' => $request->user()->id,
+            'reviewed_at' => now(),
+            'review_note' => $data['review_note'] ?? null,
+            'updated_at' => now(),
+        ]);
+
+        $label = self::DEPARTMENTS[$data['department_code']]['label'];
+        $reports->pluck('prepared_by')->filter()->unique()->each(fn ($ownerId) => $communications->toUser(
+            $ownerId,
+            $approved ? "CEO approved the {$label} daily report" : "{$label} daily report returned for correction",
+            $approved ? (($data['review_note'] ?? null) ?: 'The complete daily report was reviewed and approved.') : $data['review_note'],
+            'workflow',
+            $request->user()->id,
+            route('daily-reports.index', ['date' => $data['report_date']], false)
+        ));
+
+        if ($approved) {
+            $communications->toRole('director', "{$label} daily report approved by CEO", 'The completed departmental template is available for viewing.', $request->user()->id, route('daily-reports.index', ['date' => $data['report_date']], false));
+        }
+
+        return back()->with('status', $approved ? "{$label} daily report approved." : "{$label} daily report returned for correction.");
+    }
+
+    public function saveHrObservations(Request $request): RedirectResponse
+    {
+        abort_unless($this->roles($request->user())->contains('hr-manager'), 403);
+        $data = $request->validate([
+            'report_date' => ['required', 'date'],
+            'challenges' => ['nullable', 'string', 'max:10000'],
+            'emerging_issues' => ['nullable', 'string', 'max:10000'],
+            'recommendations' => ['nullable', 'string', 'max:10000'],
+            'achievements' => ['nullable', 'string', 'max:10000'],
+        ]);
+        abort_if(DB::table('daily_department_report_closures')->whereDate('report_date', $data['report_date'])->where('department_code', 'hr')->exists(), 422, 'The HR report is already closed for this date.');
+
+        $row = DailyManagementReportSection::firstOrNew([
+            'report_date' => $data['report_date'],
+            'department_code' => 'hr',
+            'section_code' => 'ad_hoc',
+        ]);
+        abort_if($row->exists && $row->status === 'ceo_reviewed', 422, 'This HR report has already been reviewed by the CEO.');
+        $details = $row->details ?? [];
+        $details['management_observations'] = collect($data)->except('report_date')->all();
+        $row->fill([
+            'summary' => $row->summary ?: 'HR daily management observations',
+            'details' => $details,
+            'prepared_by' => $request->user()->id,
+        ])->save();
+
+        return back()->with('status', 'HR challenges, emerging issues, recommendations and achievements saved.');
     }
 
     public function closeDay(Request $request, CommunicationService $communications): RedirectResponse
@@ -152,13 +233,7 @@ class DailyManagementReportController extends Controller
         }
 
         if ($readyDepartments->contains('hr')) {
-            $snapshots['hr'] = [
-                'records' => DB::table('employee_records')->leftJoin('employees', 'employees.id', '=', 'employee_records.employee_id')->whereDate('recorded_on', $date)->select('employee_records.*', 'employees.first_name', 'employees.last_name', 'employees.staff_no')->orderBy('type')->get(),
-                'active_leave' => DB::table('employee_records')->where('type', 'leave')->whereDate('recorded_on', '<=', $date)->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $date))->orderByDesc('recorded_on')->get()->keyBy('employee_id'),
-                'fleet' => DB::table('fleet_records')->whereDate('recorded_on', $date)->orderBy('set_off_at')->get(),
-                'active_staff' => DB::table('employees')->where('status', 'active')->count(),
-                'employees' => DB::table('employees')->leftJoin('departments', 'departments.id', '=', 'employees.department_id')->leftJoin('roles', 'roles.id', '=', 'employees.role_id')->where('employees.status', 'active')->select('employees.*', 'departments.name as department_name', 'roles.name as role_name')->orderBy('departments.name')->orderBy('employees.first_name')->get(),
-            ];
+            $snapshots['hr'] = $this->hrSnapshot($date);
         }
 
         if ($readyDepartments->contains('finance')) {
@@ -166,6 +241,17 @@ class DailyManagementReportController extends Controller
         }
 
         return $snapshots;
+    }
+
+    private function hrSnapshot(string $date): array
+    {
+        return [
+            'records' => DB::table('employee_records')->leftJoin('employees', 'employees.id', '=', 'employee_records.employee_id')->whereDate('recorded_on', $date)->select('employee_records.*', 'employees.first_name', 'employees.last_name', 'employees.staff_no')->orderBy('type')->get(),
+            'active_leave' => DB::table('employee_records')->where('type', 'leave')->whereDate('recorded_on', '<=', $date)->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $date))->orderByDesc('recorded_on')->get()->keyBy('employee_id'),
+            'fleet' => DB::table('fleet_records')->whereDate('recorded_on', $date)->orderBy('set_off_at')->get(),
+            'active_staff' => DB::table('employees')->where('status', 'active')->count(),
+            'employees' => DB::table('employees')->leftJoin('departments', 'departments.id', '=', 'employees.department_id')->leftJoin('roles', 'roles.id', '=', 'employees.role_id')->where('employees.status', 'active')->select('employees.*', 'departments.name as department_name', 'roles.name as role_name')->orderBy('departments.name')->orderBy('employees.first_name')->get(),
+        ];
     }
 
     private function financeSnapshot(string $date): array

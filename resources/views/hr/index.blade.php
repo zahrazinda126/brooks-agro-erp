@@ -41,10 +41,12 @@
                 <option value="all" @selected($filters['status'] === 'all')>Everyone</option>
             </select>
         </div>
+        <div class="field"><label for="from">Hired from</label><input id="from" type="date" name="from" value="{{ $filters['from'] }}"></div>
+        <div class="field"><label for="to">Hired to</label><input id="to" type="date" name="to" value="{{ $filters['to'] }}"></div>
 
         <div class="field field--actions">
             <button type="submit" class="btn btn--inline">Apply</button>
-            @if ($filters['q'] || $filters['department'] || $filters['status'] !== 'active')
+            @if ($filters['q'] || $filters['department'] || $filters['status'] !== 'active' || $filters['from'] || $filters['to'])
                 <a class="btn btn--quiet btn--inline" href="{{ route('employees.index') }}">Clear</a>
             @endif
         </div>

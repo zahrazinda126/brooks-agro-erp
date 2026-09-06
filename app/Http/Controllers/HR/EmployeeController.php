@@ -47,6 +47,10 @@ class EmployeeController extends Controller
         if ($type = $request->query('type')) {
             $query->where('employment_type', $type);
         }
+        $hiredFrom = $request->query('from');
+        $hiredTo = $request->query('to');
+        if ($hiredFrom) $query->whereDate('hire_date', '>=', $hiredFrom);
+        if ($hiredTo) $query->whereDate('hire_date', '<=', $hiredTo);
 
         // Default to active staff. Leavers are still here, just not shown.
         $status = $request->query('status', 'active');
@@ -65,6 +69,8 @@ class EmployeeController extends Controller
                 'department' => $dept,
                 'status'     => $status,
                 'type'       => $type,
+                'from'       => $hiredFrom,
+                'to'         => $hiredTo,
             ],
             'counts'      => [
                 'active'     => Employee::where('status', 'active')->count(),

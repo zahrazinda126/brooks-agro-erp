@@ -40,6 +40,8 @@
                 <option value="all" @selected($filters['status'] === 'all')>All</option>
             </select>
         </div>
+        <div class="field"><label for="from">Received from</label><input id="from" type="date" name="from" value="{{ $filters['from'] }}"></div>
+        <div class="field"><label for="to">Received to</label><input id="to" type="date" name="to" value="{{ $filters['to'] }}"></div>
 
         <div class="field field--actions">
             <button type="submit" class="btn btn--inline">Apply</button>

@@ -14,6 +14,9 @@ use App\Models\SalesPayment;
 use App\Models\SalesReturn;
 use App\Models\CustomerPrepayment;
 use App\Models\SalePriceChangeRequest;
+use App\Models\AnimalGroup;
+use App\Models\PoultryHouse;
+use App\Models\PoultryHouseAssignment;
 use App\Services\CommunicationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -44,6 +47,7 @@ class SalesController extends Controller
             return ['name' => $product->name, 'eggs' => $eggs, 'trays' => intdiv($eggs, $perTray), 'loose' => $eggs % $perTray, 'eggs_per_tray' => $perTray];
         })->values();
         $customers = SalesCustomer::where('is_active', true)->orderBy('name')->get();
+        $poultryHouses = PoultryHouse::with('batch')->where('is_active', true)->whereNotNull('animal_group_id')->where('bird_quantity', '>', 0)->orderBy('house_number')->get();
         $prepayments = CustomerPrepayment::with('customer')->whereRaw('amount_used < amount')->orderBy('customer_name')->get();
         $sales = Sale::with(['lines', 'seller'])->latest('sale_date')->latest('id')->paginate(25)->withQueryString();
         $from = $request->query('from', now()->startOfMonth()->toDateString());
@@ -61,7 +65,7 @@ class SalesController extends Controller
             ? AuditLog::with('user')->whereIn('event', ['sale_price_approved','sale_price_changed'])->where('auditable_type', SaleProduct::class)->latest('created_at')->limit(20)->get()
             : collect();
 
-        return view('sales.index', compact('products', 'eggStock', 'customers', 'prepayments', 'sales', 'screen', 'from', 'to', 'customerReport', 'productReport', 'monthly', 'reportTotal', 'reportSales', 'priceHistory') + [
+        return view('sales.index', compact('products', 'eggStock', 'customers', 'poultryHouses', 'prepayments', 'sales', 'screen', 'from', 'to', 'customerReport', 'productReport', 'monthly', 'reportTotal', 'reportSales', 'priceHistory') + [
             'todayTotal' => (float) Sale::whereDate('sale_date', today())->whereNotIn('status', ['void'])->sum('total'),
             'monthTotal' => (float) Sale::whereBetween('sale_date', [now()->startOfMonth(), now()->endOfMonth()])->whereNotIn('status', ['void'])->sum('total'),
             'outstanding' => (float) Sale::where('balance', '>', 0)->sum('balance'),
@@ -162,7 +166,7 @@ class SalesController extends Controller
     public function storeSale(Request $request): RedirectResponse
     {
         abort_unless($request->user()->canDo('sales', 'create'), 403);
-        $data = $request->validate(['sale_date' => ['required', 'date', 'before_or_equal:today'], 'customer_id' => ['nullable', 'exists:sales_customers,id'], 'walk_in_customer' => ['nullable', 'string', 'max:160'], 'payment_type' => ['required', 'in:cash,credit,mixed'], 'payment_method' => ['nullable', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'string', 'max:120'], 'amount_paid' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'merchant_code' => ['nullable', 'required_if:payment_method,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'], 'notes' => ['nullable', 'string', 'max:2000'], 'lines' => ['required', 'array', 'min:1'], 'lines.*.product_id' => ['nullable', 'required_without:lines.*.description', 'exists:sale_products,id'], 'lines.*.category' => ['nullable', 'required_without:lines.*.product_id', Rule::in(self::CATEGORIES)], 'lines.*.description' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:180'], 'lines.*.unit' => ['nullable', 'required_without:lines.*.product_id', Rule::in(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'])], 'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required', 'numeric', 'min:0']]);
+        $data = $request->validate(['sale_date' => ['required', 'date', 'before_or_equal:today'], 'customer_id' => ['nullable', 'exists:sales_customers,id'], 'walk_in_customer' => ['nullable', 'string', 'max:160'], 'payment_type' => ['required', 'in:cash,credit,mixed'], 'payment_method' => ['nullable', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'string', 'max:120'], 'amount_paid' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'merchant_code' => ['nullable', 'required_if:payment_method,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'], 'notes' => ['nullable', 'string', 'max:2000'], 'lines' => ['required', 'array', 'min:1'], 'lines.*.product_id' => ['nullable', 'required_without:lines.*.description', 'exists:sale_products,id'], 'lines.*.category' => ['nullable', 'required_without:lines.*.product_id', Rule::in(self::CATEGORIES)], 'lines.*.description' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:180'], 'lines.*.unit' => ['nullable', 'required_without:lines.*.product_id', Rule::in(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'])], 'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required', 'numeric', 'min:0'], 'lines.*.poultry_house_id' => ['nullable', 'exists:poultry_houses,id']]);
         $receiptPath = $request->file('payment_receipt')?->store('sales-payment-receipts', 'public');
         $data['payment_type'] = 'cash';
         $data['amount_paid'] = 0;
@@ -189,6 +193,9 @@ class SalesController extends Controller
                         ? (float) $product->unit_price
                         : (float) $line['unit_price'];
                     $saleUnit = $product ? ($line['unit'] ?? $product->unit) : $line['unit'];
+                    $description = $product?->name ?: ($line['description'] ?? '');
+                    $isOffLayer = $saleUnit === 'bird' && str_contains(strtolower($description), 'layer');
+                    if ($isOffLayer && empty($line['poultry_house_id'])) throw new \RuntimeException('Choose the poultry house supplying the off-layer birds.');
                     if ($product?->egg_grade_id) {
                         $looseEggsAllowed = (bool)$product->eggGrade?->is_defect;
                         $allowedUnits = $looseEggsAllowed ? ['tray', 'egg'] : ['tray'];
@@ -209,7 +216,7 @@ class SalesController extends Controller
                         }
                     }$total = round($qty * $price, 2);
                     $subtotal += $total;
-                    $lines[] = [$product, $line['category'] ?? null, $line['description'] ?? null, $saleUnit, $qty, $price, $total];
+                    $lines[] = [$product, $line['category'] ?? null, $line['description'] ?? null, $saleUnit, $qty, $price, $total, $isOffLayer ? (int)$line['poultry_house_id'] : null];
                 }
                 $discount = (float) ($data['discount'] ?? 0);
                 $total = max(0, round($subtotal - $discount, 2));
@@ -233,8 +240,29 @@ class SalesController extends Controller
                     $this->consumeCustomerPrepayment($customer, $paid);
                 }
                 $sale = Sale::create(['invoice_number' => $this->nextInvoice(), 'sale_date' => $data['sale_date'], 'customer_id' => $customer?->id, 'customer_name' => $customerName, 'payment_type' => $data['payment_type'], 'payment_method' => $data['payment_method'] ?? null, 'farm_account' => $data['farm_account'] ?? null, 'subtotal' => $subtotal, 'discount' => $discount, 'total' => $total, 'amount_paid' => $paid, 'balance' => $balance, 'status' => $balance > 0 ? 'partly_paid' : 'paid', 'notes' => $data['notes'] ?? null, 'sold_by' => $request->user()->id]);
-                foreach ($lines as [$product,$category,$description,$unit,$qty,$price,$lineTotal]) {
-                    SaleLine::create(['sale_id' => $sale->id, 'product_id' => $product?->id, 'category' => $product?->category ?: strtolower(trim((string) $category)), 'description' => $product?->name ?: $description, 'unit' => $unit, 'quantity' => $qty, 'unit_price' => $price, 'line_total' => $lineTotal]);
+                foreach ($lines as [$product,$category,$description,$unit,$qty,$price,$lineTotal,$houseId]) {
+                    $house = null;
+                    $batch = null;
+                    if ($houseId) {
+                        $house = PoultryHouse::lockForUpdate()->findOrFail($houseId);
+                        if (! $house->is_active || ! $house->animal_group_id) throw new \RuntimeException('The selected poultry house is no longer occupied and active.');
+                        if (floor($qty) !== $qty) throw new \RuntimeException('Off-layer birds must be sold as a whole number.');
+                        if ($qty > $house->bird_quantity) throw new \RuntimeException('Only '.number_format($house->bird_quantity).' birds remain in '.$house->displayNumber().'.');
+                        $batch = AnimalGroup::lockForUpdate()->findOrFail($house->animal_group_id);
+                        if ($qty > $batch->current_quantity) throw new \RuntimeException('The sale exceeds the remaining bird balance for batch '.$batch->code.'.');
+                    }
+                    SaleLine::create(['sale_id' => $sale->id, 'product_id' => $product?->id, 'animal_group_id' => $batch?->id, 'poultry_house_id' => $house?->id, 'category' => $product?->category ?: strtolower(trim((string) $category)), 'description' => $product?->name ?: $description, 'unit' => $unit, 'quantity' => $qty, 'unit_price' => $price, 'line_total' => $lineTotal]);
+                    if ($house && $batch) {
+                        $sold = (int)$qty;
+                        $house->decrement('bird_quantity', $sold);
+                        $batch->decrement('current_quantity', $sold);
+                        $batch->increment('total_sold', $sold);
+                        $house->refresh();
+                        if ($house->bird_quantity === 0) {
+                            PoultryHouseAssignment::where('poultry_house_id', $house->id)->whereNull('assigned_until')->update(['assigned_until'=>$data['sale_date'], 'updated_at'=>now()]);
+                            $house->update(['animal_group_id'=>null, 'is_active'=>true, 'notes'=>trim(($house->notes ? $house->notes."\n\n" : '').'Freed after final off-layer sale '.$sale->invoice_number.' on '.$data['sale_date'].'.')]);
+                        }
+                    }
                     if ($product && $product->stock_quantity !== null) {
                         $product->decrement('stock_quantity', $qty);
                     }
@@ -260,7 +288,7 @@ class SalesController extends Controller
     public function show(Request $request, Sale $sale): View
     {
         abort_unless($request->user()->canAccess('sales') || $request->user()->canAccess('finance'), 403);
-        $sale->load(['lines.product', 'payments', 'customer', 'seller']);
+        $sale->load(['lines.product', 'lines.batch', 'lines.poultryHouse', 'payments', 'customer', 'seller']);
 
         $prepayments=CustomerPrepayment::whereRaw('amount_used < amount')->where('customer_id',$sale->customer_id)->orderBy('received_date')->get();
         return view('sales.show', compact('sale','prepayments'));
@@ -270,7 +298,7 @@ class SalesController extends Controller
     {
         abort_unless($request->user()->canAccess('sales') || $request->user()->canAccess('finance'), 403);
         abort_unless($payment->sale_id === $sale->id, 404);
-        $sale->load(['lines', 'customer']);
+        $sale->load(['lines.batch', 'lines.poultryHouse', 'customer']);
         $payment->load('recorder');
         $creditUsed = $payment->payment_method === 'prepayment' ? (float)$payment->amount : 0.0;
         $remainingAccountCredit = $sale->customer

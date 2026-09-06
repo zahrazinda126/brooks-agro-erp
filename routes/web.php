@@ -93,6 +93,8 @@ Route::middleware('auth')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
         Route::get('/daily-management-report', [DailyManagementReportController::class, 'index'])->name('daily-reports.index');
         Route::post('/daily-management-report', [DailyManagementReportController::class, 'save'])->name('daily-reports.save');
+        Route::post('/daily-management-report/hr-observations', [DailyManagementReportController::class, 'saveHrObservations'])->name('daily-reports.hr-observations');
+        Route::post('/daily-management-report/department/review', [DailyManagementReportController::class, 'reviewDepartment'])->name('daily-reports.department.review');
         Route::post('/daily-management-report/{section}/review', [DailyManagementReportController::class, 'review'])->name('daily-reports.review');
         Route::post('/daily-management-report/close-day', [DailyManagementReportController::class, 'closeDay'])->name('daily-reports.close-day');
         Route::post('/daily-management-report/comments', [DailyManagementReportController::class, 'comment'])->name('daily-reports.comments');

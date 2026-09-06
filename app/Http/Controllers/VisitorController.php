@@ -14,6 +14,8 @@ class VisitorController extends Controller
         $search = $request->string('search')->trim()->toString();
         $visitors = Visitor::with(['recorder','checkoutRecorder'])
             ->when($request->input('status') === 'inside', fn($q) => $q->whereNull('checked_out_at'))
+            ->when($request->filled('from'), fn($q) => $q->whereDate('visit_date','>=',$request->input('from')))
+            ->when($request->filled('to'), fn($q) => $q->whereDate('visit_date','<=',$request->input('to')))
             ->when($search, fn($q) => $q->where(function($x) use ($search) {
                 $term = '%'.strtolower($search).'%';
                 $x->whereRaw('lower(visitor_name) like ?', [$term])

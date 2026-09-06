@@ -26,9 +26,17 @@ class OwnerDirectoryController extends Controller
             'product_id'=>['nullable','exists:sale_products,id'],
             'status'=>['nullable',Rule::in(['all','active','archived'])],
             'account'=>['nullable',Rule::in(['all','prepayment','owing','frequent','one-time','no-purchases'])],
+            'purchased_from'=>['nullable','date'],
+            'purchased_to'=>['nullable','date','after_or_equal:purchased_from'],
+            'created_from'=>['nullable','date'],
+            'created_to'=>['nullable','date','after_or_equal:created_from'],
         ]);
         $statusFilter = (string) $request->query('status', 'active');
         $accountFilter = (string) $request->query('account', 'all');
+        $purchasedFrom = $request->date('purchased_from')?->toDateString();
+        $purchasedTo = $request->date('purchased_to')?->toDateString();
+        $createdFrom = $request->date('created_from')?->toDateString();
+        $createdTo = $request->date('created_to')?->toDateString();
         $month = Carbon::createFromFormat('Y-m', (string) $request->query('month', now()->format('Y-m')))->startOfMonth();
         $monthEnd = $month->copy()->endOfMonth();
         $productId = $request->integer('product_id') ?: null;
@@ -41,6 +49,13 @@ class OwnerDirectoryController extends Controller
             ->when($accountFilter === 'frequent', fn ($query) => $query->whereHas('sales', fn ($sales) => $sales->where('status', '!=', 'void'), '>=', 2))
             ->when($accountFilter === 'one-time', fn ($query) => $query->whereHas('sales', fn ($sales) => $sales->where('status', '!=', 'void'), '=', 1))
             ->when($accountFilter === 'no-purchases', fn ($query) => $query->whereDoesntHave('sales', fn ($sales) => $sales->where('status', '!=', 'void')))
+            ->when($purchasedFrom || $purchasedTo, fn ($query) => $query->whereHas('sales', function ($sales) use ($purchasedFrom, $purchasedTo) {
+                $sales->where('status', '!=', 'void')
+                    ->when($purchasedFrom, fn ($rows) => $rows->whereDate('sale_date', '>=', $purchasedFrom))
+                    ->when($purchasedTo, fn ($rows) => $rows->whereDate('sale_date', '<=', $purchasedTo));
+            }))
+            ->when($createdFrom, fn ($query) => $query->whereDate('created_at', '>=', $createdFrom))
+            ->when($createdTo, fn ($query) => $query->whereDate('created_at', '<=', $createdTo))
             ->when($search !== '', fn ($query) => $query->where(function ($nested) use ($search) {
                 $nested->where('name', 'ilike', "%{$search}%")
                     ->orWhere('phone', 'ilike', "%{$search}%")
@@ -99,6 +114,10 @@ class OwnerDirectoryController extends Controller
             'search' => $search,
             'statusFilter' => $statusFilter,
             'accountFilter' => $accountFilter,
+            'purchasedFrom' => $purchasedFrom,
+            'purchasedTo' => $purchasedTo,
+            'createdFrom' => $createdFrom,
+            'createdTo' => $createdTo,
             'totalCustomers' => SalesCustomer::where('is_active', true)->count(),
             'repeatCustomers' => SalesCustomer::whereHas('sales', fn ($query) => $query->where('status', '!=', 'void'), '>=', 2)->count(),
             'oneTimeCustomers' => SalesCustomer::whereHas('sales', fn ($query) => $query->where('status', '!=', 'void'), '=', 1)->count(),

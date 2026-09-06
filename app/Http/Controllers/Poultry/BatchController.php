@@ -44,6 +44,10 @@ class BatchController extends Controller
         if ($dept = $request->query('department')) {
             $query->where('department_id', $dept);
         }
+        $from = $request->query('from');
+        $to = $request->query('to');
+        if ($from) $query->whereDate('received_date', '>=', $from);
+        if ($to) $query->whereDate('received_date', '<=', $to);
 
         if ($term = trim((string) $request->query('q'))) {
             $query->where(function ($q) use ($term) {
@@ -61,7 +65,7 @@ class BatchController extends Controller
         return view('poultry.batches.index', [
             'batches'     => $batches,
             'departments' => $this->departments($user),
-            'filters'     => ['q' => $request->query('q'), 'department' => $dept, 'status' => $status],
+            'filters'     => ['q' => $request->query('q'), 'department' => $dept, 'status' => $status, 'from'=>$from, 'to'=>$to],
             'totals'      => [
                 'batches' => (clone $visible)->count(),
                 'birds'   => (clone $visible)->sum('current_quantity'),

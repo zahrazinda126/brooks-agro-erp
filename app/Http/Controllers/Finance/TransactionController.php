@@ -238,6 +238,8 @@ class TransactionController extends Controller
             }
         });
         $accounts = $entries->pluck('account')->unique()->sort()->values();
+        if ($r->filled('from')) $entries = $entries->filter(fn ($entry) => $entry->date->toDateString() >= $r->query('from'))->values();
+        if ($r->filled('to')) $entries = $entries->filter(fn ($entry) => $entry->date->toDateString() <= $r->query('to'))->values();
         if ($r->filled('account')) {
             $entries = $entries->where('account', $r->query('account'))->values();
         } $totalDebit = $entries->sum('debit');
@@ -249,7 +251,10 @@ class TransactionController extends Controller
     public function cashBook(Request $r): View
     {
         abort_unless($r->user()->canAccess('cash-book'), 403);
-        $rows = FinancialTransaction::with('recorder')->where('payment_method', 'cash')->orderBy('transaction_date')->orderBy('id')->get();
+        $rows = FinancialTransaction::with('recorder')->where('payment_method', 'cash')
+            ->when($r->filled('from'), fn($q)=>$q->whereDate('transaction_date','>=',$r->query('from')))
+            ->when($r->filled('to'), fn($q)=>$q->whereDate('transaction_date','<=',$r->query('to')))
+            ->orderBy('transaction_date')->orderBy('id')->get();
         $balance = 0;
         $rows->each(function ($x) use (&$balance) {
             $balance += $x->type === 'money_received' ? $x->amount : -$x->amount;
@@ -266,7 +271,10 @@ class TransactionController extends Controller
         $q = FinancialTransaction::with('recorder')->where('payment_method', 'bank');
         if ($r->filled('account')) {
             $q->where('account', $r->query('account'));
-        } $rows = $q->orderBy('transaction_date')->orderBy('id')->get();
+        }
+        $q->when($r->filled('from'), fn($query)=>$query->whereDate('transaction_date','>=',$r->query('from')))
+            ->when($r->filled('to'), fn($query)=>$query->whereDate('transaction_date','<=',$r->query('to')));
+        $rows = $q->orderBy('transaction_date')->orderBy('id')->get();
         $balance = 0;
         $rows->each(function ($x) use (&$balance) {
             $balance += $x->type === 'money_received' ? $x->amount : -$x->amount;

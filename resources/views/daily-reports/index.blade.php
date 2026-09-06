@@ -2,6 +2,75 @@
 @section('title','Daily Department Reports')
 @section('content')
 <x-report-header eyebrow="Daily reporting protocol" title="Daily Department Reports" description="Unit reports are reviewed by the CEO, then combined automatically into one report for each department." :period="\Carbon\Carbon::parse($date)->format('l, d F Y')"><x-slot:actions><form method="GET"><input type="date" name="date" value="{{ $date }}" onchange="this.form.submit()"></form><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button></x-slot:actions></x-report-header>
+@if($dailySummary && $summaryMode)
+    @if($summaryMode === 'finance')
+        @php($financeApproved = $rows->get('finance', collect())->isNotEmpty() && $rows->get('finance', collect())->every(fn($report) => $report->status === 'ceo_reviewed'))
+        <section class="report-preview-heading">
+            <div>
+                <p class="card-label">Finance departmental report</p>
+                <h2>Complete report preview</h2>
+                <p>Check every section below before closing and sending the Finance report to the CEO.</p>
+            </div>
+            <span class="status-pill">{{ $financeApproved ? 'CEO approved' : ($closures->has('finance') ? 'Awaiting CEO review' : 'Waiting for Finance confirmation') }}</span>
+        </section>
+        @include('daily-reports.partials.finance-legacy', ['snapshot'=>$dailySummary, 'date'=>$date])
+        @if($isCeo && $closures->has('finance'))
+            @include('daily-reports.partials.ceo-department-decision', ['departmentCode'=>'finance'])
+        @endif
+        @if($isFinanceManager && in_array('finance',$closable??[],true) && !$closures->has('finance'))
+            <form method="POST" action="{{ route('daily-reports.close-day') }}" class="notice">@csrf
+                <input type="hidden" name="report_date" value="{{ $date }}">
+                <input type="hidden" name="department_code" value="finance">
+                <strong>Confirm the complete Finance report</strong>
+                <p>Review the complete report above. One confirmation closes it and sends it to the CEO.</p>
+                <button class="btn">Confirm whole report &amp; send to CEO</button>
+            </form>
+        @endif
+    @elseif($summaryMode === 'production')
+        <section class="report-preview-heading">
+            <div><p class="card-label">Production departmental report</p><h2>Production report template</h2><p>Automatically filled from poultry, livestock, feed, garden, mortality and activity records for this date.</p></div>
+            <span class="status-pill">{{ $closures->has('production') ? 'Sent to CEO' : 'Open' }}</span>
+        </section>
+        @include('daily-reports.partials.production-legacy', ['snapshot'=>$dailySummary, 'date'=>$date])
+    @elseif($summaryMode === 'hr')
+        <section class="report-preview-heading">
+            <div><p class="card-label">HR &amp; Administration departmental report</p><h2>Complete HR daily report template</h2><p>Attendance, security, welfare, fleet, construction, ad hoc work and management observations are combined below.</p></div>
+            <span class="status-pill">{{ $closures->has('hr') ? 'Sent to CEO' : 'Open' }}</span>
+        </section>
+        @include('daily-reports.partials.hr-legacy', ['snapshot'=>$dailySummary, 'date'=>$date, 'departmentRows'=>$rows->get('hr', collect()), 'submitted'=>$rows->get('hr', collect())->whereIn('status',['manager_shared','changes_requested','ceo_reviewed']), 'editableObservations'=>!$closures->has('hr')])
+        @php
+            $hrAdHocRow = $rows->get('hr', collect())->get('ad_hoc');
+            $hrObservations = collect(data_get($hrAdHocRow?->details, 'management_observations', []));
+        @endphp
+        @if(false && !$closures->has('hr'))
+        <form method="POST" action="{{ route('daily-reports.hr-observations') }}" class="card">@csrf
+            <input type="hidden" name="report_date" value="{{ $date }}">
+            <div class="section-heading"><div><p class="card-label">HR report observations</p><h2>Complete the narrative sections</h2><p>These entries appear directly in sections 7–10 of the consolidated HR report above.</p></div></div>
+            <div class="form-grid">
+                <div class="field"><label>Challenges</label><textarea name="challenges">{{ old('challenges',$hrObservations->get('challenges')) }}</textarea></div>
+                <div class="field"><label>Emerging issues</label><textarea name="emerging_issues">{{ old('emerging_issues',$hrObservations->get('emerging_issues')) }}</textarea></div>
+                <div class="field"><label>Recommendations / proposed actions</label><textarea name="recommendations">{{ old('recommendations',$hrObservations->get('recommendations')) }}</textarea></div>
+                <div class="field"><label>Achievements</label><textarea name="achievements">{{ old('achievements',$hrObservations->get('achievements')) }}</textarea></div>
+            </div>
+            <button class="btn">Save HR observations</button>
+        </form>
+        @endif
+    @else
+        @include('daily-reports.partials.combined-sales-summary', ['snapshot'=>$dailySummary, 'mode'=>$summaryMode, 'date'=>$date])
+    @endif
+@endif
+@if($hrSummary)
+    @php($hrApproved = $rows->get('hr', collect())->isNotEmpty() && $rows->get('hr', collect())->every(fn($report) => $report->status === 'ceo_reviewed'))
+    <section class="report-preview-heading"><div><p class="card-label">HR &amp; Administration departmental report</p><h2>Submitted HR daily report</h2><p>The CEO reviews and approves this complete template.</p></div><span class="status-pill">{{ $hrApproved ? 'CEO approved' : 'Awaiting CEO review' }}</span></section>
+    @include('daily-reports.partials.hr-legacy', ['snapshot'=>$hrSummary, 'date'=>$date, 'departmentRows'=>$rows->get('hr', collect()), 'submitted'=>$rows->get('hr', collect())->whereIn('status',['manager_shared','changes_requested','ceo_reviewed'])])
+    @include('daily-reports.partials.ceo-department-decision', ['departmentCode'=>'hr'])
+@endif
+@if($productionSummary)
+    @php($productionApproved = $rows->get('production', collect())->isNotEmpty() && $rows->get('production', collect())->every(fn($report) => $report->status === 'ceo_reviewed'))
+    <section class="report-preview-heading"><div><p class="card-label">Production departmental report</p><h2>Submitted production report</h2><p>The CEO reviews and approves this complete template.</p></div><span class="status-pill">{{ $productionApproved ? 'CEO approved' : 'Awaiting CEO review' }}</span></section>
+    @include('daily-reports.partials.production-legacy', ['snapshot'=>$productionSummary, 'date'=>$date])
+    @include('daily-reports.partials.ceo-department-decision', ['departmentCode'=>'production'])
+@endif
 @if($isCeo)
 @php
     $ceoVisibleCount = $rows->sum(function ($departmentRows, $departmentCode) use ($closures) {
@@ -12,6 +81,8 @@
 @if($ceoVisibleCount===0)<section class="exec-panel"><div class="finance-empty"><span aria-hidden="true">✓</span><strong>No unit reports submitted for this date</strong><p>There is nothing for the CEO to review yet. Drafts and units that have not started remain private to their report owners.</p></div></section>@endif
 @endif
 @foreach($departments as $departmentCode=>$department)
+@continue($isFinanceManager && $departmentCode==='finance')
+@continue($isCeo)
 @php
  $departmentRows=$rows->get($departmentCode,collect()); $reviewed=$departmentRows->where('status','ceo_reviewed')->count();
  $total=$departmentRows->count(); $closed=$closures->has($departmentCode); $ready=$closed && $total>0 && $reviewed===$total;
@@ -22,6 +93,7 @@
 @endphp
 @if($maySee)
 <section class="card report-department">
+ @if(!($isHrManager && $departmentCode==='hr'))
  <div class="section-heading"><div><p class="card-label">{{ $department['label'] }}</p><h2>{{ $ready ? 'Department report ready' : ($isCeo ? 'Submitted unit reports' : 'Today’s generated unit reports') }}</h2><p>{{ $total }} unit template(s) generated · {{ $reviewed }} reviewed by the CEO. A template remains available even when no activity was recorded.</p></div><span class="status-pill">{{ $closed?'Day closed':'Open' }}</span></div>
  @if($isCeo)
  <div class="approval-timeline">
@@ -45,14 +117,16 @@
     <span>{{ Str::headline($timelineRow->status) }}</span>
     <small>{{ $timelineRow->preparer?->displayName() }}</small>
    </div>
-  @endforeach
+ @endforeach
  </div>
+ @endif
  @endif
 
  @if(in_array($departmentCode,$closable??[],true) && !$closed)
  <form method="POST" action="{{ route('daily-reports.close-day') }}" class="notice">@csrf<input type="hidden" name="report_date" value="{{ $date }}"><input type="hidden" name="department_code" value="{{ $departmentCode }}"><strong>Confirm the complete {{ $department['label'] }} report</strong><p>{{ $departmentCode==='finance' ? 'Once Sales & Collections has arrived, one confirmation combines all Finance sections, closes the report, and sends it to the CEO.' : 'Review the generated sections and save comments only where needed. One confirmation closes and sends the whole departmental report to the CEO.' }}</p><button class="btn">Confirm whole report & close</button></form>
  @endif
 
+ @if(!($isHrManager && $departmentCode==='hr'))
  @foreach($department['units'] as $unitCode=>$unitLabel)
  @php($row=$departmentRows->get($unitCode))
  @if(in_array($unitCode,$editable[$departmentCode]??[],true))
@@ -90,6 +164,7 @@
  </article>
  @endif
  @endforeach
+ @endif
 
  @if($isDirector && $ready)<form method="POST" action="{{ route('daily-reports.comments') }}">@csrf<input type="hidden" name="report_date" value="{{ $date }}"><input type="hidden" name="department_code" value="{{ $departmentCode }}"><div class="field"><label>Comment on the complete {{ $department['label'] }} report</label><textarea name="body" required placeholder="Every concerned unit report owner will be notified"></textarea></div><button class="btn">Send department comment</button></form>@endif
  @foreach($comments->get($departmentCode,collect()) as $comment)<div class="notice"><strong>Director comment · {{ $comment->created_at->format('d M, H:i') }}</strong><br>{{ $comment->body }}</div>@endforeach
