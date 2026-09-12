@@ -25,7 +25,7 @@ class CollectionController extends Controller
         $from = $request->query('from', now()->subDays(7)->toDateString());
         $to   = $request->query('to', now()->toDateString());
 
-        $query = EggCollection::with(['batch', 'lines.grade', 'recorder.employee'])
+        $query = EggCollection::with(['batch', 'lines.grade', 'recorder.employee', 'approver.employee'])
             ->visibleTo($user)
             ->where('status', 'approved')
             ->whereBetween('collected_on', [$from, $to])

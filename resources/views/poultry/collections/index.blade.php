@@ -135,7 +135,7 @@
                     </div>
                 @endif
 
-                {{-- The two times, side by side. --}}
+                {{-- Collection, recording, and approval audit times. --}}
                 <div class="collection-times">
                     <div>
                         <span class="time-label">Collected</span>
@@ -161,6 +161,12 @@
                         <strong>{{ $c->recorder->displayName() }}</strong>
                         <em>{{ $c->recorder->username }}</em>
                     </div>
+
+                    <div>
+                        <span class="time-label">Supervisor approved</span>
+                        <strong>{{ $c->approved_at?->format('H:i:s') ?? '—' }}</strong>
+                        <em>{{ $c->approved_at?->format('j M Y') ?? 'Not approved' }}{{ $c->approver ? ' · '.$c->approver->displayName() : '' }}</em>
+                    </div>
                 </div>
 
                 @if ($c->worker_note)
@@ -174,12 +180,13 @@
 @endif
 
 <div class="card" style="margin-top:18px;">
-    <p class="card-label">About these two times</p>
+    <p class="card-label">About these times</p>
     <p class="muted" style="margin:0;">
         <strong>Collected</strong> is what the worker entered — their statement
         of when they did the round. <strong>Recorded</strong> is when the form
         was submitted, taken from the system rather than typed, so it cannot be
-        adjusted.
+        adjusted. <strong>Supervisor approved</strong> is the exact system time
+        when the supervisor accepted the entry and identifies who approved it.
         <br><br>
         A gap between them is normal — signal is poor in the houses and people
         often enter at the end of a round. A large or repeated gap is worth

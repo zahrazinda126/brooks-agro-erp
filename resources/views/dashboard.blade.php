@@ -14,21 +14,28 @@
     @if ($panel === 'sales-dashboard')
         @php
             $s = $data['salesDashboard'];
-            $salesMax = max(1, $s['monthly']->max('amount'));
         @endphp
         <section class="sales-dashboard">
             <div class="sales-hero"><div><span class="finance-panel-kicker">Sales workspace</span><h3>Today at the shop</h3><p>Record sales, issue receipts and see which customers and products are driving revenue.</p></div><div><a class="btn" href="{{ route('sales.index',['screen'=>'sale']) }}">Record a sale</a><a class="btn btn--quiet" href="{{ route('sales.index',['screen'=>'reports']) }}">View sales report</a></div></div>
-            <div class="sales-dashboard__kpis">
-                <article><span>&#8599;</span><div><small>Sales today</small><strong>UGX {{ number_format($s['today']) }}</strong><em>{{ $s['todayCount'] }} receipt{{ $s['todayCount']===1?'':'s' }}</em></div></article>
-                <article><span>&#9670;</span><div><small>{{ now()->format('F') }} sales</small><strong>UGX {{ number_format($s['month']) }}</strong><em>{{ $s['monthCount'] }} completed sales</em></div></article>
-                <article><span>&#9733;</span><div><small>Average sale</small><strong>UGX {{ number_format($s['average']) }}</strong><em>This month</em></div></article>
-                <article><span>&#128101;</span><div><small>Known customers</small><strong>{{ number_format($s['customers']) }}</strong><em>Saved for repeat analysis</em></div></article>
-            </div>
-            <div class="sales-dashboard__grid">
-                <section class="exec-panel"><div class="section-heading"><div><p class="card-label">Six-month trend</p><h3>Sales performance</h3></div><a href="{{ route('sales.index',['screen'=>'reports']) }}">Full report &rarr;</a></div><div class="sales-chart">@foreach($s['monthly'] as $month)<div><span><i style="height:{{ $month['amount'] > 0 ? max(5,$month['amount']/$salesMax*100) : 2 }}%"></i></span><small>{{ $month['label'] }}</small><b>UGX {{ number_format($month['amount']) }}</b></div>@endforeach</div></section>
-                <section class="exec-panel"><div class="section-heading"><div><p class="card-label">This month</p><h3>Top products</h3></div></div><div class="sales-ranking">@forelse($s['topProducts'] as $index=>$row)<div><b>{{ $index+1 }}</b><span><strong>{{ $row->name }}</strong><small>{{ number_format($row->quantity,2) }} units sold</small></span><em>UGX {{ number_format($row->amount) }}</em></div>@empty<p class="muted">Products will rank here after sales are recorded.</p>@endforelse</div></section>
-            </div>
-            <section class="exec-panel table-wrap"><div class="section-heading"><div><p class="card-label">Latest activity</p><h3>Recent receipts</h3></div><a href="{{ route('sales.index',['screen'=>'sale']) }}">New sale &rarr;</a></div><table><thead><tr><th>Date</th><th>Receipt</th><th>Customer</th><th>Items</th><th>Total</th></tr></thead><tbody>@forelse($s['recent'] as $sale)<tr><td>{{ $sale->sale_date->format('d M Y') }}</td><td><strong>{{ $sale->invoice_number }}</strong></td><td>{{ $sale->customer_name }}</td><td>{{ $sale->lines->count() }}</td><td><strong>UGX {{ number_format($sale->total) }}</strong></td></tr>@empty<tr><td colspan="5">No sales recorded yet. Use “Record a sale” to create the first receipt.</td></tr>@endforelse</tbody></table></section>
+            <form class="sales-report__filter" method="GET" action="{{ route('dashboard') }}">
+                <div class="field"><label>From</label><input type="date" name="sales_from" value="{{ $s['salesFrom'] }}" max="{{ now()->toDateString() }}" required></div>
+                <div class="field"><label>To</label><input type="date" name="sales_to" value="{{ $s['salesTo'] }}" max="{{ now()->toDateString() }}" required></div>
+                <button class="btn">View</button>
+            </form>
+            <section class="exec-panel table-wrap" id="daily-sales-table">
+                <table>
+                    <thead><tr><th>Date</th><th>Time</th><th>Receipt</th><th>Customer</th><th>Method</th><th>Sale total</th><th>Received</th><th>Balance</th><th>Approval</th></tr></thead>
+                    <tbody>
+                        <tr class="balance-forward-row"><td>{{ \Carbon\Carbon::parse($s['salesFrom'])->format('d M Y') }}</td><td>Opening</td><td colspan="4"><strong>Balance brought forward</strong></td><td><strong>UGX {{ number_format($s['openingBalance'], 2) }}</strong></td><td><strong>UGX {{ number_format($s['openingBalance'], 2) }}</strong></td><td>{{ $s['openingBalance'] > 0 ? 'Awaiting Finance' : 'Clear' }}</td></tr>
+                        @forelse($s['dailySales'] as $sale)
+                            <tr><td>{{ $sale->sale_date->format('d M Y') }}</td><td>{{ $sale->created_at->format('H:i') }}</td><td><a href="{{ route('sales.show', $sale) }}">{{ $sale->payments->first()?->receipt_number ?: $sale->invoice_number }}</a></td><td>@if($sale->customer)<a href="{{ route('customer-accounts.show', $sale->customer) }}">{{ $sale->customer_name }}</a>@else{{ $sale->customer_name }}@endif</td><td>{{ Str::headline($sale->payment_method ?: $sale->payment_type) }}</td><td>UGX {{ number_format($sale->total, 2) }}</td><td>UGX {{ number_format($sale->payments->sum('amount'), 2) }}</td><td>UGX {{ number_format($sale->balance, 2) }}</td><td>{{ Str::headline($sale->approval_status) }}</td></tr>
+                        @empty
+                            <tr><td colspan="9">No sales entered in this period.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+                <div class="form-actions" style="padding:14px 0 0"><strong>Total: UGX {{ number_format($s['cashAvailable'], 2) }}</strong></div>
+            </section>
         </section>
     @elseif ($panel === 'hr-dashboard')
         @php
@@ -70,6 +77,25 @@
             $hasCashMovement = $f['monthly']->contains(fn ($month) => $month['income'] > 0 || $month['expenses'] > 0);
         @endphp
         <section class="finance-dashboard">
+            @php
+                $annualMax = max(1, $f['monthly']->max(fn ($month) => max($month['income'], $month['expenses'])));
+                $customerMax = max(1, $f['topCustomers']->max('amount') ?? 1);
+                $productMax = max(1, $f['topProducts']->max('amount') ?? 1);
+            @endphp
+            <section class="finance-simple-dashboard">
+                <div class="finance-simple-head"><div><p class="card-label">Finance dashboard</p><h2>Annual performance</h2></div><div class="form-actions"><a class="btn btn--small" href="{{ route('finance.transactions.create') }}">Finance posting</a><a class="btn btn--quiet btn--small" href="{{ route('finance.transactions.index') }}">View accounts</a></div></div>
+                <div class="finance-annual-chart">
+                    @foreach($f['monthly'] as $month)
+                        <div class="finance-annual-month"><div><i class="revenue" style="height:{{ max(2,$month['income']/$annualMax*100) }}%" title="Revenue UGX {{ number_format($month['income']) }}"></i><i class="spending" style="height:{{ max(2,$month['expenses']/$annualMax*100) }}%" title="Spending UGX {{ number_format($month['expenses']) }}"></i></div><small>{{ $month['label'] }}</small></div>
+                    @endforeach
+                </div>
+                <div class="finance-simple-legend"><span><i class="revenue"></i>Revenue</span><span><i class="spending"></i>Spending</span></div>
+                <div class="finance-simple-grid">
+                    <section><h3>Highest sales by customer</h3>@forelse($f['topCustomers'] as $row)<div class="finance-simple-row"><span>{{ $row['name'] }}</span><b><i style="width:{{ $row['amount']/$customerMax*100 }}%"></i></b><strong>{{ number_format($row['amount']) }}</strong></div>@empty<p>No approved sales yet.</p>@endforelse</section>
+                    <section><h3>Product sales</h3>@forelse($f['topProducts'] as $row)<div class="finance-simple-row"><span>{{ $row['name'] }}</span><b><i style="width:{{ $row['amount']/$productMax*100 }}%"></i></b><strong>{{ number_format($row['amount']) }}</strong></div>@empty<p>No product sales yet.</p>@endforelse</section>
+                </div>
+                <div class="table-wrap"><table class="finance-ratios"><thead><tr><th>Ratio analysis</th><th>{{ now()->format('M Y') }}</th></tr></thead><tbody>@foreach($f['ratios'] as $ratio)<tr><td>{{ $ratio['name'] }}</td><td>{{ number_format($ratio['value'],1) }}{{ $ratio['suffix'] }}</td></tr>@endforeach</tbody></table></div>
+            </section>
             <div class="finance-kpis finance-kpis--legacy" aria-hidden="true">
                 <article class="finance-kpi finance-kpi--income"><span>ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â€</span><div><small>Money received Ãƒâ€šÃ‚Â· {{ now()->format('F') }}</small><strong>UGX {{ number_format($f['income']) }}</strong><em>Posted income</em></div></article>
                 <article class="finance-kpi finance-kpi--expense"><span>ÃƒÂ¢Ã¢â‚¬Â Ã¢â€žÂ¢</span><div><small>Money paid Ãƒâ€šÃ‚Â· {{ now()->format('F') }}</small><strong>UGX {{ number_format($f['expenses']) }}</strong><em>Posted expenses</em></div></article>
@@ -91,7 +117,70 @@
                 <article><span>Supplier balances</span><strong>UGX {{ number_format($f['payables']) }}</strong><a href="{{ route('finance.payables.index') }}">Open payables ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢</a></article>
                 <article><span>Budget planned this month</span><strong>UGX {{ number_format($f['budgeted']) }}</strong><a href="{{ route('finance.budgets.index') }}">Open weekly budgets ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢</a></article>
             </div>
-            <section class="finance-chart-card finance-recent"><div class="finance-panel-head"><div><h3>Recent transactions</h3><p>Latest entries in the finance register</p></div><a class="btn btn--quiet btn--inline" href="{{ route('finance.transactions.create') }}">Record transaction</a></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Account</th><th>Type</th><th>Amount</th></tr></thead><tbody>@forelse($f['recent'] as $row)<tr><td>{{ $row->transaction_date->format('d M') }}</td><td>{{ $row->description }}</td><td>{{ $row->account }}</td><td>{{ Str::headline($row->type) }}</td><td><strong>UGX {{ number_format($row->amount) }}</strong></td></tr>@empty<tr><td colspan="5">No transactions recorded yet.</td></tr>@endforelse</tbody></table></div></section>
+            <section class="finance-chart-card finance-recent">
+                <div class="finance-panel-head"><div><h3>Pending approvals</h3><p>Showing the five oldest requests waiting for Finance review.</p></div><a class="btn btn--quiet btn--inline" href="{{ route('approvals.index') }}">View all {{ $f['pending'] }}</a></div>
+                <div class="table-wrap"><table><thead><tr><th>Request</th><th>Party / details</th><th>Items / purpose</th><th>Payment / reference</th><th>Submitted by</th><th>Amount</th><th>Actions</th></tr></thead><tbody>
+                    @forelse($f['pendingApprovals'] as $approval)
+                        @php
+                            $approvable = $approval->approvable;
+                            if ($approvable instanceof \App\Models\Sale) {
+                                $approvable->loadMissing(['lines', 'payments']);
+                            }
+                        @endphp
+                        <tr>
+                            <td><strong>{{ $approval->label() }}</strong><small class="table-sub">{{ Str::headline($approval->module_key) }} &middot; {{ $approval->submitted_at?->format('d M Y, H:i') ?? $approval->created_at->format('d M Y, H:i') }}</small></td>
+                            <td>
+                                @if($approvable instanceof \App\Models\Sale)
+                                    {{ $approvable->is_staff_consumption ? ($approvable->consumed_by ?: 'Internal farm use') : $approvable->customer_name }}
+                                @elseif($approvable instanceof \App\Models\Purchase)
+                                    {{ $approvable->supplier_name }}
+                                @else
+                                    {{ $approval->submission_note ?: 'No additional party details' }}
+                                @endif
+                            </td>
+                            <td>
+                                @if($approvable instanceof \App\Models\Sale)
+                                    @foreach($approvable->lines as $line)<div><strong>{{ $line->description }}</strong> &middot; {{ number_format($line->quantity, 2) }} {{ $line->unit }}</div>@endforeach
+                                @elseif($approvable instanceof \App\Models\Purchase)
+                                    {{ $approvable->item }} &middot; {{ number_format($approvable->quantity, 2) }} {{ $approvable->unit }}
+                                @else
+                                    {{ Str::limit($approval->submission_note ?: $approval->label(), 100) }}
+                                @endif
+                            </td>
+                            <td>
+                                @if($approvable instanceof \App\Models\Sale)
+                                    {{ $approvable->is_staff_consumption ? 'No payment' : Str::headline($approvable->payment_method) }}
+                                    @if($approvable->payments->first()?->reference)<small class="table-sub">{{ $approvable->payments->first()->reference }}</small>@endif
+                                @else
+                                    {{ data_get($approvable, 'reference') ?: '—' }}
+                                @endif
+                            </td>
+                            <td>{{ $approval->submitter?->displayName() ?? 'System' }}<small class="table-sub">Due {{ $approval->due_at?->format('d M Y, H:i') ?? 'not set' }}</small></td>
+                            <td><strong>{{ $approval->amount() ? 'UGX '.$approval->amount() : '—' }}</strong></td>
+                            <td>
+                                <div class="form-actions form-actions--flush">
+                                    <form method="POST" action="{{ route('approvals.decide', $approval) }}">@csrf<input type="hidden" name="decision" value="approved"><button class="btn btn--small">Approve</button></form>
+                                    <form method="POST" action="{{ route('approvals.decide', $approval) }}" onsubmit="const reason=prompt('Why are you rejecting this request?');if(!reason)return false;this.elements.decision_note.value=reason;">@csrf<input type="hidden" name="decision" value="rejected"><input type="hidden" name="decision_note"><button class="btn btn--quiet btn--small">Reject</button></form>
+                                    <a class="btn btn--quiet btn--small" href="{{ route('approvals.show', $approval) }}">Details</a>
+                                </div>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="7">No approvals are waiting for Finance.</td></tr>
+                    @endforelse
+                </tbody></table></div>
+            </section>
+            @php($salesCashReminders = $f['salesBalances']->where('closed', false))
+            @if($salesCashReminders->isNotEmpty())
+                <section class="finance-close-reminders" aria-label="Sales cash awaiting Finance closure">
+                    @foreach($salesCashReminders as $row)
+                        <article class="notice finance-close-reminder">
+                            <div><strong>Sales cash is ready to close</strong><p>{{ $row['salesPerson']?->displayName() ?? 'Sales account' }} submitted UGX {{ number_format($row['received'], 2) }} received today. Cash awaiting Finance: <b>UGX {{ number_format($row['cashDue'], 2) }}</b>.</p></div>
+                            <a class="btn btn--small" href="{{ route('sales.index',['screen'=>'balancing','balance_date'=>now()->toDateString(),'sales_person_id'=>$row['salesPerson']?->id]) }}">Bank and close</a>
+                        </article>
+                    @endforeach
+                </section>
+            @endif
         </section>
     @elseif ($panel === 'production-overview')
         @php
@@ -235,6 +324,11 @@
                 <article><small>Purchases awaiting approval</small><strong>UGX {{ number_format($e['purchaseExposure']) }}</strong><a href="{{ route('approvals.index') }}">Review decisions &rarr;</a></article>
                 <article class="{{ $e['withdrawals'] ? 'owner-position--alert' : '' }}"><small>Active egg withdrawals</small><strong>{{ $e['withdrawals'] }}</strong><a href="{{ route('vaccination-schedule.index') }}">Open health schedule &rarr;</a></article>
             </div>
+            @include('dashboard.pending-approval-rows', [
+                'approvalRows' => $e['pendingApprovals'],
+                'approvalCount' => $e['pending'],
+                'approvalAudience' => $e['approvalRole'] === 'ceo' ? 'CEO' : 'Director',
+            ])
         </section>
     @elseif ($panel === 'executive-legacy')
         @php($e=$data['executive'])

@@ -24,7 +24,7 @@
         <div class="field"><label>Date received</label><input type="date" name="received_date" value="{{ old('received_date',now()->toDateString()) }}" required></div>
         <div class="field"><label>Amount (UGX)</label><input type="number" name="amount" min="1" step="0.01" value="{{ old('amount') }}" required></div>
         <div class="field"><label>Receiving account</label><select name="farm_account" required>@foreach($farmAccounts as $account)<option value="{{ $account }}" @selected(old('farm_account')===$account)>{{ $account }}</option>@endforeach</select></div>
-        <div class="field"><label>Payment method</label><select name="payment_method" required>@foreach(['cash'=>'Cash','bank'=>'Bank','mobile_money'=>'Mobile money','in_kind'=>'In kind / barter'] as $code=>$label)<option value="{{ $code }}" @selected(old('payment_method')===$code)>{{ $label }}</option>@endforeach</select></div>
+        <div class="field"><label>Payment method</label><select name="payment_method" required>@foreach(['cash'=>'Cash','bank'=>'Bank','mobile_money'=>'Mobile money','Agent'=>'Agent','in_kind'=>'In kind / barter'] as $code=>$label)<option value="{{ $code }}" @selected(old('payment_method')===$code)>{{ $label }}</option>@endforeach</select></div>
         <div class="field"><label>Receipt / reference</label><input name="reference" value="{{ old('reference') }}" placeholder="Receipt, bank or mobile-money reference"></div>
     </div>
     <div class="form-actions"><button class="btn">Record prepayment</button></div>

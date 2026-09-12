@@ -13,6 +13,20 @@
     <a class="btn btn--ghost" href="{{ route('approvals.index', ['status' => 'rejected']) }}">Rejected</a>
 </div>
 
+@if($ownApprovalRoles->isNotEmpty())
+<details class="card disclosure" style="margin-bottom:1rem"><summary><span><strong>Approval cover while I am absent</strong><small>Temporarily authorize another active user to approve on your behalf</small></span></summary><div class="disclosure__body">
+    <form method="POST" action="{{ route('approvals.delegations.store') }}" class="form-grid">@csrf
+        <div class="field"><label>Approval role</label><select name="role_code" required>@foreach($ownApprovalRoles as $role)<option value="{{ $role }}">{{ Str::headline($role) }}</option>@endforeach</select></div>
+        <div class="field"><label>Person covering</label><select name="delegate_id" required><option value="">Choose person</option>@foreach($delegateUsers as $person)<option value="{{ $person->id }}">{{ $person->displayName() }}</option>@endforeach</select></div>
+        <div class="field"><label>From</label><input type="date" name="starts_on" value="{{ now()->toDateString() }}" required></div>
+        <div class="field"><label>Until</label><input type="date" name="ends_on" value="{{ now()->addWeek()->toDateString() }}" required></div>
+        <div class="field field--wide"><label>Reason</label><textarea name="reason" placeholder="Annual leave, travel, illness, etc."></textarea></div>
+        <button class="btn">Assign approval cover</button>
+    </form>
+    @foreach($delegations->where('is_active',true) as $delegation)<div class="data-row"><span><strong>{{ $delegation->delegate?->displayName() }}</strong><small>{{ Str::headline($delegation->role_code) }} · {{ $delegation->starts_on->format('d M') }}–{{ $delegation->ends_on->format('d M Y') }}</small></span><form method="POST" action="{{ route('approvals.delegations.revoke',$delegation) }}">@csrf @method('DELETE')<button class="btn btn--quiet btn--small">Revoke</button></form></div>@endforeach
+</div></details>
+@endif
+
 @forelse($approvals as $approval)
     @php
         $viewerIsDirector = auth()->user()->roles->pluck('code')->push(auth()->user()->role?->code)->filter()->contains('director');

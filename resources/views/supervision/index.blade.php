@@ -1,8 +1,12 @@
 @extends('layouts.app')
 @section('title','Daily Supervision')
 @section('content')
-<div class="page-head"><div><p class="eyebrow">Operational verification</p><h1>Daily Supervision</h1><p>Workers submit work to the appointed supervisor. Only approved records become official reporting data.</p></div></div>
-
+<form class="card sales-report__filter" method="GET" action="{{ route('supervision.index') }}">
+    <div class="field"><label>From date</label><input type="date" name="from" value="{{ $from }}"></div>
+    <div class="field"><label>To date</label><input type="date" name="to" value="{{ $to }}"></div>
+    <button class="btn">Apply dates</button>
+    @if($from || $to)<a class="btn btn--quiet" href="{{ route('supervision.index') }}">Clear</a>@endif
+</form>
 @if($isCeo)
 <form class="card" method="POST" action="{{ route('supervision.assignments.store') }}">@csrf<h2>Appoint a daily supervisor</h2><p class="muted">Any active farm worker with an account may be appointed temporarily. This does not change their permanent HR role.</p><div class="form-grid">
 <div class="field"><label>Farm worker</label><select name="supervisor_id" required><option value="">Choose worker</option>@foreach($workers as $worker)<option value="{{ $worker->id }}">{{ $worker->displayName() }} · {{ $worker->employee?->job_title }}</option>@endforeach</select></div>
@@ -16,7 +20,7 @@
 @if($mine->isNotEmpty() || $isFallbackReviewer)
 <div class="card table-card"><h2>Daily entries awaiting verification</h2><p class="muted">Appointed supervisors review their assigned dates. When no appointment covers an entry, Sales reviews egg collections and Production reviews other farm records.</p><table><thead><tr><th>Date</th><th>Unit</th><th>Entry</th><th></th></tr></thead><tbody>@forelse($pendingRecords as $record)<tr><td>{{ \Carbon\Carbon::parse($record->date)->format('d M Y') }}</td><td>{{ ucfirst($record->unit) }}</td><td>{{ $record->label }}</td><td><a class="btn" href="{{ route('supervision.records.show',[$record->type,$record->id]) }}">View details</a></td></tr>@empty<tr><td colspan="4">No daily records await your review.</td></tr>@endforelse</tbody></table></div>
 
-<div class="card table-card"><h2>Supervisor decisions</h2><p class="muted">Entries already reviewed by the appointed supervisor.</p><table><thead><tr><th>Entry date</th><th>Unit</th><th>Entry</th><th>Decision</th><th>Supervisor</th><th>Reviewed</th><th>Note</th></tr></thead><tbody>@forelse($reviewedRecords as $record)<tr><td>{{ \Carbon\Carbon::parse($record->date)->format('d M Y') }}</td><td>{{ ucfirst($record->unit) }}</td><td><a href="{{ route('supervision.records.show',[$record->type,$record->id]) }}">{{ $record->label }}</a></td><td>{{ ucfirst($record->decision) }}</td><td>{{ $record->reviewer }}</td><td>{{ $record->reviewed_at ? \Carbon\Carbon::parse($record->reviewed_at)->format('d M Y, H:i') : '—' }}</td><td>{{ $record->note ?: '—' }}</td></tr>@empty<tr><td colspan="7">No supervisor decisions have been recorded yet.</td></tr>@endforelse</tbody></table></div>
+<details class="supervision-history"><summary class="btn">History <span>{{ $reviewedRecords->count() }}</span></summary><div class="card table-card"><h2>Supervisor decisions</h2><p class="muted">Entries already reviewed by the appointed supervisor.</p><table><thead><tr><th>Entry date &amp; time</th><th>Unit</th><th>Entry</th><th>Decision</th><th>Supervisor</th><th>Approval date &amp; time</th><th>Note</th></tr></thead><tbody>@forelse($reviewedRecords as $record)<tr><td>{{ $record->entered_at ? \Carbon\Carbon::parse($record->entered_at)->format('d M Y, H:i') : \Carbon\Carbon::parse($record->date)->format('d M Y') }}</td><td>{{ ucfirst($record->unit) }}</td><td><a href="{{ route('supervision.records.show',[$record->type,$record->id]) }}">{{ $record->label }}</a></td><td>{{ ucfirst($record->decision) }}</td><td>{{ $record->reviewer }}</td><td>{{ $record->reviewed_at ? \Carbon\Carbon::parse($record->reviewed_at)->format('d M Y, H:i') : '—' }}</td><td>{{ $record->note ?: '—' }}</td></tr>@empty<tr><td colspan="7">No supervisor decisions have been recorded yet.</td></tr>@endforelse</tbody></table></div></details>
 @endif
 
 @endsection

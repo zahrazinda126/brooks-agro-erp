@@ -47,6 +47,11 @@ class EggCollection extends Model
         return $this->belongsTo(User::class, 'recorded_by');
     }
 
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);

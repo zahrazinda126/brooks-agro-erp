@@ -11,6 +11,7 @@ use App\Models\Breed;
 use App\Models\Department;
 use App\Models\Setting;
 use App\Models\PoultryHouse;
+use App\Models\BatchOrder;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -81,12 +82,17 @@ class BatchController extends Controller
             'nextCode'    => $this->nextCode(),
             'availableHouses' => PoultryHouse::where('is_active', true)
                 ->whereNull('animal_group_id')->orderBy('house_number')->get(),
+            'batchOrders'=>BatchOrder::with('payments')->where('batch_type','poultry')->whereNull('animal_group_id')->whereIn('status',['ordered','partly_paid','paid_before_arrival'])->orderBy('expected_on')->get(),
         ]);
     }
 
     public function store(StoreBatchRequest $request): RedirectResponse
     {
         $data = $request->validated();
+        $batchOrderId=$data['batch_order_id']??null;
+        $batchOrder=$batchOrderId?BatchOrder::with('payments')->findOrFail($batchOrderId):null;
+        unset($data['batch_order_id']);
+        if($batchOrder){$data['supplier_name']=$batchOrder->supplier_name;$data['total_cost']=$batchOrder->order_total;unset($data['unit_cost']);if(blank($data['breed_name']??null))$data['breed_name']=$batchOrder->breed;}
         $data['breed_id'] = $this->resolveBreed($data['breed_name'] ?? null, $data['purpose']);
         unset($data['breed_name']);
 
@@ -133,7 +139,7 @@ class BatchController extends Controller
         unset($data['house_allocations']);
         unset($data['new_houses']);
 
-        $batch = DB::transaction(function () use ($data, $allocations, $newHouses) {
+        $batch = DB::transaction(function () use ($data, $allocations, $newHouses, $batchOrderId) {
             $houses = PoultryHouse::whereIn('id', $allocations->keys())
                 ->where('is_active', true)->whereNull('animal_group_id')
                 ->lockForUpdate()->get()->keyBy('id');
@@ -142,6 +148,7 @@ class BatchController extends Controller
                 'One of the selected houses is no longer available. Refresh the page and choose again.');
 
             $batch = AnimalGroup::create($data);
+            if($batchOrderId){$order=BatchOrder::whereKey($batchOrderId)->whereNull('animal_group_id')->lockForUpdate()->firstOrFail();$order->update(['animal_group_id'=>$batch->id,'status'=>'arrived']);}
             foreach ($allocations as $houseId => $quantity) {
                 $houses[$houseId]->update(['animal_group_id' => $batch->id, 'bird_quantity' => $quantity]);
                 DB::table('poultry_house_movements')->insert(['animal_group_id' => $batch->id, 'from_house_id' => null, 'to_house_id' => $houseId, 'bird_quantity' => $quantity, 'moved_on' => $batch->received_date, 'reason' => 'Initial arrival allocation', 'moved_by' => $batch->created_by, 'created_at' => now(), 'updated_at' => now()]);

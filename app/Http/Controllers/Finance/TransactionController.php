@@ -14,6 +14,9 @@ use App\Models\PayablePayment;
 use App\Models\Receivable;
 use App\Models\ReceivablePayment;
 use App\Models\SalesCustomer;
+use App\Models\Sale;
+use App\Models\Employee;
+use App\Models\StaffSalaryWalletTransaction;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,15 +26,47 @@ use Illuminate\View\View;
 
 class TransactionController extends Controller
 {
+    public function accounts(Request $request): View
+    {
+        abort_unless($request->user()->canAccess('finance') || $request->user()->canAccess('transactions'), 403);
+        $view = $request->query('view');
+        abort_unless($view === null || $view === 'staff', 404);
+        $staff = collect();
+        if ($view === 'staff') {
+            $search = trim((string) $request->query('search'));
+            $staff = Employee::with(['department', 'role'])->active()
+                ->when($search, fn ($query) => $query->where(fn ($name) => $name->where('first_name', 'ilike', "%{$search}%")->orWhere('last_name', 'ilike', "%{$search}%")->orWhere('staff_no', 'ilike', "%{$search}%")))
+                ->orderBy('first_name')->orderBy('last_name')->get();
+            $walletBalances = StaffSalaryWalletTransaction::selectRaw("employee_id, sum(case when type='credit' then amount else -amount end) as balance")->groupBy('employee_id')->pluck('balance', 'employee_id');
+            $staff->each(fn ($employee) => $employee->setAttribute('wallet_balance', (float) ($walletBalances[$employee->id] ?? 0)));
+        }
+
+        return view('finance.accounts.index', compact('view', 'staff'));
+    }
+
     public function index(Request $r): View
     {
         abort_unless($r->user()->canAccess('transactions'), 403);
-        $q = FinancialTransaction::with(['recorder','department']);
+        $q = FinancialTransaction::with(['recorder','department'])
+            ->whereHas('recorder', function ($user) {
+                $user->whereHas('department', fn ($department) => $department->whereIn('code', ['finance', 'div-finance']))
+                    ->orWhereHas('departments', fn ($department) => $department->whereIn('code', ['finance', 'div-finance']))
+                    ->orWhereHas('role', fn ($role) => $role->where('code', 'finance-manager'))
+                    ->orWhereHas('roles', fn ($role) => $role->where('code', 'finance-manager'));
+            });
+        $financeEntries = clone $q;
+        $selectedAccount = $r->string('account')->trim()->toString() ?: null;
+        $from = $r->filled('from') ? $r->date('from')->toDateString() : ($selectedAccount ? ((clone $financeEntries)->min('transaction_date') ?: now()->toDateString()) : now()->toDateString());
+        $to = $r->filled('to') ? $r->date('to')->toDateString() : now()->toDateString();
+        abort_if($from > $to, 422, 'The From date must not be after the To date.');
         if ($r->filled('type')) {
             $q->where('type', $r->query('type'));
         }
-        if ($r->filled('from')) $q->whereDate('transaction_date', '>=', $r->date('from')->toDateString());
-        if ($r->filled('to')) $q->whereDate('transaction_date', '<=', $r->date('to')->toDateString());
+        $q->whereBetween('transaction_date', [$from, $to]);
+        if ($selectedAccount) {
+            $q->where(fn ($query) => $query->where('account', $selectedAccount)
+                ->orWhere(fn ($transfer) => $transfer->where('type', 'transfer')->where('counterparty', $selectedAccount)));
+        }
         if ($r->filled('department')) $q->where('department_id', $r->integer('department'));
         if ($r->filled('item')) {
             $item = $r->string('item')->trim()->toString();
@@ -44,15 +79,78 @@ class TransactionController extends Controller
                 ->orWhere('counterparty','ilike',$search)->orWhere('reference','ilike',$search));
         }
 
-        $filteredTotal = (clone $q)->sum('amount');
+        $transactions = $q->oldest('transaction_date')->oldest('id')->get();
+        $cashOpening = 0.0;
+        (clone $financeEntries)->whereDate('transaction_date', '<', $from)->oldest('transaction_date')->oldest('id')->get()->each(function (FinancialTransaction $transaction) use (&$cashOpening) {
+            $amount = (float) $transaction->amount;
+            if ($transaction->type === 'money_received' && $transaction->account === 'Cash on Hand') $cashOpening += $amount;
+            if ($transaction->type === 'money_paid' && $transaction->account === 'Cash on Hand') $cashOpening -= $amount;
+            if ($transaction->type === 'transfer' && $transaction->account === 'Cash on Hand') $cashOpening -= $amount;
+            if ($transaction->type === 'transfer' && $transaction->counterparty === 'Cash on Hand') $cashOpening += $amount;
+        });
+        $cashRunning = $cashOpening;
+        $transactions->each(function (FinancialTransaction $transaction) use (&$cashRunning) {
+            $amount = (float) $transaction->amount;
+            if ($transaction->type === 'money_received' && $transaction->account === 'Cash on Hand') $cashRunning += $amount;
+            if ($transaction->type === 'money_paid' && $transaction->account === 'Cash on Hand') $cashRunning -= $amount;
+            if ($transaction->type === 'transfer' && $transaction->account === 'Cash on Hand') $cashRunning -= $amount;
+            if ($transaction->type === 'transfer' && $transaction->counterparty === 'Cash on Hand') $cashRunning += $amount;
+            $transaction->setAttribute('cash_running_balance', $cashRunning);
+        });
+        $selectedAccountOpening = 0.0;
+        $selectedAccountRunning = 0.0;
+        if ($selectedAccount) {
+            $applyAccountMovement = function (FinancialTransaction $transaction, float &$balance) use ($selectedAccount): array {
+                $amount = (float) $transaction->amount;
+                $moneyIn = ($transaction->type === 'money_received' && $transaction->account === $selectedAccount)
+                    || ($transaction->type === 'transfer' && $transaction->counterparty === $selectedAccount) ? $amount : 0.0;
+                $moneyOut = ($transaction->type === 'money_paid' && $transaction->account === $selectedAccount)
+                    || ($transaction->type === 'transfer' && $transaction->account === $selectedAccount) ? $amount : 0.0;
+                $balance += $moneyIn - $moneyOut;
+                return [$moneyIn, $moneyOut];
+            };
+            $earlierAccountTransactions = (clone $financeEntries)->whereDate('transaction_date', '<', $from)
+                ->where(fn ($query) => $query->where('account', $selectedAccount)->orWhere(fn ($transfer) => $transfer->where('type', 'transfer')->where('counterparty', $selectedAccount)))
+                ->oldest('transaction_date')->oldest('id')->get();
+            foreach ($earlierAccountTransactions as $transaction) {
+                $applyAccountMovement($transaction, $selectedAccountOpening);
+            }
+            $selectedAccountRunning = $selectedAccountOpening;
+            $transactions->each(function (FinancialTransaction $transaction) use ($applyAccountMovement, &$selectedAccountRunning) {
+                [$moneyIn, $moneyOut] = $applyAccountMovement($transaction, $selectedAccountRunning);
+                $transaction->setAttribute('account_money_in', $moneyIn);
+                $transaction->setAttribute('account_money_out', $moneyOut);
+                $transaction->setAttribute('account_running_balance', $selectedAccountRunning);
+            });
+        }
+        $moneyIn = (float) $transactions->where('type', 'money_received')->sum('amount');
+        $moneyOut = (float) $transactions->where('type', 'money_paid')->sum('amount');
+        $transferTotal = (float) $transactions->where('type', 'transfer')->sum('amount');
+        $accountBalances = collect();
+        (clone $financeEntries)->whereDate('transaction_date', '<=', $to)->oldest('transaction_date')->oldest('id')->get()->each(function (FinancialTransaction $transaction) use ($accountBalances) {
+            $amount = (float) $transaction->amount;
+            if ($transaction->type === 'money_received') {
+                $accountBalances[$transaction->account] = (float) ($accountBalances[$transaction->account] ?? 0) + $amount;
+            } elseif ($transaction->type === 'money_paid') {
+                $accountBalances[$transaction->account] = (float) ($accountBalances[$transaction->account] ?? 0) - $amount;
+            } elseif ($transaction->type === 'transfer') {
+                $accountBalances[$transaction->account] = (float) ($accountBalances[$transaction->account] ?? 0) - $amount;
+                $accountBalances[$transaction->counterparty] = (float) ($accountBalances[$transaction->counterparty] ?? 0) + $amount;
+            }
+        });
+        $accountBalances = $accountBalances->filter(fn ($balance, $account) => filled($account))->sortKeys();
         $expenseItems = FinancialTransaction::query()->where('type','money_paid')
             ->get(['entry_account','sub_account'])->flatMap(fn($row)=>[$row->entry_account,$row->sub_account])
             ->filter()->unique()->sort()->values();
         $departments = Department::where('is_active',true)->orderBy('name')->get(['id','name']);
 
         return view('finance.transactions.index', [
-            'transactions'=>$q->latest('transaction_date')->latest('id')->paginate(30)->withQueryString(), 'type'=>$r->query('type'),
-            'filteredTotal'=>$filteredTotal, 'expenseItems'=>$expenseItems, 'departments'=>$departments,
+            'transactions'=>$transactions, 'type'=>$r->query('type'), 'from'=>$from, 'to'=>$to,
+            'cashOpening'=>$cashOpening, 'cashClosing'=>$cashRunning, 'moneyIn'=>$moneyIn, 'moneyOut'=>$moneyOut, 'transferTotal'=>$transferTotal, 'accountBalances'=>$accountBalances,
+            'selectedAccount'=>$selectedAccount, 'selectedAccountOpening'=>$selectedAccountOpening, 'selectedAccountRunning'=>$selectedAccountRunning,
+            'expenseItems'=>$expenseItems, 'departments'=>$departments,
+            'storeConsumption'=>InventoryMovement::with(['item','recorder'])->where('movement_type','farm_use')->latest('movement_date')->latest('id')->limit(30)->get(),
+            'salesConsumption'=>Sale::with(['lines','seller'])->where('is_staff_consumption',true)->latest('sale_date')->latest('id')->limit(30)->get(),
         ]);
     }
 

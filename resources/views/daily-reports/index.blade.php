@@ -93,35 +93,6 @@
 @endphp
 @if($maySee)
 <section class="card report-department">
- @if(!($isHrManager && $departmentCode==='hr'))
- <div class="section-heading"><div><p class="card-label">{{ $department['label'] }}</p><h2>{{ $ready ? 'Department report ready' : ($isCeo ? 'Submitted unit reports' : 'Today’s generated unit reports') }}</h2><p>{{ $total }} unit template(s) generated · {{ $reviewed }} reviewed by the CEO. A template remains available even when no activity was recorded.</p></div><span class="status-pill">{{ $closed?'Day closed':'Open' }}</span></div>
- @if($isCeo)
- <div class="approval-timeline">
-  @foreach($department['units'] as $unitCode=>$unitLabel)
-   @php($timelineRow=$ceoRows->get($unitCode))
-   @if($timelineRow)
-    <div class="approval-step">
-     <strong>{{ $unitLabel }}</strong>
-     <span>{{ Str::headline($timelineRow->status) }}</span>
-     <small>{{ $timelineRow->preparer?->displayName() }}</small>
-    </div>
-   @endif
-  @endforeach
- </div>
- @else
- <div class="approval-timeline">
-  @foreach($departmentRows as $unitCode=>$timelineRow)
-   @php($unitLabel=$department['units'][$unitCode]??Str::headline($unitCode))
-   <div class="approval-step">
-    <strong>{{ $unitLabel }}</strong>
-    <span>{{ Str::headline($timelineRow->status) }}</span>
-    <small>{{ $timelineRow->preparer?->displayName() }}</small>
-   </div>
- @endforeach
- </div>
- @endif
- @endif
-
  @if(in_array($departmentCode,$closable??[],true) && !$closed)
  <form method="POST" action="{{ route('daily-reports.close-day') }}" class="notice">@csrf<input type="hidden" name="report_date" value="{{ $date }}"><input type="hidden" name="department_code" value="{{ $departmentCode }}"><strong>Confirm the complete {{ $department['label'] }} report</strong><p>{{ $departmentCode==='finance' ? 'Once Sales & Collections has arrived, one confirmation combines all Finance sections, closes the report, and sends it to the CEO.' : 'Review the generated sections and save comments only where needed. One confirmation closes and sends the whole departmental report to the CEO.' }}</p><button class="btn">Confirm whole report & close</button></form>
  @endif
@@ -134,7 +105,6 @@
   @if($row?->status==='ceo_reviewed')<div class="notice notice--ok">Reviewed by the CEO and included in the departmental report.<br><strong>CEO comment:</strong> {{ $row->review_note }}</div>
   @else
   @if(data_get($row?->details,'system_source'))
-  <div class="notice notice--ok"><strong>Daily report generated automatically</strong><p>The sheet below is filled from records entered elsewhere in the system. Do not enter the work again; review it and add a comment only if necessary.</p></div>
   <div class="daily-sheet" role="region" aria-label="{{ $unitLabel }} daily report sheet">
    <h3>BROOKS AGRO FARM LIMITED</h3><h4>{{ Str::upper($unitLabel) }} DAILY REPORT — {{ \Carbon\Carbon::parse($date)->format('d F Y') }}</h4>
    <table><thead><tr><th>Unit</th><th>System-generated summary</th><th>Activities and results recorded</th></tr></thead><tbody><tr><td><strong>{{ $unitLabel }}</strong></td><td>{{ $row->summary }}</td><td style="white-space:pre-line">{{ $row->activities }}</td></tr></tbody></table>

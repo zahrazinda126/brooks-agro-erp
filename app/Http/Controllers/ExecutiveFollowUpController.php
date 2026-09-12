@@ -21,13 +21,14 @@ class ExecutiveFollowUpController extends Controller
     private function roleCodes(Request $request) { return $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter(); }
     private function isPa(Request $request): bool { return $this->roleCodes($request)->contains('personal-assistant'); }
     private function isDirector(Request $request): bool { return $this->roleCodes($request)->contains('director'); }
+    private function isCeo(Request $request): bool { return $this->roleCodes($request)->contains('ceo'); }
     private function authorizePa(Request $request): void { abort_unless($this->isPa($request), 403); }
 
     public function index(Request $request): View
     {
-        $isDirector = $this->isDirector($request); $isPa = $this->isPa($request);
+        $isDirector = $this->isDirector($request); $isPa = $this->isPa($request); $isCeo=$this->isCeo($request);
         $query = ExecutiveDirective::with(['director','tracker','assignee','forwarder','rescheduler'])->latest('issued_on')->latest('id');
-        if (! $isDirector && ! $isPa) {
+        if (! $isDirector && ! $isPa && ! $isCeo) {
             $query->where(fn ($visible) => $visible
                 ->where('assigned_to', $request->user()->id)
                 ->orWhereIn('recipient_scope', Communication::audiencesFor($request->user())));
@@ -45,9 +46,11 @@ class ExecutiveFollowUpController extends Controller
         abort_unless($this->isPa($request) || $this->isDirector($request), 403);
         $data=$request->validate(['title'=>['required','string','max:180'],'directive'=>['required','string','max:3000'],'responsible_team'=>['required','string','max:100'],'issued_on'=>['required','date'],'due_on'=>['nullable','date','after_or_equal:issued_on'],'tracked_by'=>['nullable','exists:users,id']]);
         $director=$this->isDirector($request)?$request->user():User::whereHas('roles',fn($q)=>$q->where('code','director'))->orWhereHas('role',fn($q)=>$q->where('code','director'))->first();
-        $trackerId=$data['tracked_by']??($this->isPa($request)?$request->user()->id:null);
+        $defaultPa=User::where('is_active',true)->where(fn($q)=>$q->whereHas('roles',fn($r)=>$r->where('code','personal-assistant'))->orWhereHas('role',fn($r)=>$r->where('code','personal-assistant')))->first();
+        $trackerId=$data['tracked_by']??($this->isPa($request)?$request->user()->id:$defaultPa?->id);
         $directive=ExecutiveDirective::create($data+['status'=>'awaiting_forwarding','progress'=>0,'directed_by'=>$director?->id??$request->user()->id,'tracked_by'=>$trackerId??$request->user()->id]);
         if($trackerId && $trackerId!==$request->user()->id) app(CommunicationService::class)->toUser($trackerId,'New directive to forward: '.$directive->title,$directive->directive,'directive',$request->user()->id,route('directives.index',absolute:false));
+        app(CommunicationService::class)->toRole('ceo','Directive received for routing: '.$directive->title,'The directive is with the PA and the CEO will be notified again when it is forwarded.',$request->user()->id,route('directives.index',absolute:false));
         return back()->with('status','Directive issued and sent to the PA for forwarding.');
     }
 
@@ -75,6 +78,7 @@ class ExecutiveFollowUpController extends Controller
             ? $service->toAudience($scope,$subject,$body,$request->user()->id,route('directives.index',absolute:false))
             : (int)(bool)$service->toUser($assignedTo,$subject,$body,'directive',$request->user()->id,route('directives.index',absolute:false));
         $service->toUser($directive->directed_by,'Directive delivered: '.$directive->title,'The PA forwarded this directive to '.$recipientLabel.' ('.$recipientCount.' '.str('recipient')->plural($recipientCount).').','workflow',$request->user()->id,route('directives.index',absolute:false));
+        $service->toRole('ceo','PA forwarded directive: '.$directive->title,'The directive was forwarded to '.$recipientLabel.' by '.$request->user()->displayName().'.','workflow',$request->user()->id,route('directives.index',absolute:false));
         return back()->with('status','Directive forwarded to '.$recipientLabel.' and '.$recipientCount.' '.str('recipient')->plural($recipientCount).' notified.');
     }
 

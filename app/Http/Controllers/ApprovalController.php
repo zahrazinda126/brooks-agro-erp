@@ -7,6 +7,9 @@ use App\Models\Budget;
 use App\Models\AuditLog;
 use App\Models\Purchase;
 use App\Models\PayrollRun;
+use App\Models\Sale;
+use App\Models\ApprovalDelegation;
+use App\Models\User;
 use App\Services\CommunicationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,7 +20,7 @@ class ApprovalController extends Controller
 {
     public function index(Request $request): View
     {
-        abort_unless($request->user()->canAccess('approvals'), 403);
+        abort_unless($request->user()->canAccess('approvals') || ApprovalDelegation::current()->where('delegate_id',$request->user()->id)->exists(), 403);
         $status = $request->string('status')->toString() ?: 'pending';
         abort_unless(in_array($status, ['pending', 'sent', 'approved', 'rejected'], true), 404);
 
@@ -27,7 +30,7 @@ class ApprovalController extends Controller
             ->latest('submitted_at');
 
         if ($status === 'pending') {
-            $roleCodes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique();
+            $roleCodes = $this->effectiveRoleCodes($request);
             if ($roleCodes->contains('director')) {
                 // The Director can track every submitted request that is routed to
                 // their stage, even while an earlier approval level is outstanding.
@@ -47,16 +50,20 @@ class ApprovalController extends Controller
             $query->where('module_key', $request->string('type')->toString());
         }
 
-        return view('approvals.index', ['approvals' => $query->paginate(20)->withQueryString(), 'status' => $status]);
+        $ownApprovalRoles=$request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->intersect(['finance-manager','ceo','director'])->unique();
+        return view('approvals.index', ['approvals' => $query->paginate(20)->withQueryString(), 'status' => $status,
+            'ownApprovalRoles'=>$ownApprovalRoles,
+            'delegations'=>ApprovalDelegation::with('delegate')->where('delegator_id',$request->user()->id)->latest()->get(),
+            'delegateUsers'=>User::where('is_active',true)->whereKeyNot($request->user()->id)->orderBy('name')->get(),
+        ]);
     }
 
     public function decide(Request $request, Approval $approval): RedirectResponse
     {
-        abort_unless($request->user()->canDo('approvals', 'approve'), 403);
         $approval->load('steps');
         $step = $approval->currentStep();
-        $roleCodes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter();
-        abort_unless($step && $roleCodes->contains($step->role_code), 403, 'This approval is waiting for another role.');
+        $roleCodes = $this->effectiveRoleCodes($request);
+        abort_unless($step && $roleCodes->contains($step->role_code), 403, 'This approval is waiting for another role or an active delegate.');
         $data = $request->validate([
             'decision' => ['required', 'in:approved,rejected'],
             'decision_note' => ['nullable', 'string', 'max:2000'],
@@ -126,6 +133,9 @@ class ApprovalController extends Controller
                 };
                 $approval->approvable->update(['status'=>$payrollStatus]);
             }
+            if ($approval->approvable instanceof Sale) {
+                $approval->approvable->update(['approval_status'=>$data['decision']==='rejected' ? 'rejected' : ($isFinalApproval ? 'approved' : 'pending')]);
+            }
 
             AuditLog::record('approval_decided', $approval,
                 "{$request->user()->displayName()} {$data['decision']} {$approval->label()}.",
@@ -167,7 +177,7 @@ class ApprovalController extends Controller
 
     public function show(Request $request, Approval $approval): View
     {
-        abort_unless($request->user()->canAccess('approvals'), 403);
+        abort_unless($request->user()->canAccess('approvals') || ApprovalDelegation::current()->where('delegate_id',$request->user()->id)->exists(), 403);
         $approval->load(['approvable', 'submitter', 'decisionMaker', 'steps.decisionMaker', 'comments.user']);
 
         $budgetLines = collect();
@@ -177,10 +187,9 @@ class ApprovalController extends Controller
                 ->orderBy('category')->orderBy('id')->get();
         }
 
-        $roleCodes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique();
+        $roleCodes = $this->effectiveRoleCodes($request);
         $currentStep = $approval->currentStep();
         $canActAtThisStage = $approval->status === 'pending'
-            && $request->user()->canDo('approvals', 'approve')
             && $currentStep && $roleCodes->contains($currentStep->role_code);
         $canManageFunding = $request->user()->canDo('approvals', 'approve') && (
             ($approval->status === 'pending' && $currentStep && in_array($currentStep->role_code, ['ceo','director'], true) && $roleCodes->contains($currentStep->role_code))
@@ -282,5 +291,30 @@ class ApprovalController extends Controller
         $approval->comments()->create(['user_id'=>$request->user()->id,'comment'=>$data['comment']]);
         AuditLog::record('approval_commented',$approval,$request->user()->displayName().' commented on '.$approval->label(),null,null,'approvals');
         return back()->with('status','Comment added to the approval review.');
+    }
+
+    public function storeDelegation(Request $request): RedirectResponse
+    {
+        $ownRoles=$request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique();
+        $data=$request->validate(['role_code'=>['required','in:finance-manager,ceo,director'],'delegate_id'=>['required','exists:users,id','different:delegator_id'],'starts_on'=>['required','date'],'ends_on'=>['required','date','after_or_equal:starts_on'],'reason'=>['nullable','string','max:1000']]);
+        abort_unless($ownRoles->contains($data['role_code']),403,'You can delegate only your own approval role.');
+        ApprovalDelegation::where('delegator_id',$request->user()->id)->where('role_code',$data['role_code'])->where('is_active',true)->update(['is_active'=>false]);
+        ApprovalDelegation::create($data+['delegator_id'=>$request->user()->id,'is_active'=>true]);
+        app(CommunicationService::class)->toUser((int)$data['delegate_id'],'Approval authority delegated to you','You may approve as '.$data['role_code'].' from '.$data['starts_on'].' to '.$data['ends_on'].'.','workflow',$request->user()->id,route('approvals.index',absolute:false));
+        return back()->with('status','Approval authority delegated for the selected period.');
+    }
+
+    public function revokeDelegation(Request $request, ApprovalDelegation $delegation): RedirectResponse
+    {
+        abort_unless($delegation->delegator_id===$request->user()->id,403);
+        $delegation->update(['is_active'=>false]);
+        return back()->with('status','Approval delegation revoked.');
+    }
+
+    private function effectiveRoleCodes(Request $request)
+    {
+        $direct=$request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter();
+        $delegated=ApprovalDelegation::current()->where('delegate_id',$request->user()->id)->pluck('role_code');
+        return $direct->merge($delegated)->unique();
     }
 }

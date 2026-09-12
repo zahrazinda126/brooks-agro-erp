@@ -14,29 +14,45 @@ use App\Models\SalesPayment;
 use App\Models\SalesReturn;
 use App\Models\CustomerPrepayment;
 use App\Models\SalePriceChangeRequest;
+use App\Models\DailySalesBalance;
 use App\Models\AnimalGroup;
+use App\Models\FarmUnitRecord;
 use App\Models\PoultryHouse;
 use App\Models\PoultryHouseAssignment;
+use App\Models\Approval;
+use App\Models\User;
 use App\Services\CommunicationService;
+use App\Services\BrandedReportExport;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SalesController extends Controller
 {
     private const CATEGORIES = ['eggs', 'poultry', 'goats', 'rabbits', 'dogs', 'milk', 'manure', 'garden', 'other'];
 
-    private const METHODS = ['cash', 'bank', 'agent', 'mobile_money', 'credit', 'in_kind', 'prepayment'];
+    private const METHODS = ['cash', 'bank', 'agent', 'mobile_money', 'in_kind', 'prepayment', 'farm_consumption'];
 
     public function index(Request $request): View
     {
         $screen = $request->query('screen', 'sale');
-        abort_unless(in_array($screen, ['sale', 'setup', 'reports'], true), 404);
+        abort_unless(in_array($screen, ['sale', 'inventory', 'setup', 'reports', 'analysis', 'balancing', 'receipt_archive'], true), 404);
+        $inventoryUnit = $request->query('unit');
+        $analysisView = $request->query('analysis_view');
+        if ($screen === 'inventory' && $inventoryUnit !== null) {
+            abort_unless(in_array($inventoryUnit, ['poultry', 'goats', 'rabbits', 'dogs', 'garden'], true), 404);
+        }
+        if ($screen === 'analysis' && $analysisView !== null) {
+            abort_unless(in_array($analysisView, ['summary', 'monthly', 'product_amount', 'product_quantity'], true), 404);
+        }
         abort_unless(match ($screen) {
             'setup' => $this->canManagePrices($request),
-            'reports' => $this->canViewSalesReports($request),
+            'balancing', 'receipt_archive' => $this->isFinanceUser($request),
+            'reports', 'analysis' => $this->canViewSalesReports($request),
             default => $request->user()->canAccess('sales'),
         }, 403);
         $products = SaleProduct::with('eggGrade')->when($screen !== 'setup', fn($query) => $query->where('is_active', true))->orderBy('category')->orderBy('name')->get();
@@ -52,27 +68,293 @@ class SalesController extends Controller
         $sales = Sale::with(['lines', 'seller'])->latest('sale_date')->latest('id')->paginate(25)->withQueryString();
         $from = $request->query('from', now()->startOfMonth()->toDateString());
         $to = $request->query('to', now()->toDateString());
-        $reportSales = Sale::with(['lines', 'seller'])->whereBetween('sale_date', [$from, $to])->whereNotIn('status', ['void'])->get();
+        $fromMonth = $request->query('from_month', now()->subMonths(11)->format('Y-m'));
+        $toMonth = $request->query('to_month', now()->format('Y-m'));
+        if ($screen === 'analysis' && $analysisView === 'monthly') {
+            abort_unless(preg_match('/^\d{4}-\d{2}$/', $fromMonth) && preg_match('/^\d{4}-\d{2}$/', $toMonth), 422, 'Choose valid From and To months.');
+            $from = \Carbon\Carbon::createFromFormat('Y-m-d', $fromMonth.'-01')->startOfMonth()->toDateString();
+            $to = \Carbon\Carbon::createFromFormat('Y-m-d', $toMonth.'-01')->endOfMonth()->toDateString();
+            abort_if($from > $to, 422, 'The From month must not be after the To month.');
+        }
+        $reportSales = Sale::with(['lines', 'seller', 'customer'])->whereBetween('sale_date', [$from, $to])->whereNotIn('status', ['void'])->where('approval_status','approved')->where('is_staff_consumption', false)->get();
         $reportTotal = (float) $reportSales->sum('total');
         $customerReport = $reportSales->groupBy('customer_name')->map(fn ($rows, $name) => ['name' => $name, 'sales' => $rows->count(), 'amount' => (float) $rows->sum('total')])->sortByDesc('amount')->values()->map(fn ($row, $index) => $row + ['rank' => $index + 1, 'share' => $reportTotal > 0 ? $row['amount'] / $reportTotal * 100 : 0]);
         $productReport = $reportSales->flatMap->lines->groupBy(fn ($line) => $line->description.'|'.$line->unit)->map(fn ($rows) => ['name' => $rows->first()->description, 'unit' => $rows->first()->unit, 'quantity' => (float) $rows->sum('quantity'), 'amount' => (float) $rows->sum('line_total')])->sortByDesc('amount')->values();
+        $paymentAnalysis = $reportSales->groupBy(fn ($sale) => $sale->payment_method ?: 'not_specified')->map(fn ($rows, $method) => ['method' => str($method)->replace('_', ' ')->title()->toString(), 'sales' => $rows->count(), 'amount' => (float) $rows->sum('total')])->sortByDesc('amount')->values();
+        $unitAnalysis = $reportSales->flatMap->lines->groupBy(fn ($line) => match ($line->category) {
+            'eggs', 'poultry' => 'Poultry', 'goats', 'milk' => 'Goats', 'rabbits' => 'Rabbits', 'dogs' => 'Dogs', 'garden' => 'Garden', default => 'Other',
+        })->map(fn ($rows, $unit) => ['unit' => $unit, 'quantity' => (float) $rows->sum('quantity'), 'amount' => (float) $rows->sum('line_total')])->sortByDesc('amount')->values();
+        $analysisMonthStart = $screen === 'analysis' && $analysisView === 'monthly' ? \Carbon\Carbon::parse($from)->startOfMonth() : \Carbon\Carbon::parse($to)->startOfMonth()->subMonths(11);
+        $analysisMonthEnd = \Carbon\Carbon::parse($to)->startOfMonth();
+        $analysisMonths = collect(\Carbon\CarbonPeriod::create($analysisMonthStart, '1 month', $analysisMonthEnd))->map(fn ($month) => ['key' => $month->format('Y-m'), 'label' => $month->format('M-y'), 'from' => $month->copy()->startOfMonth()->toDateString(), 'to' => $month->copy()->endOfMonth()->toDateString()])->values();
+        $analysisMonthlySales = Sale::with('lines')->whereBetween('sale_date', [$analysisMonths->first()['from'], $analysisMonths->last()['to']])->whereNotIn('status', ['void'])->where('approval_status', 'approved')->where('is_staff_consumption', false)->get();
+        $analysisCustomerNames = $customers->pluck('name')->merge($reportSales->pluck('customer_name'))->merge($analysisMonthlySales->pluck('customer_name'))->filter()->unique()->sort()->values();
+        $customerMonthlyAnalysis = $analysisCustomerNames->map(fn ($name) => [
+            'name' => $name,
+            'months' => $analysisMonths->mapWithKeys(fn ($month) => [$month['key'] => (float) $analysisMonthlySales->where('customer_name', $name)->filter(fn ($sale) => $sale->sale_date->format('Y-m') === $month['key'])->sum('total')]),
+        ]);
+        $analysisProductColumns = $products->pluck('name')->merge($reportSales->flatMap->lines->pluck('description'))->filter()->unique()->sort()->values();
+        $customerProductAnalysis = $analysisCustomerNames->map(function ($name) use ($reportSales, $analysisProductColumns) {
+            $lines = $reportSales->where('customer_name', $name)->flatMap->lines;
+            return [
+                'name' => $name,
+                'amounts' => $analysisProductColumns->mapWithKeys(fn ($product) => [$product => (float) $lines->where('description', $product)->sum('line_total')]),
+                'quantities' => $analysisProductColumns->mapWithKeys(fn ($product) => [$product => (float) $lines->where('description', $product)->sum('quantity')]),
+            ];
+        });
         $monthly = collect(range(5, 0))->map(function ($offset) {
             $month = now()->startOfMonth()->subMonths($offset);
 
-            return ['label' => $month->format('M Y'), 'amount' => (float) Sale::whereBetween('sale_date', [$month, $month->copy()->endOfMonth()])->whereNotIn('status', ['void'])->sum('total')];
+            return ['label' => $month->format('M Y'), 'amount' => (float) Sale::whereBetween('sale_date', [$month, $month->copy()->endOfMonth()])->whereNotIn('status', ['void'])->where('approval_status','approved')->where('is_staff_consumption', false)->sum('total')];
         });
         $priceHistory = $screen === 'setup'
             ? AuditLog::with('user')->whereIn('event', ['sale_price_approved','sale_price_changed'])->where('auditable_type', SaleProduct::class)->latest('created_at')->limit(20)->get()
             : collect();
+        $farmStock = $screen === 'inventory' ? $this->farmProductsInStock($eggStock) : collect();
 
-        return view('sales.index', compact('products', 'eggStock', 'customers', 'poultryHouses', 'prepayments', 'sales', 'screen', 'from', 'to', 'customerReport', 'productReport', 'monthly', 'reportTotal', 'reportSales', 'priceHistory') + [
-            'todayTotal' => (float) Sale::whereDate('sale_date', today())->whereNotIn('status', ['void'])->sum('total'),
-            'monthTotal' => (float) Sale::whereBetween('sale_date', [now()->startOfMonth(), now()->endOfMonth()])->whereNotIn('status', ['void'])->sum('total'),
+        $balanceDate = $request->query('balance_date', now()->toDateString());
+        abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $balanceDate), 422, 'Choose a valid balancing date.');
+        $balanceSales = collect();
+        $balancePayments = collect();
+        $balanceByMethod = collect();
+        $balanceOpening = 0.0;
+        $balanceCashReceived = 0.0;
+        $balanceCashDue = 0.0;
+        $dailyBalance = null;
+        $receiptArchive = collect();
+        $receiptFrom = $request->query('receipt_from', now()->subMonths(11)->startOfMonth()->toDateString());
+        $receiptTo = $request->query('receipt_to', now()->toDateString());
+        $receiptDestination = $request->query('receipt_destination');
+        $receiptSalesPerson = $request->integer('receipt_sales_person');
+        $receiptSalesPeople = collect();
+        if ($screen === 'balancing') {
+            $requestedSalesPerson = (int) $request->query('sales_person_id', $request->user()->id);
+            $salesPersonId = $this->isFinanceUser($request) ? $requestedSalesPerson : $request->user()->id;
+            $balanceSales = Sale::with(['lines', 'payments', 'customer'])
+                ->whereDate('sale_date', $balanceDate)
+                ->where('sold_by', $salesPersonId)
+                ->whereNotIn('status', ['void'])
+                ->orderBy('created_at')
+                ->get();
+            $balancePayments = SalesPayment::with('sale')
+                ->whereDate('paid_on', $balanceDate)
+                ->whereHas('sale', fn ($query) => $query->where('sold_by', $salesPersonId)->whereNotIn('status', ['void']))
+                ->orderBy('created_at')
+                ->get();
+            $balanceByMethod = $balancePayments->groupBy('payment_method')->map(fn ($rows) => (float) $rows->sum('amount'));
+            $priorCash = (float) SalesPayment::whereDate('paid_on', '<', $balanceDate)
+                ->where('payment_method', 'cash')
+                ->whereHas('sale', fn ($query) => $query->where('sold_by', $salesPersonId)->whereNotIn('status', ['void']))
+                ->sum('amount');
+            $priorTransfers = (float) DailySalesBalance::where('sales_person_id', $salesPersonId)
+                ->whereDate('business_date', '<', $balanceDate)
+                ->sum('amount_transferred');
+            $balanceOpening = max(0, $priorCash - $priorTransfers);
+            $balanceCashReceived = (float) ($balanceByMethod['cash'] ?? 0);
+            $balanceCashDue = $balanceOpening + $balanceCashReceived;
+            $dailyBalance = DailySalesBalance::where('sales_person_id', $salesPersonId)
+                ->whereDate('business_date', $balanceDate)
+                ->first();
+        }
+        if ($screen === 'receipt_archive') {
+            abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $receiptFrom) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $receiptTo), 422, 'Choose valid receipt archive dates.');
+            abort_if($receiptFrom > $receiptTo, 422, 'The From date must not be after the To date.');
+            abort_unless($receiptDestination === null || in_array($receiptDestination, ['bank', 'reservoir'], true), 422, 'Choose a valid destination.');
+            $receiptArchive = DailySalesBalance::with(['salesPerson', 'closer'])
+                ->whereNotNull('receipt_path')
+                ->whereBetween('business_date', [$receiptFrom, $receiptTo])
+                ->when($receiptDestination, fn ($query) => $query->where('destination', $receiptDestination))
+                ->when($receiptSalesPerson, fn ($query) => $query->where('sales_person_id', $receiptSalesPerson))
+                ->latest('business_date')
+                ->latest('closed_at')
+                ->get();
+            $receiptSalesPeople = User::whereIn('id', DailySalesBalance::whereNotNull('receipt_path')->select('sales_person_id'))
+                ->orderBy('name')
+                ->get();
+        }
+
+        return view('sales.index', compact('products', 'eggStock', 'farmStock', 'inventoryUnit', 'analysisView', 'customers', 'poultryHouses', 'prepayments', 'sales', 'screen', 'from', 'to', 'fromMonth', 'toMonth', 'customerReport', 'productReport', 'paymentAnalysis', 'unitAnalysis', 'analysisMonths', 'customerMonthlyAnalysis', 'analysisProductColumns', 'customerProductAnalysis', 'monthly', 'reportTotal', 'reportSales', 'priceHistory', 'balanceDate', 'balanceSales', 'balancePayments', 'balanceByMethod', 'balanceOpening', 'balanceCashReceived', 'balanceCashDue', 'dailyBalance', 'receiptArchive', 'receiptFrom', 'receiptTo', 'receiptDestination', 'receiptSalesPerson', 'receiptSalesPeople') + [
+            'todayTotal' => (float) Sale::whereDate('sale_date', today())->whereNotIn('status', ['void'])->where('approval_status','approved')->where('is_staff_consumption', false)->sum('total'),
+            'monthTotal' => (float) Sale::whereBetween('sale_date', [now()->startOfMonth(), now()->endOfMonth()])->whereNotIn('status', ['void'])->where('approval_status','approved')->where('is_staff_consumption', false)->sum('total'),
+            'pendingApprovalCount'=>Sale::where('approval_status','pending')->count(),
             'outstanding' => (float) Sale::where('balance', '>', 0)->sum('balance'),
             'returnsTotal' => (float) SalesReturn::whereBetween('returned_on', [now()->startOfMonth(), now()->endOfMonth()])->sum('refund_amount'),
             'accounts' => ['Cash on Hand', 'Centenary Bank - Sales', 'MTN Mobile Money', 'Airtel Mobile Money', 'In-kind / Barter Clearing'],
             'categories' => self::CATEGORIES,
         ]);
+    }
+
+    public function closeDailyBalance(Request $request): RedirectResponse
+    {
+        abort_unless($this->isFinanceUser($request), 403, 'Only Finance can bank the money and close a sales day.');
+        $data = $request->validate([
+            'business_date' => ['required', 'date', 'before_or_equal:today'],
+            'sales_person_id' => ['required', 'exists:users,id'],
+            'amount_transferred' => ['required', 'numeric', 'min:0'],
+            'destination' => ['required', Rule::in(['bank', 'reservoir'])],
+            'deposit_receipt' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120', Rule::requiredIf(fn () => $request->input('destination') === 'bank')],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+        $userId = (int) $data['sales_person_id'];
+        abort_if(DailySalesBalance::where('sales_person_id', $userId)->whereDate('business_date', $data['business_date'])->exists(), 422, 'This sales day has already been closed.');
+        $cashReceived = (float) SalesPayment::whereDate('paid_on', $data['business_date'])
+            ->where('payment_method', 'cash')
+            ->whereHas('sale', fn ($query) => $query->where('sold_by', $userId)->whereNotIn('status', ['void']))
+            ->sum('amount');
+        $priorCash = (float) SalesPayment::whereDate('paid_on', '<', $data['business_date'])
+            ->where('payment_method', 'cash')
+            ->whereHas('sale', fn ($query) => $query->where('sold_by', $userId)->whereNotIn('status', ['void']))
+            ->sum('amount');
+        $priorTransfers = (float) DailySalesBalance::where('sales_person_id', $userId)->whereDate('business_date', '<', $data['business_date'])->sum('amount_transferred');
+        $opening = max(0, $priorCash - $priorTransfers);
+        $cashDue = round($opening + $cashReceived, 2);
+        abort_if(abs((float) $data['amount_transferred'] - $cashDue) > 0.009, 422, 'The transferred amount must equal the cash to account for: UGX '.number_format($cashDue, 2).'.');
+
+        $receiptPath = $request->file('deposit_receipt')?->store('daily-sales-deposit-receipts', 'public');
+
+        DailySalesBalance::create([
+            ...collect($data)->except(['sales_person_id', 'deposit_receipt'])->all(),
+            'sales_person_id' => $userId,
+            'receipt_path' => $receiptPath,
+            'opening_balance' => $opening,
+            'cash_received' => $cashReceived,
+            'closed_by' => $request->user()->id,
+            'closed_at' => now(),
+        ]);
+
+        return redirect()->route('sales.index', ['screen' => 'balancing', 'balance_date' => $data['business_date'], 'sales_person_id' => $userId])
+            ->with('status', 'Sales day balanced and closed. The next day starts with UGX 0 brought forward.');
+    }
+
+    public function dailyBalanceReceipt(Request $request, DailySalesBalance $dailySalesBalance): StreamedResponse
+    {
+        abort_unless($this->isFinanceUser($request), 403);
+        abort_unless($dailySalesBalance->receipt_path && Storage::disk('public')->exists($dailySalesBalance->receipt_path), 404, 'Receipt file not found.');
+
+        return Storage::disk('public')->response(
+            $dailySalesBalance->receipt_path,
+            basename($dailySalesBalance->receipt_path),
+            ['Content-Disposition' => 'inline; filename="'.basename($dailySalesBalance->receipt_path).'"']
+        );
+    }
+
+    private function isFinanceUser(Request $request): bool
+    {
+        $user = $request->user();
+        $roles = $user->roles->pluck('code')->push($user->role?->code);
+
+        return $roles->contains('finance-manager')
+            || $user->department?->code === 'finance'
+            || $user->departments->contains('code', 'finance');
+    }
+
+    private function farmProductsInStock($eggStock)
+    {
+        $poultry = $eggStock->map(fn ($stock) => [
+            'item' => $stock['name'],
+            'detail' => number_format($stock['trays']).' full trays and '.number_format($stock['loose']).' loose eggs',
+            'quantity' => $stock['eggs'],
+            'unit' => 'eggs',
+        ]);
+
+        foreach (AnimalGroup::with('breed')->active()->where('current_quantity', '>', 0)->orderBy('code')->get() as $group) {
+            $poultry->push([
+                'item' => $group->name ?: $group->code,
+                'detail' => collect([$group->code, $group->breed?->name, $group->house])->filter()->unique()->implode(' · '),
+                'quantity' => (float) $group->current_quantity,
+                'unit' => 'birds',
+            ]);
+        }
+
+        $stock = collect(['poultry' => $poultry]);
+        foreach (['goats', 'rabbits', 'dogs'] as $unit) {
+            $stock[$unit] = DB::table('livestock_groups')
+                ->where('unit_code', $unit)
+                ->where('status', 'active')
+                ->where('current_quantity', '>', 0)
+                ->orderBy('group_code')
+                ->get()
+                ->map(fn ($group) => [
+                    'item' => $group->group_code,
+                    'detail' => $group->breed ?: 'Breed not recorded',
+                    'quantity' => (float) $group->current_quantity,
+                    'unit' => 'animals',
+                ]);
+        }
+
+        $gardenRecords = FarmUnitRecord::query()
+            ->where('unit_code', 'garden')
+            ->where('verification_status', 'approved')
+            ->whereIn('record_type', ['harvest', 'loss', 'sale'])
+            ->whereNotNull('quantity')
+            ->orderBy('subject')
+            ->get();
+        $stock['garden'] = $gardenRecords
+            ->groupBy(fn ($record) => mb_strtolower(trim($record->subject)).'|'.mb_strtolower(trim($record->measure_unit ?: 'units')))
+            ->map(function ($records) {
+                $first = $records->first();
+                $available = $records->sum(fn ($record) => $record->record_type === 'harvest'
+                    ? (float) $record->quantity
+                    : -(float) $record->quantity);
+
+                return [
+                    'item' => $first->subject,
+                    'detail' => 'Approved harvest balance',
+                    'quantity' => max(0, $available),
+                    'unit' => $first->measure_unit ?: 'units',
+                ];
+            })
+            ->filter(fn ($row) => $row['quantity'] > 0)
+            ->sortBy('item')
+            ->values();
+
+        return $stock;
+    }
+
+    public function exportAnalysis(Request $request, BrandedReportExport $export): StreamedResponse
+    {
+        abort_unless($this->canViewSalesReports($request), 403);
+        $view = $request->query('analysis_view');
+        abort_unless(in_array($view, ['summary', 'monthly', 'product_amount', 'product_quantity'], true), 404);
+
+        if ($view === 'monthly') {
+            $fromMonth = $request->query('from_month', now()->subMonths(11)->format('Y-m'));
+            $toMonth = $request->query('to_month', now()->format('Y-m'));
+            abort_unless(preg_match('/^\d{4}-\d{2}$/', $fromMonth) && preg_match('/^\d{4}-\d{2}$/', $toMonth), 422);
+            $from = \Carbon\Carbon::parse($fromMonth.'-01')->startOfMonth();
+            $to = \Carbon\Carbon::parse($toMonth.'-01')->endOfMonth();
+        } else {
+            $from = \Carbon\Carbon::parse($request->query('from', now()->startOfMonth()->toDateString()))->startOfDay();
+            $to = \Carbon\Carbon::parse($request->query('to', now()->toDateString()))->endOfDay();
+        }
+        abort_if($from->gt($to), 422, 'The report start must not be after its end.');
+
+        $sales = Sale::with('lines')->whereBetween('sale_date', [$from->toDateString(), $to->toDateString()])->whereNotIn('status', ['void'])->where('approval_status', 'approved')->where('is_staff_consumption', false)->get();
+        $total = (float) $sales->sum('total');
+        $customers = SalesCustomer::where('is_active', true)->pluck('name')->merge($sales->pluck('customer_name'))->filter()->unique()->sort()->values();
+
+        if ($view === 'summary') {
+            $ranked = $sales->groupBy('customer_name')->map(fn ($items, $name) => ['name'=>$name, 'amount'=>(float)$items->sum('total')])->sortByDesc('amount')->values();
+            $rows = $ranked->map(fn ($row, $index) => [$row['name'], number_format($row['amount'], 2), number_format($total > 0 ? $row['amount'] / $total * 100 : 0, 1).'%', $index + 1]);
+            $headers = ['Current receivables', 'Amount (UGX)', '%', 'Rank'];
+            $title = 'Sales Analysis - Summary';
+        } elseif ($view === 'monthly') {
+            $months = collect(\Carbon\CarbonPeriod::create($from->copy()->startOfMonth(), '1 month', $to->copy()->startOfMonth()));
+            $headers = array_merge(['Current receivables'], $months->map->format('M-y')->all());
+            $rows = $customers->map(fn ($name) => array_merge([$name], $months->map(fn ($month) => (float)$sales->where('customer_name', $name)->filter(fn ($sale) => $sale->sale_date->format('Y-m') === $month->format('Y-m'))->sum('total'))->all()));
+            $title = 'Sales Analysis - Month on Month';
+        } else {
+            $products = SaleProduct::where('is_active', true)->pluck('name')->merge($sales->flatMap->lines->pluck('description'))->filter()->unique()->sort()->values();
+            $headers = array_merge(['Current receivables'], $products->all());
+            $field = $view === 'product_amount' ? 'line_total' : 'quantity';
+            $rows = $customers->map(function ($name) use ($sales, $products, $field) {
+                $lines = $sales->where('customer_name', $name)->flatMap->lines;
+                return array_merge([$name], $products->map(fn ($product) => (float)$lines->where('description', $product)->sum($field))->all());
+            });
+            $title = $view === 'product_amount' ? 'Sales Analysis - Product Type by Amount' : 'Sales Analysis - Product Type by Quantity';
+        }
+
+        return $export->download($title, 'Reporting period: '.$from->format('d M Y').' to '.$to->format('d M Y'), $headers, $rows, str($title)->slug().'-'.now()->format('Ymd-His').'.xls', $request->user()->displayName());
     }
 
     public function storeProduct(Request $request, CommunicationService $communications): RedirectResponse
@@ -163,24 +445,27 @@ class SalesController extends Controller
         return back()->with('status', 'Customer added.');
     }
 
-    public function storeSale(Request $request): RedirectResponse
+    public function storeSale(Request $request, CommunicationService $communications): RedirectResponse
     {
         abort_unless($request->user()->canDo('sales', 'create'), 403);
-        $data = $request->validate(['sale_date' => ['required', 'date', 'before_or_equal:today'], 'customer_id' => ['nullable', 'exists:sales_customers,id'], 'walk_in_customer' => ['nullable', 'string', 'max:160'], 'payment_type' => ['required', 'in:cash,credit,mixed'], 'payment_method' => ['nullable', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'string', 'max:120'], 'amount_paid' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'merchant_code' => ['nullable', 'required_if:payment_method,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'], 'notes' => ['nullable', 'string', 'max:2000'], 'lines' => ['required', 'array', 'min:1'], 'lines.*.product_id' => ['nullable', 'required_without:lines.*.description', 'exists:sale_products,id'], 'lines.*.category' => ['nullable', 'required_without:lines.*.product_id', Rule::in(self::CATEGORIES)], 'lines.*.description' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:180'], 'lines.*.unit' => ['nullable', 'required_without:lines.*.product_id', Rule::in(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'])], 'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required', 'numeric', 'min:0'], 'lines.*.poultry_house_id' => ['nullable', 'exists:poultry_houses,id']]);
+        $data = $request->validate(['sale_date' => ['required', 'date', 'before_or_equal:today'], 'customer_id' => ['nullable', 'exists:sales_customers,id'], 'walk_in_customer' => ['nullable', 'string', 'max:160'], 'staff_consumption'=>['nullable','boolean'], 'consumed_by'=>['nullable','required_if:staff_consumption,1','string','max:180'], 'payment_type' => ['required', 'in:cash'], 'payment_method' => ['nullable', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'string', 'max:120'], 'amount_paid' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'merchant_code' => ['nullable', 'required_if:payment_method,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'], 'notes' => ['nullable', 'string', 'max:2000'], 'lines' => ['required', 'array', 'min:1'], 'lines.*.product_id' => ['nullable', 'required_without:lines.*.description', 'exists:sale_products,id'], 'lines.*.category' => ['nullable', 'required_without:lines.*.product_id', Rule::in(self::CATEGORIES)], 'lines.*.description' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:180'], 'lines.*.unit' => ['nullable', 'required_without:lines.*.product_id', Rule::in(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'])], 'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required', 'numeric', 'min:0'], 'lines.*.poultry_house_id' => ['nullable', 'exists:poultry_houses,id']]);
         $receiptPath = $request->file('payment_receipt')?->store('sales-payment-receipts', 'public');
-        $data['payment_type'] = 'cash';
-        $data['amount_paid'] = 0;
-        $data['discount'] = 0;
+        $staffConsumption = $request->boolean('staff_consumption') || ($data['payment_method'] ?? null) === 'farm_consumption';
+        if ($staffConsumption) {
+            $data['payment_type']='cash'; $data['payment_method']=null;
+            $data['farm_account']=null;
+            $data['walk_in_customer']='Internal farm use - '.trim($data['consumed_by']);
+        }
         $customerId = $data['customer_id'] ?? null;
         $customer = $customerId ? SalesCustomer::find($customerId) : null;
         $enteredName = trim($data['walk_in_customer'] ?? '');
-        if (! $customer && $enteredName !== '' && strcasecmp($enteredName, 'One-time customer') !== 0) {
+        if (! $staffConsumption && ! $customer && $enteredName !== '' && strcasecmp($enteredName, 'One-time customer') !== 0) {
             $customer = SalesCustomer::whereRaw('lower(name) = ?', [mb_strtolower($enteredName)])->first()
                 ?: SalesCustomer::create(['name' => $enteredName, 'credit_limit' => 0, 'is_active' => true]);
         }
-        $customerName = $customer?->name ?: 'One-time customer';
+        $customerName = $staffConsumption ? $data['walk_in_customer'] : ($customer?->name ?: 'One-time customer');
         try {
-            $sale = DB::transaction(function () use ($data, $customer, $customerName, $request) {
+            $sale = DB::transaction(function () use ($data, $customer, $customerName, $request, $staffConsumption, $receiptPath) {
                 $lines = [];
                 $subtotal = 0;
                 foreach ($data['lines'] as $line) {
@@ -220,12 +505,12 @@ class SalesController extends Controller
                 }
                 $discount = (float) ($data['discount'] ?? 0);
                 $total = max(0, round($subtotal - $discount, 2));
-                $paid = (float) ($data['amount_paid'] ?? 0);
+                $paid = $staffConsumption ? 0 : (float) ($data['amount_paid'] ?? 0);
                 if ($paid > $total) {
                     throw new \RuntimeException('Amount paid cannot exceed the sale total.');
-                }if ($data['payment_type'] === 'cash') {
+                }if (! $staffConsumption && $data['payment_type'] === 'cash') {
                     $paid = $total;
-                }$balance = round($total - $paid, 2);
+                }$balance = $staffConsumption ? 0 : round($total - $paid, 2);
                 if ($balance > 0 && ! $customer) {
                     throw new \RuntimeException('Choose a registered customer for a credit or partly paid sale.');
                 }
@@ -239,7 +524,7 @@ class SalesController extends Controller
                     if (! $customer) throw new \RuntimeException('Choose the registered customer whose prepayment is being used.');
                     $this->consumeCustomerPrepayment($customer, $paid);
                 }
-                $sale = Sale::create(['invoice_number' => $this->nextInvoice(), 'sale_date' => $data['sale_date'], 'customer_id' => $customer?->id, 'customer_name' => $customerName, 'payment_type' => $data['payment_type'], 'payment_method' => $data['payment_method'] ?? null, 'farm_account' => $data['farm_account'] ?? null, 'subtotal' => $subtotal, 'discount' => $discount, 'total' => $total, 'amount_paid' => $paid, 'balance' => $balance, 'status' => $balance > 0 ? 'partly_paid' : 'paid', 'notes' => $data['notes'] ?? null, 'sold_by' => $request->user()->id]);
+                $sale = Sale::create(['invoice_number' => $this->nextInvoice(), 'sale_date' => $data['sale_date'], 'customer_id' => $customer?->id, 'customer_name' => $customerName, 'payment_type' => $data['payment_type'], 'payment_method' => $data['payment_method'] ?? null, 'farm_account' => $data['farm_account'] ?? null, 'subtotal' => $subtotal, 'discount' => $discount, 'total' => $total, 'amount_paid' => $paid, 'balance' => $balance, 'status' => $staffConsumption ? 'internal_use' : ($balance > 0 ? 'partly_paid' : 'paid'), 'approval_status'=>'pending', 'is_staff_consumption'=>$staffConsumption, 'consumed_by'=>$data['consumed_by']??null, 'notes' => $data['notes'] ?? null, 'sold_by' => $request->user()->id]);
                 foreach ($lines as [$product,$category,$description,$unit,$qty,$price,$lineTotal,$houseId]) {
                     $house = null;
                     $batch = null;
@@ -273,6 +558,9 @@ class SalesController extends Controller
                 if ($paid > 0) {
                     $this->recordMoney($sale, $paid, $data['sale_date'], $data['payment_method'] ?? 'cash', $data['farm_account'] ?? 'Cash on Hand', null, $request->user()->id, $data['merchant_code'] ?? null, $receiptPath);
                 }
+                if ($staffConsumption) {
+                    FinancialTransaction::create(['transaction_date'=>$data['sale_date'],'type'=>'expense_recognized','transaction_category'=>'internal_product_use','account_group'=>'Operating Expenses','entry_account'=>'Farm Products Used Internally','account'=>'Non-cash internal use','counterparty'=>$data['consumed_by'],'amount'=>$total,'payment_method'=>null,'reference'=>$sale->invoice_number,'description'=>'Farm products used internally without payment: '.$sale->invoice_number,'recorded_by'=>$request->user()->id]);
+                }
 
                 return $sale;
             });
@@ -280,9 +568,15 @@ class SalesController extends Controller
             return back()->withErrors(['sale' => $e->getMessage()])->withInput();
         }
 
-        $payment = $sale->payments()->latest('id')->firstOrFail();
+        $approval = $sale->approvals()->create(['module_key'=>'sales','department_id'=>$request->user()->department_id,'submitted_by'=>$request->user()->id,'submitted_at'=>now(),'submission_note'=>($staffConsumption?'Internal farm product use':'Customer sale').' '.$sale->invoice_number.' requires Finance and CEO approval'.($staffConsumption?'.':' before receipt printing.'),'status'=>'pending','level'=>1,'required_levels'=>2,'due_at'=>now()->addDay()]);
+        $approval->steps()->createMany([['stage'=>1,'role_code'=>'finance-manager','status'=>'pending'],['stage'=>2,'role_code'=>'ceo','status'=>'waiting']]);
+        $message=$staffConsumption
+            ? $sale->invoice_number.' records UGX '.number_format((float)$sale->total).' of farm products used internally by '.$data['consumed_by'].', entered by '.$request->user()->displayName().'. No payment or revenue was recorded.'
+            : $sale->invoice_number.' for UGX '.number_format((float)$sale->total).' was entered by '.$request->user()->displayName().'. Review it before its receipt can be printed.';
+        $communications->toRole('finance-manager',($staffConsumption?'Internal farm use':'Sale').' awaiting approval: '.$sale->invoice_number,$message,$request->user()->id,route('approvals.show',$approval,false));
+        $communications->toRole('ceo',($staffConsumption?'Internal farm use recorded: ':'New sale entered: ').$sale->invoice_number,$message.' Finance approval is the first stage.',$request->user()->id,route('approvals.show',$approval,false));
 
-        return redirect()->route('sales.receipts.print', [$sale, $payment])->with('status', 'Sale '.$sale->invoice_number.' recorded. Receipt number generated automatically.');
+        return redirect()->to(route('dashboard', ['sales_from' => $data['sale_date'], 'sales_to' => $data['sale_date']]).'#daily-sales-table')->with('status', $staffConsumption ? 'Internal farm use recorded with no payment or revenue and sent for approval.' : 'Sale recorded. Finance and the CEO have been notified for approval.');
     }
 
     public function show(Request $request, Sale $sale): View
@@ -298,6 +592,7 @@ class SalesController extends Controller
     {
         abort_unless($request->user()->canAccess('sales') || $request->user()->canAccess('finance'), 403);
         abort_unless($payment->sale_id === $sale->id, 404);
+        abort_unless($sale->approval_status === 'approved', 403, 'Finance and the CEO must approve this sale before its receipt can be printed.');
         $sale->load(['lines.batch', 'lines.poultryHouse', 'customer']);
         $payment->load('recorder');
         $creditUsed = $payment->payment_method === 'prepayment' ? (float)$payment->amount : 0.0;
@@ -313,7 +608,7 @@ class SalesController extends Controller
         abort_unless($request->user()->canDo('receipts', 'create'), 403);
         $data = $request->validate(['paid_on' => ['required', 'date', 'before_or_equal:today'], 'amount' => ['required', 'numeric', 'min:0.01', 'max:'.$sale->balance], 'payment_method' => ['required', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'required_unless:payment_method,prepayment','string','max:120'], 'reference' => ['nullable', 'string', 'max:100'], 'merchant_code' => ['nullable', 'required_if:payment_method,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120']]);
         $receiptPath = $request->file('payment_receipt')?->store('sales-payment-receipts', 'public');
-        DB::transaction(function () use ($sale, $data, $request) {
+        DB::transaction(function () use ($sale, $data, $request, $receiptPath) {
             if ($data['payment_method'] === 'prepayment') {
                 $customer=$sale->customer ?: SalesCustomer::whereRaw('lower(name) = ?', [mb_strtolower($sale->customer_name)])->first();
                 abort_unless($customer,422,'This sale is not linked to a registered customer account.');
@@ -368,6 +663,10 @@ class SalesController extends Controller
         $payment->update(['receipt_number' => sprintf('%s-RCT-%06d', $this->receiptProductPrefix($sale), $payment->id)]);
         if ($method === 'prepayment') {
             FinancialTransaction::create(['transaction_date' => $date, 'type' => 'revenue_recognized', 'transaction_category' => 'revenue', 'account_group' => 'Sales', 'entry_account' => 'Sales Revenue', 'account' => 'Customer Prepayments (Liability)', 'counterparty' => $sale->customer_name, 'amount' => $amount, 'payment_method' => null, 'reference' => $payment->receipt_number, 'description' => 'Sales revenue recognized from customer prepayment for '.$sale->invoice_number, 'recorded_by' => $userId]);
+            return;
+        }
+        if ($method === 'in_kind') {
+            FinancialTransaction::create(['transaction_date'=>$date,'type'=>'revenue_recognized','transaction_category'=>'revenue_in_kind','account_group'=>'Sales','entry_account'=>'Revenue in kind','account'=>$account,'counterparty'=>$sale->customer_name,'amount'=>$amount,'payment_method'=>'in_kind','reference'=>$payment->receipt_number,'description'=>'Farm product used or consumed by staff without cash payment: '.$sale->invoice_number,'recorded_by'=>$userId]);
             return;
         }
         FinancialTransaction::create(['transaction_date' => $date, 'type' => 'money_received', 'account' => $account, 'counterparty' => $sale->customer_name, 'amount' => $amount, 'payment_method' => $method === 'credit' ? null : $method, 'reference' => $payment->receipt_number, 'description' => 'Sales receipt '.$sale->invoice_number, 'recorded_by' => $userId]);

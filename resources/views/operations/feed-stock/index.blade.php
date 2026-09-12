@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title','Poultry Feed Verification')
 @section('content')
-<div class="page-head"><p class="eyebrow">Two-person verification</p><h2>Tuesday Feed Delivery</h2><p>Production records supplier weights before dispatch. The Farm Store Manager independently records arrival weights and the system calculates variance.</p></div>
+<div class="page-head"><p class="eyebrow">Two-person verification</p><h2>Feeds Delivery</h2><p>Production records supplier weights before dispatch. The Farm Store Manager independently records arrival weights and the system calculates variance.</p></div>
 
 @if($canFarmReceive && $storeCards->isNotEmpty())
 <nav class="inventory-store-nav feed-store-nav" aria-label="Inventory stores">

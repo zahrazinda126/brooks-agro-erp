@@ -21,6 +21,7 @@ class StoreBatchRequest extends FormRequest
             'breed_id'      => ['nullable', 'exists:breeds,id'],
             'breed_name'    => ['nullable', 'string', 'max:120'],
             'purpose'       => ['required', Rule::in(['layer', 'broiler', 'dual', 'kienyeji'])],
+            'batch_order_id'=>['nullable','exists:batch_orders,id'],
 
             'received_date'       => ['required', 'date', 'before_or_equal:today'],
             'age_days_on_arrival' => ['required', 'integer', 'min:0', 'max:400'],

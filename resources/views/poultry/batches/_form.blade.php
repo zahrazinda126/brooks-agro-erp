@@ -10,6 +10,7 @@
     <p class="card-label">What arrived</p>
 
     <div class="form-grid">
+        @if(!isset($batch) && isset($batchOrders))<div class="field field--wide"><label for="batch_order_id">Finance pre-arrival order</label><select id="batch_order_id" name="batch_order_id"><option value="">No finance order / legacy arrival</option>@foreach($batchOrders as $order)<option value="{{ $order->id }}" data-supplier="{{ $order->supplier_name }}" data-breed="{{ $order->breed }}" data-quantity="{{ $order->quantity_ordered }}" data-total="{{ $order->order_total }}" @selected(old('batch_order_id')==$order->id)>{{ $order->order_number }} · {{ $order->supplier_name }} · {{ number_format($order->quantity_ordered) }} birds · paid UGX {{ number_format($order->paidAmount()) }}</option>@endforeach</select><p class="field-hint">Finance owns all payments. Production selects the order and records only arrival quantities, condition, housing and other production details.</p></div>@endif
         <div class="field @error('code') field--error @enderror">
             <label for="code">Batch code</label>
             <input id="code" name="code" type="text"
@@ -78,6 +79,7 @@
         @endif
     </div>
 </div>
+@if(!isset($batch) && isset($batchOrders))<script>document.addEventListener('DOMContentLoaded',()=>{const order=document.getElementById('batch_order_id');if(!order)return;const sync=()=>{const o=order.selectedOptions[0];if(!order.value)return;const set=(id,value,readonly=false)=>{const el=document.getElementById(id);if(!el)return;el.value=value||'';el.readOnly=readonly;};set('breed_name',o.dataset.breed);set('quantity_received',o.dataset.quantity);set('total_cost',o.dataset.total,true);set('unit_cost','',true);const supplier=document.getElementById('supplier_name');if(supplier){supplier.value=o.dataset.supplier;supplier.readOnly=true;}document.querySelector('[data-cost-calculator] input')?.dispatchEvent(new Event('input',{bubbles:true}));};order.addEventListener('change',sync);sync();});</script>@endif
 
 <div class="card" data-cost-calculator>
     <p class="card-label">When and how many</p>

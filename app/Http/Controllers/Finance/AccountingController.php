@@ -11,6 +11,10 @@ use App\Models\Payable;
 use App\Models\Approval;
 use App\Models\AuditLog;
 use App\Models\Department;
+use App\Models\BatchOrder;
+use App\Models\BatchOrderPayment;
+use App\Models\FinancialTransaction;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -28,7 +32,8 @@ class AccountingController extends Controller
         $suppliers = collect(config('finance_entry.suppliers', []))
             ->merge(Payable::query()->whereNotNull('supplier_name')->pluck('supplier_name'))
             ->map(fn ($name) => trim((string) $name))->filter()->unique(fn ($name) => mb_strtolower($name))->sort()->values();
-        return view('finance.accounting.payables', compact('items', 'outstanding', 'suppliers'));
+        $batchOrders=BatchOrder::with(['payments','batch'])->latest('ordered_on')->get();
+        return view('finance.accounting.payables', compact('items', 'outstanding', 'suppliers','batchOrders'));
     }
 
     public function storePayable(Request $request): RedirectResponse
@@ -37,6 +42,29 @@ class AccountingController extends Controller
         $data = $request->validate(['supplier_name'=>['required','string','max:160'],'invoice_number'=>['nullable','string','max:80'],'invoice_date'=>['required','date'],'due_date'=>['nullable','date','after_or_equal:invoice_date'],'description'=>['required','string','max:1000'],'amount'=>['required','numeric','min:1']]);
         Payable::create($data + ['amount_paid'=>0,'status'=>'open','recorded_by'=>$request->user()->id]);
         return back()->with('status', 'Supplier bill recorded.');
+    }
+
+    public function storeBatchOrder(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('payables','create'),403);
+        $data=$request->validate(['batch_type'=>['required','in:poultry,goats,rabbits'],'supplier_name'=>['required','string','max:160'],'breed'=>['nullable','string','max:120'],'quantity_ordered'=>['required','integer','min:1'],'order_total'=>['required','numeric','min:1'],'ordered_on'=>['required','date','before_or_equal:today'],'expected_on'=>['nullable','date','after_or_equal:ordered_on'],'notes'=>['nullable','string','max:2000']]);
+        $next=(int)BatchOrder::max('id')+1;
+        BatchOrder::create($data+['order_number'=>'BORD-'.now()->format('Y').'-'.str_pad((string)$next,5,'0',STR_PAD_LEFT),'status'=>'ordered','recorded_by'=>$request->user()->id]);
+        return back()->with('status','Pre-arrival batch order recorded. Payments can now be added in stages.');
+    }
+
+    public function payBatchOrder(Request $request, BatchOrder $batchOrder): RedirectResponse
+    {
+        abort_unless($request->user()->canDo('transactions','create'),403);
+        $batchOrder->load('payments');
+        $data=$request->validate(['paid_on'=>['required','date','before_or_equal:today'],'amount'=>['required','numeric','min:1','max:'.$batchOrder->balance()],'payment_method'=>['required','in:cash,bank,agent,mobile_money,cheque'],'farm_account'=>['required','string','max:120'],'reference'=>['nullable','string','max:100']]);
+        DB::transaction(function()use($data,$batchOrder,$request){
+            BatchOrderPayment::create($data+['batch_order_id'=>$batchOrder->id,'recorded_by'=>$request->user()->id]);
+            FinancialTransaction::create(['transaction_date'=>$data['paid_on'],'type'=>'money_paid','transaction_category'=>'batch_prepayment','account_group'=>'Current Assets','entry_account'=>'Supplier Advances','account'=>$data['farm_account'],'counterparty'=>$batchOrder->supplier_name,'amount'=>$data['amount'],'payment_method'=>$data['payment_method'],'reference'=>$data['reference']?:$batchOrder->order_number,'description'=>'Pre-arrival payment for '.$batchOrder->order_number,'recorded_by'=>$request->user()->id]);
+            $batchOrder->load('payments');
+            $batchOrder->update(['status'=>$batchOrder->balance()<=0?'paid_before_arrival':'partly_paid']);
+        });
+        return back()->with('status','Batch-order payment recorded. The remaining balance is retained.');
     }
 
     public function budgets(Request $request): View

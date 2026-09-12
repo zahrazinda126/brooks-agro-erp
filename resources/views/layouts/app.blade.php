@@ -23,7 +23,8 @@
      | So the whole thing is removed rather than trimmed, and the screen
      | becomes what they actually use.
      */
-    $plain = $user->isDataEntryOnly();
+    // Keep the permission-filtered sidebar available to every account.
+    $plain = false;
 @endphp
 
 <div class="shell {{ $plain ? 'shell--plain' : '' }}">
@@ -70,7 +71,7 @@
         @endif
 
         @unless($plain)
-            <div class="topbar-search" role="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" placeholder="Search batches, animals, tasks…" aria-label="Search"></div>
+            <form class="topbar-search" role="search" method="GET" action="{{ route('search.index') }}"><button class="topbar-search__submit" type="submit" aria-label="Run search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button><input type="search" name="q" value="{{ request()->routeIs('search.index') ? request('q') : '' }}" placeholder="Search batches, animals, tasks…" aria-label="Search" minlength="2" required></form>
             @php($unreadNotifications=\App\Models\Communication::where('recipient_id',$user->id)->whereNull('read_at')->latest()->get())
             <a class="topbar-user" href="{{ route('account.edit') }}" title="Edit my account"><span>{{ strtoupper(substr($user->firstName(),0,1).substr($user->displayName(),-1)) }}</span><div><strong>{{ $user->displayName() }}</strong><small>{{ $user->roleSummary() }} &middot; Edit account</small></div></a>
         @endunless
@@ -87,7 +88,8 @@
 
     @unless($plain)
         <nav class="context-nav" id="contextNav" aria-label="Current workspace navigation" hidden>
-            <strong id="contextNavTitle"></strong>
+            <button type="button" class="context-nav__back" onclick="if(history.length>1){history.back()}else{location.href='{{ route('dashboard') }}'}">&larr; Back</button>
+            <strong id="contextNavTitle">@yield('title', 'Current page')</strong>
             <div id="contextNavLinks"></div>
         </nav>
     @endunless

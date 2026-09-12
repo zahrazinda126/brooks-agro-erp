@@ -18,6 +18,7 @@
 @php
     $groups     = $user->sidebarModules();
     $currentKey = request()->route('key')
+        ?? (request()->routeIs('hr.records.*') ? request()->route('module') : null)
         ?? (request()->routeIs('executive.*') ? request()->route('screen') : null)
         ?? (request()->routeIs('communications.*') ? 'messages' : null)
         ?? (request()->routeIs('dashboard') ? 'dashboard' : null)
@@ -33,6 +34,7 @@
         ?? (request()->routeIs('feed-types.*') ? 'feed-types' : null)
         ?? (request()->routeIs('sales.*') ? 'sales' : null)
         ?? (request()->routeIs('finance.transactions.*') ? 'transactions' : null)
+        ?? (request()->routeIs('finance.accounts.*') ? 'accounts' : null)
         ?? (request()->routeIs('finance.cash-book.*') ? 'cash-book' : null)
         ?? (request()->routeIs('finance.bank-book.*') ? 'bank-book' : null)
         ?? (request()->routeIs('finance.general-ledger.*') ? 'general-ledger' : null)
@@ -49,6 +51,10 @@
         ?? (request()->routeIs('owner.customers') ? 'customers' : null)
         ?? (request()->routeIs('visitors.*') ? 'visitors' : null)
         ?? (request()->routeIs('poultry.performance.*') ? 'staff-performance' : null);
+    if ($currentKey === 'kpis' && request()->routeIs('executive.*')) $currentKey = 'kpi-dashboards';
+    if (request()->routeIs('operations.reports*')) $currentKey = 'reports';
+    if (request()->routeIs('operations.units.*')) $currentKey = request()->route('unit');
+    if (request()->routeIs('poultry.report.*')) $currentKey = 'reports';
     if (request()->routeIs('daily-reports.*')) $currentKey = 'daily-management-report';
     if (request()->routeIs('vaccination-schedule.*') || request()->routeIs('vaccination-records.*')) $currentKey = 'vaccination';
     if (request()->routeIs('department-budget.*')) $currentKey = 'department-budget';
@@ -119,6 +125,7 @@
         '📊 Executive View' => [
             ['key' => 'kpi-dashboards', 'label' => 'KPIs & Analytics'],
             ['key' => 'reports', 'label' => 'Financial & Executive Reports'],
+            ['key' => 'sales', 'label' => 'Sales Analysis', 'screen' => 'reports'],
         ],
         '✅ Decisions' => [
             ['key' => 'assign-supervisors', 'label' => 'Daily Supervisors'],
@@ -214,7 +221,7 @@
             ['key'=>'vaccination', 'label'=>'Poultry Vaccination Schedule', 'page'=>'schedule'],
             ['key'=>'mortality-assess', 'label'=>'Mortality Examination'],
             ['key'=>'staff-performance', 'label'=>'Attendant Performance'],
-            ['key'=>'feed-received', 'label'=>'Tuesday Feed Verification'],
+            ['key'=>'feed-received', 'label'=>'Feeds Verification'],
         ],
         'Farm Units' => [
             ['key'=>'inventory', 'label'=>'Inventory & Stores'],
@@ -276,6 +283,9 @@
     ];
 
     $financeSections = [
+        'Accounts' => [
+            ['key' => 'accounts', 'label' => 'Accounts'],
+        ],
         '💵 Daily Operations' => [
             ['key' => 'transactions', 'label' => 'Data Entry & Register'],
         ],
@@ -325,21 +335,52 @@
         '🧾 Daily Sales' => [
             ['key'=>'sales','label'=>'Record Daily Sale','screen'=>'sale'],
         ],
-        'Customers' => [
-            ['key'=>'customers','label'=>'Customer Accounts','view'=>'accounts'],
-            ['key'=>'customers','label'=>'Add Customer','view'=>'add'],
-            ['key'=>'customers','label'=>'Customer Analysis','view'=>'analysis'],
-        ],
         'Inventory' => [
-            ['key'=>'inventory','label'=>'Inventory & Stores'],
+            ['key'=>'sales','label'=>'Inventory','screen'=>'inventory'],
         ],
         '📈 Reports' => [
             ['key'=>'sales','label'=>'Sales Report','screen'=>'reports'],
+            ['key'=>'sales','label'=>'Sales Analysis','screen'=>'analysis'],
         ],
         'Communication' => [
             ['key'=>'messages','label'=>'Messages & Updates'],
         ],
     ];
+
+    /* A module can expose several destinations (for example Sales entry and
+       Sales reports). Match the complete destination so only the link for the
+       page being viewed is highlighted and expanded. */
+    $navItemIsActive = function (array $item) use ($currentKey): bool {
+        if (isset($item['page'])) {
+            $page = $item['page'];
+            if ($page === 'production') return request()->routeIs('operations.reports*');
+            if ($page === 'poultry') return request()->routeIs('poultry.report.*');
+            if (in_array($page, ['goats', 'rabbits', 'dogs', 'garden'], true)) {
+                return request()->routeIs('operations.units.report') && request()->route('unit') === $page;
+            }
+            if ($page === 'poultry-report') return request()->routeIs('poultry.report.*');
+            if ($page === 'houses') return request()->routeIs('poultry-houses.*');
+            if ($page === 'export') {
+                return request()->routeIs('operations.units.report') && request()->route('unit') === ($item['key'] ?? null);
+            }
+        }
+
+        if (($item['key'] ?? null) !== $currentKey) return false;
+
+        foreach (['screen', 'status', 'view', 'type'] as $parameter) {
+            if (array_key_exists($parameter, $item)
+                && (string) request($parameter, request()->route($parameter)) !== (string) $item[$parameter]) {
+                return false;
+            }
+        }
+
+        /* These screens use a default when the query parameter is omitted. */
+        if (($item['key'] ?? null) === 'sales' && !isset($item['screen'])) {
+            return request('screen', 'sale') === 'sale';
+        }
+
+        return true;
+    };
 
     /* Keep the rail deliberately small. Related screens remain available in
        the contextual navigation instead of becoming separate rail entries. */
@@ -387,7 +428,7 @@
                 <svg class="nav-icon" aria-hidden="true"><use href="#i-home"></use></svg><span>🏠 Dashboard</span>
             </a>
             @foreach(($isCeo ? $ceoSections : $directorSections) as $section => $items)
-                <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif>
+                <details class="hr-nav-section" @if(collect($items)->contains(fn($item) => $navItemIsActive($item))) open @endif>
                     <summary>{{ $section }}</summary>
                     @foreach($items as $item)
                         @continue(in_array($item['key'], ['settings', 'notifications'], true))
@@ -410,12 +451,16 @@
                                     'customers' => route('owner.customers'),
                                     'directives' => route('directives.index'),
                                     'sales' => route('sales.index', ['screen' => $item['screen'] ?? 'setup']),
+                                    'budget' => route('finance.budgets.index'),
+                                    'purchases' => route('finance.farm.purchases'),
+                                    'assets' => route('finance.assets.index'),
+                                    'audit' => route('finance.admin.index', ['screen' => 'audit']),
                                     'attendance','welfare','advances' => route('hr.records.index',['module'=>$item['key']]),
                                     'staff-performance' => route('poultry.performance.index'),
                                     default => \App\Models\Module::where('key',$item['key'])->first()?->url(),
                                 };
                             @endphp
-                            @if($href)<a class="nav-link" href="{{ $href }}"><span>{{ $item['label'] }}</span></a>@endif
+                            @if($href)<a class="nav-link" href="{{ $href }}" @if($navItemIsActive($item)) aria-current="page" @endif><span>{{ $item['label'] }}</span></a>@endif
                         @endif
                     @endforeach
                 </details>
@@ -425,7 +470,7 @@
         <div class="hr-nav" aria-label="Personal Assistant navigation">
             <a class="nav-link" href="{{ route('dashboard') }}"><span>Dashboard</span></a>
             @foreach($assistantSections as $section => $items)
-                <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif><summary>{{ $section }}</summary>
+                <details class="hr-nav-section" @if(collect($items)->contains(fn($item) => $navItemIsActive($item))) open @endif><summary>{{ $section }}</summary>
                 @foreach($items as $item)
                     @continue(in_array($item['key'], ['settings', 'notifications'], true))
                     @if($user->canAccess($item['key']) || $item['key'] === 'directives' || str_starts_with($item['key'], 'pa-'))
@@ -447,7 +492,7 @@
                             'visitors' => route('visitors.index'),
                             default => \App\Models\Module::where('key',$item['key'])->first()?->url(),
                         }; @endphp
-                        @if($href)<a class="nav-link" href="{{ $href }}"><span>{{ $item['label'] }}</span></a>@endif
+                        @if($href)<a class="nav-link" href="{{ $href }}" @if($navItemIsActive($item)) aria-current="page" @endif><span>{{ $item['label'] }}</span></a>@endif
                     @endif
                 @endforeach
                 </details>
@@ -458,7 +503,7 @@
             <a class="nav-link" href="{{ route('dashboard') }}" @if($currentKey === 'dashboard') aria-current="page" @endif><svg class="nav-icon" aria-hidden="true"><use href="#i-home"></use></svg><span>🏠 Dashboard</span></a>
             @foreach($productionSections as $section => $items)
                 @continue(empty($items))
-                <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif><summary>{{ $section }}</summary>
+                <details class="hr-nav-section" @if(collect($items)->contains(fn($item) => $navItemIsActive($item))) open @endif><summary>{{ $section }}</summary>
                 @foreach($items as $item)
                     @continue(in_array($item['key'], ['settings', 'notifications'], true))
                     @if($user->canAccess($item['key']))
@@ -492,7 +537,7 @@
                                 default => \App\Models\Module::where('key',$item['key'])->first()?->url(),
                             };
                         @endphp
-                        @if($href)<a class="nav-link" href="{{ $href }}" @if($currentKey===$item['key']) aria-current="page" @endif><span>{{ $item['label'] }}</span></a>@endif
+                        @if($href)<a class="nav-link" href="{{ $href }}" @if($navItemIsActive($item)) aria-current="page" @endif><span>{{ $item['label'] }}</span></a>@endif
                     @endif
                 @endforeach
                 </details>
@@ -508,14 +553,20 @@
 
             @foreach (($isHrManager ? $hrSections : ($isSalesManager ? $salesSections : $financeSections)) as $section => $items)
                 @continue(empty($items))
-                <details class="hr-nav-section" @if(collect($items)->contains(fn($item)=>$item['key']===$currentKey)) open @endif>
+                <details class="hr-nav-section" @if(collect($items)->contains(fn($item) => $navItemIsActive($item))) open @endif>
                     <summary>{{ $section }}</summary>
                     @foreach ($items as $item)
                         @continue(in_array($item['key'], ['settings', 'notifications'], true))
-                        @if ($user->canAccess($item['key']) || in_array($item['key'], ['department-budget','customers'], true) || ($isFinanceUser && in_array($item['key'], ['sales','reports'], true)))
+                        @if ($user->canAccess($item['key']) || ($isSalesManager && $item['key'] === 'sales') || in_array($item['key'], ['department-budget','customers'], true) || ($isFinanceUser && in_array($item['key'], ['sales','reports','accounts'], true)))
                             @php
                                 $href = $isSalesManager
-                                    ? ($item['key']==='customers' ? route('owner.customers', ['view'=>$item['view'] ?? 'accounts']).(($item['view'] ?? null)==='analysis' ? '#customer-analysis' : '') : ($item['key']==='inventory' ? route('inventory.index') : ($item['key']==='department-budget' ? route('department-budget.index') : route('sales.index', ['screen' => $item['screen'] ?? 'sale']))))
+                                    ? match ($item['key']) {
+                                        'sales' => route('sales.index', ['screen' => $item['screen'] ?? 'sale']),
+                                        'customers' => route('owner.customers', ['view'=>$item['view'] ?? 'accounts']).(($item['view'] ?? null)==='analysis' ? '#customer-analysis' : ''),
+                                        'department-budget' => route('department-budget.index'),
+                                        'messages' => route('communications.index'),
+                                        default => route('module.placeholder', ['key' => $item['key']]),
+                                    }
                                     : ($isHrManager
                                     ? match ($item['key']) {
                                         'hr' => route('employees.index'),
@@ -530,6 +581,7 @@
                                     }
                                     : match ($item['key']) {
                                         'transactions' => route('finance.transactions.index'),
+                                        'accounts' => route('finance.accounts.index'),
                                         'inventory' => route('inventory.index'),
                                         'customers' => route('owner.customers', ['view'=>$item['view'] ?? 'accounts']).(($item['view'] ?? null)==='analysis' ? '#customer-analysis' : ''),
                                         'general-ledger' => route('finance.general-ledger.index'),
@@ -556,7 +608,7 @@
                             @endphp
                             <a class="nav-link"
                                href="{{ $href }}"
-                               @if ($currentKey === $item['key'] && ($item['key'] !== 'customers' || request('view', 'accounts') === ($item['view'] ?? 'accounts'))) aria-current="page" @endif>
+                               @if ($navItemIsActive($item)) aria-current="page" @endif>
                                 <span>{{ $item['label'] }}</span>
                             </a>
                         @endif
@@ -574,10 +626,11 @@
                 <a class="nav-link" href="{{ route('operations.feed-stock.index') }}" @if(request()->routeIs('operations.feed-stock.*')) aria-current="page" @endif><span>Feeds</span></a>
                 <a class="nav-link" href="{{ route('inventory.index', ['screen'=>'movement', 'action'=>'received']) }}" @if(request()->routeIs('inventory.*') && request('action', 'received')==='received') aria-current="page" @endif><span>Other Stock</span></a>
             </details>
-            <details class="hr-nav-section" @if(request()->routeIs('inventory.*') && request('action')==='issued') open @endif>
+            <details class="hr-nav-section" @if(request()->routeIs('inventory.*') && in_array(request('action'),['issued','farm_use'],true)) open @endif>
                 <summary>Issue</summary>
                 <a class="nav-link" href="{{ route('inventory.index', array_filter(['store'=>$feedStoreId, 'screen'=>'movement', 'action'=>'issued'])) }}" @if(request()->routeIs('inventory.*') && request('action')==='issued' && request('store')==$feedStoreId) aria-current="page" @endif><span>Feeds for Mixing</span></a>
                 <a class="nav-link" href="{{ route('inventory.index', ['screen'=>'movement', 'action'=>'issued']) }}" @if(request()->routeIs('inventory.*') && request('action')==='issued' && request('store')!=$feedStoreId) aria-current="page" @endif><span>Other Stock</span></a>
+                <a class="nav-link" href="{{ route('inventory.index', ['screen'=>'movement', 'action'=>'farm_use']) }}" @if(request()->routeIs('inventory.*') && request('action')==='farm_use') aria-current="page" @endif><span>Farm Consumption</span></a>
             </details>
         </div>
     @elseif ($isCasualWorker)

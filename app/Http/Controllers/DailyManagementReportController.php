@@ -257,10 +257,22 @@ class DailyManagementReportController extends Controller
     private function financeSnapshot(string $date): array
     {
         $transactions = DB::table('financial_transactions')->whereDate('transaction_date', $date)->orderBy('created_at')->get();
-        $sales = DB::table('sales')->whereDate('sale_date', $date)->where('status', '!=', 'void')->get();
+        $dayRecords = DB::table('sales')->whereDate('sale_date', $date)->where('status', '!=', 'void')->where('approval_status','approved')->get();
+        $sales = $dayRecords->where('is_staff_consumption', false)->values();
+        $internalUses = $dayRecords->where('is_staff_consumption', true)->values();
         $saleIds = $sales->pluck('id');
         $saleLines = $saleIds->isEmpty() ? collect() : DB::table('sale_lines')->leftJoin('sale_products', 'sale_products.id', '=', 'sale_lines.product_id')->whereIn('sale_id', $saleIds)->select('sale_lines.*', 'sale_products.category', 'sale_products.egg_grade_id')->get();
-        $payments = $saleIds->isEmpty() ? collect() : DB::table('sales_payments')->whereIn('sale_id', $saleIds)->get();
+        $internalUseIds = $internalUses->pluck('id');
+        $internalUseLines = $internalUseIds->isEmpty() ? collect() : DB::table('sale_lines')->whereIn('sale_id', $internalUseIds)->get();
+        // Collections belong to the day they were actually received, including
+        // part-payments against sales raised on an earlier date.
+        $payments = DB::table('sales_payments')
+            ->leftJoin('sales', 'sales.id', '=', 'sales_payments.sale_id')
+            ->whereDate('sales_payments.paid_on', $date)
+            ->where('sales.status', '!=', 'void')
+            ->select('sales_payments.*', 'sales.invoice_number', 'sales.customer_name')
+            ->orderBy('sales_payments.created_at')
+            ->get();
 
         $eggInventory = DB::table('egg_grades')->where('is_active', true)->orderBy('sort_order')->get()->map(function ($grade) use ($date) {
             $received = fn ($operator) => (int) DB::table('egg_collection_lines')->join('egg_collections', 'egg_collections.id', '=', 'egg_collection_lines.egg_collection_id')->where('egg_collection_lines.egg_grade_id', $grade->id)->where('egg_collections.status', 'approved')->whereDate('egg_collections.collected_on', $operator, $date)->sum('egg_collection_lines.total_eggs');
@@ -277,8 +289,9 @@ class DailyManagementReportController extends Controller
         ])->values();
 
         return [
-            'transactions'=>$transactions, 'all_transactions'=>$allTransactions, 'sales'=>$sales, 'sale_lines'=>$saleLines, 'payments'=>$payments,
+            'transactions'=>$transactions, 'all_transactions'=>$allTransactions, 'sales'=>$sales, 'sale_lines'=>$saleLines, 'payments'=>$payments, 'internal_uses'=>$internalUses, 'internal_use_lines'=>$internalUseLines,
             'egg_inventory'=>$eggInventory, 'account_balances'=>$accountBalances,
+            'prepayments_received'=>DB::table('customer_prepayments')->leftJoin('sales_customers', 'sales_customers.id', '=', 'customer_prepayments.customer_id')->whereDate('received_date', $date)->select('customer_prepayments.*', DB::raw('coalesce(sales_customers.name, customer_prepayments.customer_name) as account_name'))->orderBy('account_name')->get(),
             'prepayments'=>DB::table('customer_prepayments')->leftJoin('sales_customers', 'sales_customers.id', '=', 'customer_prepayments.customer_id')->whereDate('received_date', '<=', $date)->whereRaw('amount > amount_used')->select('customer_prepayments.*', DB::raw('coalesce(sales_customers.name, customer_prepayments.customer_name) as account_name'))->orderBy('account_name')->get(),
             'payables'=>DB::table('payables')->whereDate('invoice_date', '<=', $date)->whereRaw('amount > amount_paid')->orderBy('supplier_name')->get(),
         ];

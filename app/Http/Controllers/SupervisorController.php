@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{AuditLog,SupervisorAssignment,User};
+use App\Models\{AnimalGroup,AuditLog,PoultryHouse,SupervisorAssignment,User};
 use Illuminate\Http\{RedirectResponse,Request};
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -19,7 +19,12 @@ class SupervisorController extends Controller
         $assignments=SupervisorAssignment::with(['supervisor','assigner'])->latest('starts_on')->get();
         $mine=$assignments->where('supervisor_id',$user->id)->filter(fn($a)=>$a->is_active&&$a->starts_on->lte(today())&&(!$a->ends_on||$a->ends_on->gte(today())));
         abort_unless($isCeo||$isDirector||$mine->isNotEmpty()||$isFallbackReviewer,403);
-        return view('supervision.index',['assignments'=>$assignments,'mine'=>$mine,'workers'=>User::with(['employee','role'])->where('is_active',true)->whereNotNull('employee_id')->orderBy('name')->get(),'pendingRecords'=>$this->pendingRecords($user,$mine),'reviewedRecords'=>$this->reviewedRecords($user,$mine,$isCeo||$isDirector),'isCeo'=>$isCeo,'isDirector'=>$isDirector,'isFallbackReviewer'=>$isFallbackReviewer,'units'=>self::UNITS]);
+        $dates=$request->validate(['from'=>['nullable','date'],'to'=>['nullable','date','after_or_equal:from']]);
+        $from=$dates['from']??null; $to=$dates['to']??null;
+        $withinDates=fn($record)=>(!$from||\Carbon\Carbon::parse($record->date)->gte($from))&&(!$to||\Carbon\Carbon::parse($record->date)->lte($to));
+        $pendingRecords=$this->pendingRecords($user,$mine)->filter($withinDates)->values();
+        $reviewedRecords=$this->reviewedRecords($user,$mine,$isCeo||$isDirector)->filter($withinDates)->values();
+        return view('supervision.index',['assignments'=>$assignments,'mine'=>$mine,'workers'=>User::with(['employee','role'])->where('is_active',true)->whereNotNull('employee_id')->orderBy('name')->get(),'pendingRecords'=>$pendingRecords,'reviewedRecords'=>$reviewedRecords,'from'=>$from,'to'=>$to,'isCeo'=>$isCeo,'isDirector'=>$isDirector,'isFallbackReviewer'=>$isFallbackReviewer,'units'=>self::UNITS]);
     }
 
     public function assign(Request $request): RedirectResponse
@@ -49,10 +54,23 @@ class SupervisorController extends Controller
         $user=$request->user();$executive=$this->hasRole($user,'ceo')||$this->hasRole($user,'director');
         $assigned=$this->canReviewRecord($user,$type,$unit,$date);abort_unless($executive||$assigned,403);
         $legacy=$cfg['legacy'];$status=$legacy?$row->status:$row->verification_status;
-        $excluded=['id','department_id','animal_group_id','livestock_group_id','recorded_by','approved_by','verified_by','created_at','updated_at','status','verification_status','approved_at','verified_at','query_note','verification_note'];
+        $excluded=['id','department_id','animal_group_id','poultry_house_id','livestock_group_id','recorded_by','approved_by','verified_by','created_at','updated_at','status','verification_status','approved_at','verified_at','query_note','verification_note'];
         $details=collect(get_object_vars($row))->except($excluded)->mapWithKeys(fn($value,$key)=>[ucwords(str_replace('_',' ',$key))=>$value]);
         $lines=collect();
-        if($type==='eggs')$lines=DB::table('egg_collection_lines')->join('egg_grades','egg_grades.id','=','egg_collection_lines.egg_grade_id')->where('egg_collection_id',$id)->get(['egg_grades.name','egg_collection_lines.trays','egg_collection_lines.loose_eggs','egg_collection_lines.total_eggs']);
+        if($type==='eggs'){
+            $lines=DB::table('egg_collection_lines')->join('egg_grades','egg_grades.id','=','egg_collection_lines.egg_grade_id')->where('egg_collection_id',$id)->get(['egg_grades.name','egg_collection_lines.trays','egg_collection_lines.loose_eggs','egg_collection_lines.total_eggs']);
+            $house=PoultryHouse::find($row->poultry_house_id);
+            $batch=AnimalGroup::find($row->animal_group_id);
+            $details=collect([
+                'House number'=>$house?->displayNumber() ?? 'Not recorded',
+                'Batch number'=>$batch?->code ?? 'Not recorded',
+                'Collection date'=>\Carbon\Carbon::parse($row->collected_on)->format('d M Y'),
+                'Collection time'=>$row->collected_at ? \Carbon\Carbon::parse($row->collected_at)->format('H:i:s') : 'Not recorded',
+                'Session'=>ucfirst($row->session),
+                'Recorded at'=>$row->recorded_at ? \Carbon\Carbon::parse($row->recorded_at)->format('d M Y, H:i:s') : null,
+                'Worker note'=>$row->worker_note ?: null,
+            ])->filter(fn($value)=>$value!==null&&$value!=='');
+        }
         $recorder=User::find($row->recorded_by);
         return view('supervision.record',['type'=>$type,'record'=>$row,'unit'=>$unit,'date'=>$date,'label'=>($cfg['label'])($row),'details'=>$details,'lines'=>$lines,'recorder'=>$recorder,'status'=>$status,'canReview'=>$assigned&&(int)$row->recorded_by!==$user->id&&$status==='submitted']);
     }
@@ -78,6 +96,7 @@ class SupervisorController extends Controller
                     'type'=>$type,
                     'id'=>$r->id,
                     'date'=>$cfg['date'] instanceof \Closure?($cfg['date'])($r):$r->{$cfg['date']},
+                    'entered_at'=>$r->recorded_at??$r->created_at??null,
                     'unit'=>$cfg['unit'] instanceof \Closure?($cfg['unit'])($r):($cfg['unit']==='unit_code'?$r->unit_code:$cfg['unit']),
                     'label'=>($cfg['label'])($r),
                     'decision'=>$legacy?($r->status==='queried'?'returned':$r->status):$r->verification_status,

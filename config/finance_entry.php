@@ -81,8 +81,8 @@ return ['reporting_departments' => [
     'Goats' => ['New Goats', 'Feeds', 'Medication', 'Vaccination'],
 ], 'types' => [
     'revenue' => ['label' => 'Revenue', 'ledger_type' => 'money_received', 'party' => 'Customer Name', 'groups' => [
-        'Sales' => ['Sales Large Eggs', 'Sales Manure', 'Sales Off Layers', 'Sales Starter Eggs', 'Sales Damaged Eggs', 'Sales Medium Eggs'],
-        'Other Income' => ['Garden Sales', 'Other Sales', 'Goat Sales', 'Rabbit Sales', 'Rabbit Meat Sales', 'Goat Meat Sales'],
+        'Sales' => ['Sales Large Eggs', 'Poultry Manure', 'Sales Off Layers', 'Sales Starter Eggs', 'Sales Damaged Eggs', 'Sales Medium Eggs'],
+        'Other Income' => ['Garden Sales', 'Other Sales', 'Goat Sales', 'Rabbit Sales', 'Rabbit Meat Sales', 'Goat Meat Sales','goats manure Sales', 'Dog Sales', 'rabbits manure', 'Other Income', 'Interest Income', 'Dividend Income'],
     ]],
     'customer_prepayment' => ['label' => 'Customer Prepayment', 'ledger_type' => 'money_received', 'party' => 'Customer Name', 'groups' => [
         'Current Liabilities' => ['Customer Prepayments'],

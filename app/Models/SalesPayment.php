@@ -18,4 +18,9 @@ class SalesPayment extends Model
     {
         return $this->belongsTo(User::class, 'recorded_by');
     }
+
+    public function sale(): BelongsTo
+    {
+        return $this->belongsTo(Sale::class);
+    }
 }

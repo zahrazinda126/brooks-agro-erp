@@ -25,7 +25,8 @@ use App\Models\FeedConsumption;
 use App\Models\EggCollection;
 use App\Models\Sale;
 use App\Models\SaleLine;
-use App\Models\SalesCustomer;
+use App\Models\SalesPayment;
+use App\Models\DailySalesBalance;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -48,6 +49,10 @@ class DashboardController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
+        $salesFrom = $request->query('sales_from', now()->toDateString());
+        $salesTo = $request->query('sales_to', now()->toDateString());
+        abort_unless(is_string($salesFrom) && is_string($salesTo) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $salesFrom) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $salesTo), 422, 'Choose valid sales dates.');
+        abort_if($salesFrom > $salesTo, 422, 'The From date must not be after the To date.');
 
         app(VaccinationReminderService::class)->sendDueReminders($user);
 
@@ -59,7 +64,7 @@ class DashboardController extends Controller
         return view('dashboard', [
             'greeting' => $this->greeting(),
             'panels'   => $this->panelsFor($user),
-            'data'     => $this->dataFor($user),
+            'data'     => $this->dataFor($user, $salesFrom, $salesTo),
         ]);
     }
 
@@ -123,7 +128,7 @@ class DashboardController extends Controller
         return $panels;
     }
 
-    private function dataFor(User $user): array
+    private function dataFor(User $user, string $salesFrom, string $salesTo): array
     {
         $data = [];
         $isCeo = $user->role?->code === 'ceo' || $user->roles->contains('code','ceo');
@@ -137,7 +142,7 @@ class DashboardController extends Controller
             $data['hrDashboard'] = $this->hrDashboard();
         }
         if ($isCeo || $isDirector) $data['executive'] = $this->executiveDashboard($user);
-        if ($isSalesManager) $data['salesDashboard'] = $this->salesDashboard();
+        if ($isSalesManager) $data['salesDashboard'] = $this->salesDashboard($user, $salesFrom, $salesTo);
         if ($this->isProductionManager($user)) $data['productionOverview']=$this->productionOverview();
 
         if ($user->canAccess('approvals')) $data['approvals']=['pending'=>Approval::where('status','pending')->count(),'overdue'=>Approval::where('status','pending')->where('due_at','<',now())->count()];
@@ -182,12 +187,21 @@ class DashboardController extends Controller
             ->map(fn ($row) => ['name' => $row->name, 'amount' => (float) $row->amount]);
         $livestock = LivestockAnimal::where('status', 'active')->selectRaw('unit_code, count(*) as total')->groupBy('unit_code')->pluck('total', 'unit_code');
         $feedBalance = (float) DB::table('feed_stock_movements')->selectRaw("coalesce(sum(case when movement_type in ('received','return','adjustment_in','transfer_in') then quantity_kg else -quantity_kg end),0) as balance")->value('balance');
+        $approvalRole = ($user->role?->code === 'ceo' || $user->roles->contains('code', 'ceo')) ? 'ceo' : 'director';
+        $executiveApprovalQuery = Approval::with(['approvable', 'submitter', 'steps'])
+            ->where('status', 'pending')
+            ->whereHas('steps', fn ($query) => $query->where('role_code', $approvalRole)->where('status', 'pending'));
+        $executiveApprovalCount = (clone $executiveApprovalQuery)->count();
+        $executiveOverdueCount = (clone $executiveApprovalQuery)->where('due_at', '<', now())->count();
+        $executivePendingApprovals = $executiveApprovalQuery->oldest('submitted_at')->limit(5)->get();
 
         return [
             'income' => $month['income'], 'spending' => $month['spending'], 'net' => $month['income'] - $month['spending'],
             'monthly' => $months, 'spendingByArea' => $spendingByArea,
-            'pending' => Approval::where('status', 'pending')->count(),
-            'overdue' => Approval::where('status', 'pending')->where('due_at', '<', now())->count(),
+            'pending' => $executiveApprovalCount,
+            'overdue' => $executiveOverdueCount,
+            'pendingApprovals' => $executivePendingApprovals,
+            'approvalRole' => $approvalRole,
             'purchaseExposure' => (float) Purchase::whereIn('status', ['submitted','finance_reviewed','ceo_approved'])->sum('total_cost'),
             'receivables' => (float) Receivable::selectRaw('coalesce(sum(amount - amount_paid),0) as balance')->value('balance'),
             'payables' => (float) Payable::selectRaw('coalesce(sum(amount - amount_paid),0) as balance')->value('balance'),
@@ -199,29 +213,21 @@ class DashboardController extends Controller
         ];
     }
 
-    private function salesDashboard(): array
+    private function salesDashboard(User $user, string $salesFrom, string $salesTo): array
     {
-        $valid = fn () => Sale::where('status', '!=', 'void');
-        $monthly = collect(range(5, 0))->map(function (int $offset) use ($valid) {
-            $month = now()->copy()->startOfMonth()->subMonths($offset);
-            return ['label'=>$month->format('M'),'amount'=>(float)$valid()->whereBetween('sale_date',[$month,$month->copy()->endOfMonth()])->sum('total')];
-        });
-        $monthSales = $valid()->whereBetween('sale_date',[now()->startOfMonth(),now()->endOfMonth()]);
-        $topProducts = SaleLine::query()->join('sales','sales.id','=','sale_lines.sale_id')->where('sales.status','!=','void')
-            ->whereBetween('sales.sale_date',[now()->startOfMonth(),now()->endOfMonth()])
-            ->selectRaw('sale_lines.description as name, sum(sale_lines.quantity) as quantity, sum(sale_lines.line_total) as amount')
-            ->groupBy('sale_lines.description')->orderByDesc('amount')->limit(5)->get();
-        $topCustomers = Sale::where('status','!=','void')->whereBetween('sale_date',[now()->startOfMonth(),now()->endOfMonth()])
-            ->selectRaw('customer_name as name, count(*) as purchases, sum(total) as amount')->groupBy('customer_name')->orderByDesc('amount')->limit(5)->get();
-
+        $todaySales = Sale::with(['payments', 'customer'])->where('sold_by', $user->id)->whereBetween('sale_date', [$salesFrom, $salesTo])->where('status', '!=', 'void')->orderBy('sale_date')->orderBy('created_at')->get();
+        $todayPayments = SalesPayment::whereBetween('paid_on', [$salesFrom, $salesTo])->whereHas('sale', fn ($query) => $query->where('sold_by', $user->id)->where('status', '!=', 'void'))->get();
+        $priorCash = (float) SalesPayment::whereDate('paid_on', '<', $salesFrom)->where('payment_method', 'cash')->whereHas('sale', fn ($query) => $query->where('sold_by', $user->id)->where('status', '!=', 'void'))->sum('amount');
+        $priorTransfers = (float) DailySalesBalance::where('sales_person_id', $user->id)->whereDate('business_date', '<', $salesFrom)->sum('amount_transferred');
+        $openingBalance = max(0, $priorCash - $priorTransfers);
+        $rangeTransfers = (float) DailySalesBalance::where('sales_person_id', $user->id)->whereBetween('business_date', [$salesFrom, $salesTo])->sum('amount_transferred');
         return [
-            'today'=>(float)$valid()->whereDate('sale_date',today())->sum('total'),
-            'todayCount'=>$valid()->whereDate('sale_date',today())->count(),
-            'month'=>(float)(clone $monthSales)->sum('total'),'monthCount'=>(clone $monthSales)->count(),
-            'average'=>(float)((clone $monthSales)->avg('total')??0),'outstanding'=>(float)$valid()->sum('balance'),
-            'customers'=>SalesCustomer::where('is_active',true)->count(),'monthly'=>$monthly,
-            'topProducts'=>$topProducts,'topCustomers'=>$topCustomers,
-            'recent'=>Sale::with('lines')->where('status','!=','void')->latest('sale_date')->latest('id')->limit(8)->get(),
+            'dailySales'=>$todaySales,
+            'dailyPayments'=>$todayPayments,
+            'salesFrom'=>$salesFrom,
+            'salesTo'=>$salesTo,
+            'openingBalance'=>$openingBalance,
+            'cashAvailable'=>max(0, $openingBalance + (float)$todayPayments->where('payment_method', 'cash')->sum('amount') - $rangeTransfers),
         ];
     }
 
@@ -415,21 +421,60 @@ class DashboardController extends Controller
         $month = FinancialTransaction::whereBetween('transaction_date', [$monthStart, $monthEnd])->get();
         $income = (float) $month->filter(fn ($row) => ($row->type === 'money_received' && $row->transaction_category !== 'customer_prepayment') || $row->type === 'revenue_recognized')->sum('amount');
         $expenses = (float) $month->where('type', 'money_paid')->sum('amount');
-        $monthly = collect(range(5, 0))->map(function ($offset) {
+        $monthly = collect(range(11, 0))->map(function ($offset) {
             $date = now()->startOfMonth()->subMonths($offset);
             $rows = FinancialTransaction::whereBetween('transaction_date', [$date->toDateString(), $date->copy()->endOfMonth()->toDateString()])->get();
             return ['label'=>$date->format('M'),'income'=>(float)$rows->filter(fn ($row) => ($row->type === 'money_received' && $row->transaction_category !== 'customer_prepayment') || $row->type === 'revenue_recognized')->sum('amount'),'expenses'=>(float)$rows->where('type','money_paid')->sum('amount')];
         });
         $expenseGroups = $month->where('type','money_paid')->groupBy(fn($row)=>$row->counterparty ?: $row->description ?: 'Other')->map(fn($rows,$name)=>['name'=>$name,'amount'=>(float)$rows->sum('amount')])->sortByDesc('amount')->take(5)->values();
         $budgeted = (float) Budget::whereBetween('period_start', [$monthStart, $monthEnd])->sum('planned_amount');
+        $yearStart = now()->startOfMonth()->subMonths(11)->toDateString();
+        $yearSales = Sale::with('lines')->whereBetween('sale_date', [$yearStart, $monthEnd])
+            ->where('approval_status', 'approved')->where('is_staff_consumption', false)->where('status', '!=', 'void')->get();
+        $topCustomers = $yearSales->groupBy('customer_name')->map(fn ($sales, $name) => ['name'=>$name, 'amount'=>(float)$sales->sum('total')])->sortByDesc('amount')->take(5)->values();
+        $topProducts = $yearSales->flatMap->lines->groupBy('description')->map(fn ($lines, $name) => ['name'=>$name, 'amount'=>(float)$lines->sum('line_total')])->sortByDesc('amount')->take(5)->values();
+        $receivables = (float) Receivable::where('status','open')->selectRaw('coalesce(sum(amount-amount_paid),0) total')->value('total');
+        $payables = (float) Payable::where('status','open')->selectRaw('coalesce(sum(amount-amount_paid),0) total')->value('total');
+        $ratios = [
+            ['name'=>'Net margin', 'value'=>$income > 0 ? ($income-$expenses)/$income*100 : 0, 'suffix'=>'%'],
+            ['name'=>'Expense ratio', 'value'=>$income > 0 ? $expenses/$income*100 : 0, 'suffix'=>'%'],
+            ['name'=>'Receivables / income', 'value'=>$income > 0 ? $receivables/$income*100 : 0, 'suffix'=>'%'],
+            ['name'=>'Payables / spending', 'value'=>$expenses > 0 ? $payables/$expenses*100 : 0, 'suffix'=>'%'],
+            ['name'=>'Budget utilisation', 'value'=>$budgeted > 0 ? $expenses/$budgeted*100 : 0, 'suffix'=>'%'],
+        ];
+
+        $salesBalances = Sale::with('seller')->whereDate('sale_date', today())->where('status', '!=', 'void')->get()
+            ->groupBy('sold_by')->map(function ($sales, $salesPersonId) {
+                $payments = SalesPayment::whereDate('paid_on', today())->whereHas('sale', fn ($query) => $query->where('sold_by', $salesPersonId)->where('status', '!=', 'void'))->get();
+                $priorCash = (float) SalesPayment::whereDate('paid_on', '<', today())->where('payment_method', 'cash')->whereHas('sale', fn ($query) => $query->where('sold_by', $salesPersonId)->where('status', '!=', 'void'))->sum('amount');
+                $priorTransfers = (float) DailySalesBalance::where('sales_person_id', $salesPersonId)->whereDate('business_date', '<', today())->sum('amount_transferred');
+                $opening = max(0, $priorCash - $priorTransfers);
+                return [
+                    'salesPerson'=>$sales->first()->seller,
+                    'sales'=>(float)$sales->sum('total'),
+                    'received'=>(float)$payments->sum('amount'),
+                    'cashDue'=>$opening + (float)$payments->where('payment_method', 'cash')->sum('amount'),
+                    'closed'=>DailySalesBalance::where('sales_person_id', $salesPersonId)->whereDate('business_date', today())->exists(),
+                ];
+            })->values();
+        $pendingApprovalQuery = Approval::with(['approvable', 'submitter', 'steps'])
+            ->where('status', 'pending')
+            ->whereHas('steps', fn ($query) => $query->where('role_code', 'finance-manager')->where('status', 'pending'));
+        $pendingApprovalCount = (clone $pendingApprovalQuery)->count();
+        $pendingApprovals = $pendingApprovalQuery
+            ->oldest('submitted_at')
+            ->limit(5)
+            ->get();
 
         return [
             'income'=>$income, 'expenses'=>$expenses, 'net'=>$income-$expenses,
-            'receivables'=>(float) Receivable::where('status','open')->selectRaw('coalesce(sum(amount-amount_paid),0) total')->value('total'),
-            'payables'=>(float) Payable::where('status','open')->selectRaw('coalesce(sum(amount-amount_paid),0) total')->value('total'),
+            'receivables'=>$receivables,
+            'payables'=>$payables,
             'budgeted'=>$budgeted, 'monthly'=>$monthly, 'expenseGroups'=>$expenseGroups,
-            'pending'=>Approval::where('status','pending')->count(),
-            'recent'=>FinancialTransaction::latest('transaction_date')->latest('id')->limit(7)->get(),
+            'topCustomers'=>$topCustomers, 'topProducts'=>$topProducts, 'ratios'=>$ratios,
+            'pending'=>$pendingApprovalCount,
+            'pendingApprovals'=>$pendingApprovals,
+            'salesBalances'=>$salesBalances,
         ];
     }
 

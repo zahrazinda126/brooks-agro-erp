@@ -141,6 +141,9 @@ class OwnerDirectoryController extends Controller
     public function showCustomer(Request $request, SalesCustomer $customer): View
     {
         $this->authorizeCustomerDirectory($request);
+        $ledgerFilters = $request->validate(['from'=>['nullable','date'], 'to'=>['nullable','date','after_or_equal:from']]);
+        $ledgerFrom = $ledgerFilters['from'] ?? null;
+        $ledgerTo = $ledgerFilters['to'] ?? null;
         $customer->load(['sales' => fn ($query) => $query->with(['lines', 'payments'])->where('status', '!=', 'void')->latest('sale_date'), 'prepayments' => fn ($query) => $query->latest('received_date')]);
         $returns = SalesReturn::whereIn('sale_id', $customer->sales->pluck('id'))->latest('returned_on')->get();
         $receivables = Receivable::whereRaw('lower(customer_name) = ?', [mb_strtolower($customer->name)])->latest('invoice_date')->get();
@@ -157,12 +160,16 @@ class OwnerDirectoryController extends Controller
         foreach ($returns as $return) {
             $activities->push(['date'=>$return->returned_on,'recorded_at'=>$return->created_at,'type'=>'Sales return','reference'=>null,'description'=>$return->reason,'debit'=>0,'credit'=>(float)$return->refund_amount,'link'=>route('sales.show',$return->sale_id)]);
         }
-        $activities = $activities->sortByDesc(fn ($row) => ($row['date']?->format('Y-m-d') ?? '').'|'.($row['recorded_at']?->format('H:i:s') ?? ''))->values();
+        $activities = $activities
+            ->when($ledgerFrom, fn ($rows) => $rows->filter(fn ($row) => $row['date']?->toDateString() >= $ledgerFrom))
+            ->when($ledgerTo, fn ($rows) => $rows->filter(fn ($row) => $row['date']?->toDateString() <= $ledgerTo))
+            ->sortBy(fn ($row) => ($row['date']?->format('Y-m-d') ?? '').'|'.($row['recorded_at']?->format('H:i:s') ?? ''))->values();
         $prepaymentAvailable = (float)$customer->prepayments->sum(fn ($credit)=>(float)$credit->amount-(float)$credit->amount_used);
         $outstanding = (float)$customer->sales->sum('balance');
         $canDeposit = $request->user()->canDo('receivables', 'create');
         $farmAccounts = ['Cash on Hand','Petty Cash (UGX)','Centenary Bank - Sales','Centenary Bank - Operations','Centenary Bank - Garden','In-kind / Barter Clearing'];
-        return view('owner.customer-account', compact('customer','activities','receivables','prepaymentAvailable','outstanding','canDeposit','farmAccounts') + [
+        $accountBalance = $prepaymentAvailable - $outstanding;
+        return view('owner.customer-account', compact('customer','activities','receivables','prepaymentAvailable','outstanding','accountBalance','canDeposit','farmAccounts','ledgerFrom','ledgerTo') + [
             'canEditCustomer'=>$request->user()->canDo('customers','edit'),
             'canDeleteCustomer'=>$request->user()->canDo('customers','delete'),
         ]);
