@@ -38,6 +38,10 @@
 {{-- Stage 1: what was observed. Read-only. --}}
 <div class="observed">
     <p class="observed-label">What the worker recorded</p>
+    <p class="observed-meta">
+        Batch {{ $record->batch->code }} &middot;
+        House: {{ $record->house?->house_number ?? 'Not recorded' }}
+    </p>
 
     <div class="observed-figures">
         <div>
@@ -56,7 +60,7 @@
         </div>
         <div>
             <span class="figure">{{ number_format($record->batch->current_quantity) }}</span>
-            <span class="figure-unit">Birds left</span>
+            <span class="figure-unit">Birds currently in batch {{ $record->batch->code }}</span>
         </div>
     </div>
 
@@ -96,36 +100,35 @@
     @method('PUT')
 
     <div class="ask">
-        <p class="ask-q">What caused this?</p>
+        <label class="ask-q" for="cause_name">What caused this?</label>
         <p class="ask-hint">
             If you are not sure, choose <strong>Cause not established</strong>.
             A guess recorded today becomes a fact in next year's report.
         </p>
 
-        @foreach ($causes as $category => $group)
-            <p class="cause-group">{{ $group->first()->categoryLabel() }}</p>
-
-            <div class="cause-list">
-                @foreach ($group as $c)
-                    <label class="cause">
-                        <input type="radio" name="mortality_cause_id" value="{{ $c->id }}"
-                               @checked((int) old('mortality_cause_id', $record->mortality_cause_id) === $c->id)
-                               data-contagious="{{ $c->is_contagious ? '1' : '0' }}"
-                               data-vet="{{ $c->needs_vet ? '1' : '0' }}"
-                               data-name="{{ $c->name }}">
-                        <span>
-                            <strong>{{ $c->name }}</strong>
-                            @if ($c->description)
-                                <em>{{ $c->description }}</em>
-                            @endif
-                            @if ($c->is_contagious)
-                                <span class="tag-spread">spreads through the flock</span>
-                            @endif
-                        </span>
-                    </label>
-                @endforeach
+        <div class="field cause-picker">
+            <div class="cause-picker__control">
+            <input id="cause_name" name="cause_name" type="text" role="combobox" aria-expanded="false" aria-controls="mortality-causes" aria-autocomplete="list"
+                   value="{{ old('cause_name', $record->cause?->name) }}" maxlength="100"
+                   placeholder="Choose or type a cause" required autocomplete="off"
+                   aria-describedby="cause-description">
+            <button type="button" class="cause-picker__toggle" aria-label="Show causes" aria-controls="mortality-causes" aria-expanded="false">&#9662;</button>
             </div>
-        @endforeach
+            <div id="mortality-causes" class="cause-picker__list" role="listbox" aria-label="Causes" hidden>
+                @foreach ($causes as $group)
+                    <div role="group" aria-label="{{ $group->first()->categoryLabel() }}">
+                    <div class="cause-picker__heading">{{ $group->first()->categoryLabel() }}</div>
+                    @foreach ($group as $c)
+                        <div role="option" aria-selected="false" id="cause-option-{{ $c->id }}" class="cause-picker__option" data-value="{{ $c->name }}" data-contagious="{{ $c->is_contagious ? '1' : '0' }}"
+                                data-description="{{ $c->description }}">{{ $c->name }}</div>
+                    @endforeach
+                    </div>
+                @endforeach
+                <p class="field-hint cause-picker__empty" hidden>No matching cause. Your typed cause will be saved.</p>
+            </div>
+            <p class="field-hint" id="cause-description" aria-live="polite" hidden></p>
+            @error('cause_name')<p class="field-error">{{ $message }}</p>@enderror
+        </div>
     </div>
 
     {{-- Appears only when the chosen cause spreads. --}}
@@ -149,38 +152,115 @@
     </div>
 
     <label class="check" style="margin-bottom:18px;">
-        <input type="checkbox" name="vet_called" value="1"
+        <input type="checkbox" id="vet_called" name="vet_called" value="1"
                @checked(old('vet_called', $record->vet_called))>
         <span><strong>A vet was called</strong></span>
     </label>
 
-    <button type="submit" class="btn-big">Save assessment</button>
+    <div class="field" id="vet-name-field" @if(!old('vet_called', $record->vet_called)) hidden @endif>
+        <label for="vet_name">Vet's name <span class="req">required</span></label>
+        <input id="vet_name" name="vet_name" type="text" maxlength="160"
+               value="{{ old('vet_name', $record->vet_name) }}"
+               @required(old('vet_called', $record->vet_called))>
+        @error('vet_name')<p class="field-error">{{ $message }}</p>@enderror
+    </div>
+
+    <button type="submit" class="btn btn--inline btn--small">Save assessment</button>
 </form>
 
+<style>
+.cause-picker{position:relative}.cause-picker__control{position:relative}.cause-picker__control input{width:100%;padding-right:42px}.cause-picker__toggle{position:absolute;right:2px;top:2px;bottom:2px;width:38px;border:0;background:transparent;color:inherit;cursor:pointer}.cause-picker__list{position:absolute;top:52px;left:0;right:0;z-index:30;max-height:320px;overflow-y:auto;background:#fff;color:#171717;border:1px solid #c9beb4;border-radius:8px;box-shadow:0 8px 24px #0002;padding:8px 0}.cause-picker__heading{padding:6px 16px 3px;font-weight:700;color:#921f2b}.cause-picker__option{padding:7px 24px;cursor:pointer}.cause-picker__option:hover,.cause-picker__option[aria-selected="true"]{background:#195fc3;color:#fff}.cause-picker__empty{padding:8px 16px}
+</style>
 <script>
-/* Warn as soon as a contagious cause is picked, not after saving. */
 (function () {
+    var vetCalled = document.getElementById('vet_called');
+    var vetName = document.getElementById('vet_name');
+    function updateVet() {
+        document.getElementById('vet-name-field').hidden = !vetCalled.checked;
+        vetName.required = vetCalled.checked;
+        vetName.disabled = !vetCalled.checked;
+    }
+    vetCalled.addEventListener('change', updateVet);
+    updateVet();
+    var select = document.getElementById('cause_name');
+    var description = document.getElementById('cause-description');
     var warn = document.getElementById('spreadWarn');
     var name = document.getElementById('spreadName');
-    if (!warn) return;
+    var action = select.form.querySelector('[name="action_taken"]');
+    var options = Array.from(document.querySelectorAll('#mortality-causes [role=option]'));
 
-    document.addEventListener('change', function (e) {
-        if (e.target.name !== 'mortality_cause_id') return;
-
-        var spreads = e.target.dataset.contagious === '1';
+    function updateCause() {
+        var value = select.value.trim().toLowerCase();
+        var selected = options.find(option => option.dataset.value.toLowerCase() === value);
+        var spreads = selected && selected.dataset.contagious === '1';
+        description.textContent = selected ? selected.dataset.description || '' : '';
+        description.hidden = !description.textContent;
         warn.hidden = !spreads;
-
-        if (spreads) {
-            name.textContent = e.target.dataset.name;
-            warn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-    });
-
-    var checked = document.querySelector('[name=mortality_cause_id]:checked');
-    if (checked && checked.dataset.contagious === '1') {
-        warn.hidden = false;
-        name.textContent = checked.dataset.name;
+        action.required = Boolean(spreads);
+        name.textContent = selected ? selected.dataset.value : 'This';
     }
+
+    var picker = select.closest('.cause-picker');
+    var list = document.getElementById('mortality-causes');
+    var toggle = picker.querySelector('.cause-picker__toggle');
+    var active = -1;
+    function visibleOptions() { return options.filter(option => !option.hidden); }
+    function highlight(index) {
+        var visible = visibleOptions();
+        active = index;
+        options.forEach(option => option.setAttribute('aria-selected', 'false'));
+        select.removeAttribute('aria-activedescendant');
+        if (visible[index]) {
+            visible[index].setAttribute('aria-selected', 'true');
+            select.setAttribute('aria-activedescendant', visible[index].id);
+            visible[index].scrollIntoView({block:'nearest'});
+        }
+    }
+    function close() {
+        list.hidden = true;
+        select.setAttribute('aria-expanded', 'false');
+        toggle.setAttribute('aria-expanded', 'false');
+        highlight(-1);
+    }
+    function open(filter) {
+        var query = filter ? select.value.trim().toLowerCase() : '';
+        options.forEach(option => { option.hidden = !option.dataset.value.toLowerCase().includes(query); });
+        list.querySelectorAll('[role=group]').forEach(group => {
+            group.hidden = !Array.from(group.querySelectorAll('[role=option]')).some(option => !option.hidden);
+        });
+        list.querySelector('.cause-picker__empty').hidden = visibleOptions().length > 0;
+        list.hidden = false;
+        select.setAttribute('aria-expanded', 'true');
+        toggle.setAttribute('aria-expanded', 'true');
+        highlight(-1);
+    }
+    function choose(option) {
+        select.value = option.dataset.value;
+        updateCause();
+        select.focus();
+        close();
+    }
+    options.forEach(option => option.addEventListener('click', () => choose(option)));
+    select.addEventListener('click', () => open(false));
+    select.addEventListener('input', () => { updateCause(); open(true); });
+    toggle.addEventListener('click', () => { if (list.hidden) { select.focus(); open(false); } else close(); });
+    picker.addEventListener('focusout', event => { if (!picker.contains(event.relatedTarget)) close(); });
+    document.addEventListener('pointerdown', event => { if (!picker.contains(event.target)) close(); });
+    list.addEventListener('mousedown', event => event.preventDefault());
+    select.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); close(); }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (list.hidden) open(false);
+            var count = visibleOptions().length;
+            if (count) highlight(event.key === 'ArrowDown' ? (active + 1) % count : (active <= 0 ? count - 1 : active - 1));
+        }
+        if (event.key === 'Enter' && !list.hidden && active >= 0) {
+            event.preventDefault(); choose(visibleOptions()[active]);
+        }
+        if (event.key === 'Tab') close();
+    });
+    updateCause();
 })();
 </script>
 

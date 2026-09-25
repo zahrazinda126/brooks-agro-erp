@@ -30,7 +30,7 @@ class PoultrySeeder extends Seeder
                 'code' => 'isa-brown', 'name' => 'ISA Brown', 'purpose' => 'layer',
                 'lay_start_week' => 18, 'peak_week' => 28, 'lay_end_week' => 80,
                 'peak_lay_percent' => 95, 'mature_weight_g' => 1900, 'daily_feed_g' => 115,
-                'notes' => 'Reliable brown-egg layer. Point of lay around 18 weeks.',
+                'notes' => 'Commercial brown-egg layer. Reference: ISA Brown EU/CS cage product guide (L6230-1). Default operating targets: point of lay from week 18, peak around week 28, 95% peak rate, mature weight about 1.9 kg and feed allowance about 115 g per bird per day. Review against the guide and farm conditions before changing a batch plan.',
             ],
             [
                 'code' => 'lohmann-brown', 'name' => 'Lohmann Brown', 'purpose' => 'layer',

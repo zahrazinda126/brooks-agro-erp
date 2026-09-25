@@ -195,12 +195,16 @@
                 if (/operational report/.test(value)) return 'factory';
                 if (/executive view|board view/.test(value)) return 'chart';
                 if (/vaccin/.test(value)) return 'syringe';
+                if (/welfare\s*&\s*development/.test(value)) return 'cap';
+                if (/people\s*&\s*payroll/.test(value)) return 'users';
+                if (/salary|wage/.test(value)) return 'cash';
                 if (/report/.test(value)) return 'file';
                 if (/analytic|view/.test(value)) return 'chart';
                 if (/decision|approval|follow/.test(value)) return 'check-circle';
                 if (/people|employee|customer|staff|welfare|human/.test(value)) return 'users';
                 if (/supplier|vendor|payable/.test(value)) return 'truck';
                 if (/cash|bank/.test(value)) return 'cash';
+                if (/accounting|ledger|books/.test(value)) return 'ledger';
                 if (/account|payroll|finance|budget|resource/.test(value)) return 'coins';
                 if (/sales|receipt/.test(value)) return 'receipt';
                 if (/stock|inventory|store/.test(value)) return 'box';

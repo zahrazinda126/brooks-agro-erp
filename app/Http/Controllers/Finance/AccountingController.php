@@ -13,18 +13,32 @@ use App\Models\AuditLog;
 use App\Models\Department;
 use App\Models\BatchOrder;
 use App\Models\BatchOrderPayment;
+use App\Models\Breed;
 use App\Models\FinancialTransaction;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
 
 class AccountingController extends Controller
 {
+    public function payableDetails(Request $request, Payable $payable): JsonResponse
+    {
+        abort_unless($request->user()->canAccess('payables'), 403);
+
+        return response()->json([
+            'item_name' => $payable->item_name,
+            'quantity' => $payable->quantity,
+            'unit' => $payable->unit,
+            'lines' => $payable->lines()->with('breed:id,name')->get(['item_name','quantity','unit','breed_id','amount']),
+        ]);
+    }
+
     public function payables(Request $request): View
     {
         abort_unless($request->user()->canAccess('payables'), 403);
-        $items = Payable::query()
+        $items = Payable::with(['lines.breed', 'payments' => fn ($query) => $query->with('recorder')->oldest('paid_date')->oldest('id')])
             ->when($request->filled('from'), fn($q)=>$q->whereDate('invoice_date','>=',$request->input('from')))
             ->when($request->filled('to'), fn($q)=>$q->whereDate('invoice_date','<=',$request->input('to')))
             ->latest('invoice_date')->paginate(30)->withQueryString();
@@ -32,14 +46,26 @@ class AccountingController extends Controller
         $suppliers = collect(config('finance_entry.suppliers', []))
             ->merge(Payable::query()->whereNotNull('supplier_name')->pluck('supplier_name'))
             ->map(fn ($name) => trim((string) $name))->filter()->unique(fn ($name) => mb_strtolower($name))->sort()->values();
+        $supplyItems = collect(config('finance_entry.purchase_sub_accounts', []))->flatten()
+            ->merge(Payable::query()->whereNotNull('item_name')->pluck('item_name'))
+            ->merge(\App\Models\PayableLine::query()->pluck('item_name'))
+            ->merge(Payable::query()->pluck('description'))
+            ->map(fn ($item) => trim((string) $item))->filter()->unique()->sort()->values();
         $batchOrders=BatchOrder::with(['payments','batch'])->latest('ordered_on')->get();
-        return view('finance.accounting.payables', compact('items', 'outstanding', 'suppliers','batchOrders'));
+        $poultryBreeds = Breed::poultry()->where('is_active', true)->orderBy('name')->get(['id', 'name']);
+        return view('finance.accounting.payables', compact('items', 'outstanding', 'suppliers','supplyItems','batchOrders', 'poultryBreeds'));
     }
 
     public function storePayable(Request $request): RedirectResponse
     {
         abort_unless($request->user()->canDo('payables', 'create'), 403);
-        $data = $request->validate(['supplier_name'=>['required','string','max:160'],'invoice_number'=>['nullable','string','max:80'],'invoice_date'=>['required','date'],'due_date'=>['nullable','date','after_or_equal:invoice_date'],'description'=>['required','string','max:1000'],'amount'=>['required','numeric','min:1']]);
+        $data = $request->validate(['supplier_name'=>['required','string','max:160'],'invoice_number'=>['nullable','string','max:80'],'invoice_date'=>['required','date'],'due_date'=>['nullable','date','after_or_equal:invoice_date'],'description'=>['nullable','string','max:1000'],'lines'=>['required','array','min:1'],'lines.*.item_name'=>['required','string','max:160'],'lines.*.quantity'=>['required','numeric','min:0.01'],'lines.*.unit'=>['required','string','max:40'],'lines.*.breed_id'=>['nullable','integer','exists:breeds,id'],'lines.*.amount'=>['required','numeric','min:0.01']]);
+        $lines=collect($data['lines']);$total=(float)$lines->sum(fn($line)=>(float)$line['amount']);$first=$lines->first();
+        DB::transaction(function()use($data,$lines,$total,$first,$request){$payable=Payable::create(collect($data)->except('lines')->all()+['item_name'=>$first['item_name'],'quantity'=>$first['quantity'],'unit'=>$first['unit'],'amount'=>$total,'amount_paid'=>0,'status'=>'open','recorded_by'=>$request->user()->id]);$payable->lines()->createMany($lines->all());});
+        return back()->with('status', 'Supplier bill recorded.');
+
+        $data = $request->validate(['supplier_name'=>['required','string','max:160'],'invoice_number'=>['nullable','string','max:80'],'invoice_date'=>['required','date'],'due_date'=>['nullable','date','after_or_equal:invoice_date'],'item_name'=>['required','string','max:160'],'quantity'=>['required','numeric','min:0.01'],'unit'=>['required','string','max:40'],'description'=>['nullable','string','max:1000'],'amount'=>['required','numeric','min:1']]);
+        $data['description'] = trim((string) $data['description']) ?: $data['item_name'].' · '.number_format((float) $data['quantity'], 2).' '.$data['unit'];
         Payable::create($data + ['amount_paid'=>0,'status'=>'open','recorded_by'=>$request->user()->id]);
         return back()->with('status', 'Supplier bill recorded.');
     }
@@ -47,7 +73,7 @@ class AccountingController extends Controller
     public function storeBatchOrder(Request $request): RedirectResponse
     {
         abort_unless($request->user()->canDo('payables','create'),403);
-        $data=$request->validate(['batch_type'=>['required','in:poultry,goats,rabbits'],'supplier_name'=>['required','string','max:160'],'breed'=>['nullable','string','max:120'],'quantity_ordered'=>['required','integer','min:1'],'order_total'=>['required','numeric','min:1'],'ordered_on'=>['required','date','before_or_equal:today'],'expected_on'=>['nullable','date','after_or_equal:ordered_on'],'notes'=>['nullable','string','max:2000']]);
+        $data=$request->validate(['batch_type'=>['required','in:poultry,goats,rabbits,dogs,sheep,other_livestock'],'supplier_name'=>['required','string','max:160'],'breed'=>['nullable','string','max:120'],'quantity_ordered'=>['required','integer','min:1'],'order_total'=>['required','numeric','min:1'],'ordered_on'=>['required','date','before_or_equal:today'],'expected_on'=>['nullable','date','after_or_equal:ordered_on'],'notes'=>['nullable','string','max:2000']]);
         $next=(int)BatchOrder::max('id')+1;
         BatchOrder::create($data+['order_number'=>'BORD-'.now()->format('Y').'-'.str_pad((string)$next,5,'0',STR_PAD_LEFT),'status'=>'ordered','recorded_by'=>$request->user()->id]);
         return back()->with('status','Pre-arrival batch order recorded. Payments can now be added in stages.');

@@ -17,7 +17,7 @@
 
 @php $canChange = auth()->user()->canDo($screen, 'create') || auth()->user()->canDo($screen, 'edit'); @endphp
 
-@if($canChange && in_array($screen, ['chart-of-accounts','finance-periods','finance-accounts','payment-methods','document-numbering']))
+@if($canChange && in_array($screen, ['finance-periods','finance-accounts','payment-methods','document-numbering']))
 <form method="POST" action="{{ route('finance.admin.store', ['screen'=>$screen]) }}" class="card" style="margin-bottom:1rem">
     @csrf
     <h3>Add {{ rtrim($title, 's') }}</h3>
@@ -88,5 +88,20 @@
 </tr>@empty<tr><td colspan="6">No records yet.</td></tr>@endforelse
 </tbody></table></div>
 @if($screen==='audit' && method_exists($items,'links')) {{ $items->links() }} @endif
+@endif
+
+@if($canChange && $screen === 'chart-of-accounts')
+<details class="card disclosure" style="margin-top:1rem" @if($errors->any()) open @endif>
+    <summary><span><strong>Add Chart of Account</strong><small>Create another account only when it is needed.</small></span></summary>
+    <div class="disclosure__body"><form method="POST" action="{{ route('finance.admin.store', ['screen'=>$screen]) }}" class="form-grid">
+    @csrf
+    <div class="form-grid">
+        <div class="field"><label>Account code</label><input name="code" value="{{ old('code') }}" required></div>
+        <div class="field"><label>Account name</label><input name="name" value="{{ old('name') }}" required></div>
+        <div class="field"><label>Account type</label><select name="type" required>@foreach(['asset'=>'Asset','liability'=>'Liability','equity'=>'Equity','income'=>'Income','cogs'=>'Cost of goods sold','expense'=>'Expense'] as $v=>$l)<option value="{{ $v }}">{{ $l }}</option>@endforeach</select></div>
+    </div>
+    <div class="form-actions"><button class="btn">Save</button></div>
+    </form></div>
+</details>
 @endif
 @endsection

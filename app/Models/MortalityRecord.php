@@ -21,7 +21,7 @@ class MortalityRecord extends Model
         'animal_group_id', 'poultry_house_id', 'department_id', 'occurred_on',
         'quantity_died', 'quantity_culled', 'recorded_by', 'recorded_at', 'worker_note',
         'mortality_cause_id', 'assessed_by', 'assessed_at',
-        'assessment_note', 'action_taken', 'vet_called', 'status',
+        'assessment_note', 'action_taken', 'vet_called', 'vet_name', 'status',
     ];
 
     protected function casts(): array
@@ -42,6 +42,11 @@ class MortalityRecord extends Model
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
+    }
+
+    public function house(): BelongsTo
+    {
+        return $this->belongsTo(PoultryHouse::class, 'poultry_house_id');
     }
 
     public function cause(): BelongsTo

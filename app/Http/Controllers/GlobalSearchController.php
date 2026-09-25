@@ -37,7 +37,7 @@ class GlobalSearchController extends Controller
         }
 
         if ($user->canAccess('sales')) {
-            SaleProduct::whereRaw('lower(name) like ?', [$like])->limit(10)->get()->each(fn ($product) => $results->push(['type'=>'Sale product', 'title'=>$product->name, 'detail'=>str($product->category)->headline().' · '.$product->unit, 'url'=>route('sales.index')]));
+            SaleProduct::where('is_active',true)->whereRaw('lower(name) like ?', [$like])->limit(10)->get()->each(fn ($product) => $results->push(['type'=>'Sale product', 'title'=>$product->name, 'detail'=>str($product->category)->headline().' · '.$product->unit, 'url'=>route('sales.index')]));
             SalesCustomer::whereRaw('lower(name) like ?', [$like])->limit(10)->get()->each(fn ($customer) => $results->push(['type'=>'Customer', 'title'=>$customer->name, 'detail'=>$customer->phone ?: 'Customer account', 'url'=>route('sales.index')]));
             Sale::where(fn ($q) => $q->whereRaw('lower(invoice_number) like ?', [$like])->orWhereRaw('lower(customer_name) like ?', [$like]))->limit(15)->get()->each(fn ($sale) => $results->push(['type'=>'Sale', 'title'=>$sale->invoice_number, 'detail'=>$sale->customer_name.' · UGX '.number_format($sale->total), 'url'=>route('sales.show', $sale)]));
         }

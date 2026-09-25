@@ -80,21 +80,33 @@ class TransactionController extends Controller
         }
 
         $transactions = $q->oldest('transaction_date')->oldest('id')->get();
-        $cashOpening = 0.0;
-        (clone $financeEntries)->whereDate('transaction_date', '<', $from)->oldest('transaction_date')->oldest('id')->get()->each(function (FinancialTransaction $transaction) use (&$cashOpening) {
+        $transactions->each(function (FinancialTransaction $transaction) {
+            [$fromAccount, $toAccount] = match ($transaction->type) {
+                'transfer' => [$transaction->account, $transaction->counterparty ?: 'Destination not specified'],
+                'money_received' => [$transaction->counterparty ?: 'External source', $transaction->account],
+                'money_paid' => [$transaction->account, collect([$transaction->counterparty ?: $transaction->entry_account ?: 'Expense', $transaction->recipient_account])->filter()->join(' — ')],
+                'revenue_recognized' => [$transaction->account, $transaction->entry_account ?: 'Revenue'],
+                'expense_recognized' => [$transaction->account, $transaction->entry_account ?: 'Expense'],
+                default => [$transaction->account, $transaction->counterparty ?: $transaction->entry_account ?: 'Not specified'],
+            };
+            $transaction->setAttribute('from_account', $fromAccount);
+            $transaction->setAttribute('to_account', $toAccount);
+        });
+        $applyCashMovement = function (FinancialTransaction $transaction, float &$balance): void {
             $amount = (float) $transaction->amount;
-            if ($transaction->type === 'money_received' && $transaction->account === 'Cash on Hand') $cashOpening += $amount;
-            if ($transaction->type === 'money_paid' && $transaction->account === 'Cash on Hand') $cashOpening -= $amount;
-            if ($transaction->type === 'transfer' && $transaction->account === 'Cash on Hand') $cashOpening -= $amount;
-            if ($transaction->type === 'transfer' && $transaction->counterparty === 'Cash on Hand') $cashOpening += $amount;
+            $isCashPayment = $transaction->payment_method === 'cash' || $transaction->account === 'Cash on Hand';
+            if ($transaction->type === 'money_received' && $isCashPayment) $balance += $amount;
+            if ($transaction->type === 'money_paid' && $isCashPayment) $balance -= $amount;
+            if ($transaction->type === 'transfer' && $transaction->account === 'Cash on Hand') $balance -= $amount;
+            if ($transaction->type === 'transfer' && $transaction->counterparty === 'Cash on Hand') $balance += $amount;
+        };
+        $cashOpening = 0.0;
+        (clone $financeEntries)->whereDate('transaction_date', '<', $from)->oldest('transaction_date')->oldest('id')->get()->each(function (FinancialTransaction $transaction) use (&$cashOpening, $applyCashMovement) {
+            $applyCashMovement($transaction, $cashOpening);
         });
         $cashRunning = $cashOpening;
-        $transactions->each(function (FinancialTransaction $transaction) use (&$cashRunning) {
-            $amount = (float) $transaction->amount;
-            if ($transaction->type === 'money_received' && $transaction->account === 'Cash on Hand') $cashRunning += $amount;
-            if ($transaction->type === 'money_paid' && $transaction->account === 'Cash on Hand') $cashRunning -= $amount;
-            if ($transaction->type === 'transfer' && $transaction->account === 'Cash on Hand') $cashRunning -= $amount;
-            if ($transaction->type === 'transfer' && $transaction->counterparty === 'Cash on Hand') $cashRunning += $amount;
+        $transactions->each(function (FinancialTransaction $transaction) use (&$cashRunning, $applyCashMovement) {
+            $applyCashMovement($transaction, $cashRunning);
             $transaction->setAttribute('cash_running_balance', $cashRunning);
         });
         $selectedAccountOpening = 0.0;
@@ -163,6 +175,13 @@ class TransactionController extends Controller
         $receivables = Receivable::where('status', 'open')->orderBy('customer_name')->get();
         $payables = Payable::where('status', 'open')->orderBy('supplier_name')->get();
         $entryTypes = config('finance_entry.types');
+        // Sales are recorded in the Sales module. Finance only records other income here.
+        if (isset($entryTypes['revenue'])) {
+            $entryTypes['revenue']['label'] = 'Other Income (Not Sales)';
+            $entryTypes['revenue']['groups'] = [
+                'Other Income' => ['Other Income', 'Interest Earned', 'Dividend Earned', 'Farm Equipment Rental Income'],
+            ];
+        }
         $reportingDepartments = config('finance_entry.reporting_departments');
         $departmentCodes = array_keys($reportingDepartments);
         $departments = Department::where('is_active', true)
@@ -180,16 +199,31 @@ class TransactionController extends Controller
             ->merge(FinancialTransaction::query()->where('transaction_category', 'purchase')->whereNotNull('counterparty')->pluck('counterparty'))
             ->map(fn ($name) => trim((string) $name))->filter()->unique()->sort()->values();
         $customers = SalesCustomer::where('is_active', true)->orderBy('name')->get();
+        $staffNames = Employee::active()->orderBy('first_name')->orderBy('last_name')->get()
+            ->map(fn (Employee $employee) => $employee->fullName())->values();
+        $staffPaymentDetails = Employee::active()->get()->mapWithKeys(fn (Employee $employee) => [
+            $employee->fullName() => [
+                'bank' => $employee->bank_account ? trim(($employee->bank_name ? $employee->bank_name.' - ' : '').$employee->bank_account) : null,
+                'mobile_money' => $employee->mobile_money_number ?: $employee->phone,
+                'phones' => array_values(array_filter(array_unique([$employee->mobile_money_number, $employee->phone, $employee->alt_phone]))),
+            ],
+        ]);
+        $staffBalances = StaffSalaryWalletTransaction::query()
+            ->selectRaw("employee_id, sum(case when type = 'credit' then amount else -amount end) as balance")
+            ->groupBy('employee_id')->pluck('balance', 'employee_id');
+        $staffBalances = Employee::active()->get()->mapWithKeys(fn (Employee $employee) => [
+            $employee->fullName() => max(0, (float) ($staffBalances[$employee->id] ?? 0)),
+        ]);
 
         $inventoryStores = InventoryStore::where('is_active', true)->orderBy('section')->orderBy('name')->get();
-        return view('finance.transactions.create', compact('farmAccounts', 'paymentMethods', 'receivables', 'payables', 'entryTypes', 'departments', 'costCentres', 'purchaseSubAccounts', 'purchaseSettlementAccounts', 'suppliers', 'customers', 'inventoryStores'));
+        return view('finance.transactions.create', compact('farmAccounts', 'paymentMethods', 'receivables', 'payables', 'entryTypes', 'departments', 'costCentres', 'purchaseSubAccounts', 'purchaseSettlementAccounts', 'suppliers', 'customers', 'staffNames', 'staffBalances', 'staffPaymentDetails', 'inventoryStores'));
     }
 
     public function store(Request $r): RedirectResponse
     {
         abort_unless($r->user()->canDo('transactions', 'create'), 403);
         $types = config('finance_entry.types');
-        $data = $r->validate(['transaction_date' => ['required', 'date'], 'transaction_category' => ['required', Rule::in(array_keys($types))], 'account_group' => ['required', 'string', 'max:120'], 'department_id' => ['required', 'exists:departments,id'], 'account' => ['required', 'string', 'max:120'], 'counterparty' => ['nullable', 'string', 'max:160'], 'amount' => ['nullable', 'numeric', 'min:0.01'], 'quantity' => ['nullable', 'numeric', 'min:0.01'], 'unit_price' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', 'in:cash,bank,mobile_money,credit,in_kind'], 'reference' => ['required', 'string', 'max:80'], 'description' => ['required', 'string', 'max:1000'], 'receipt_kind' => ['nullable', 'in:general,customer_payment,customer_prepayment'], 'payment_kind' => ['nullable', 'in:general,supplier_bill'], 'receivable_id' => ['nullable', 'exists:receivables,id'], 'payable_id' => ['nullable', 'exists:payables,id']]);
+        $data = $r->validate(['transaction_date' => ['required', 'date'], 'transaction_category' => ['required', Rule::in(array_keys($types))], 'account_group' => ['required', 'string', 'max:120'], 'department_id' => ['required', 'exists:departments,id'], 'account' => ['required', 'string', 'max:120'], 'counterparty' => ['nullable', 'string', 'max:160'], 'recipient_account' => ['nullable', 'string', 'max:160'], 'amount' => ['nullable', 'numeric', 'min:0.01'], 'quantity' => ['nullable', 'numeric', 'min:0.01'], 'unit_price' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', 'in:cash,bank,mobile_money,credit,in_kind'], 'reference' => ['required', 'string', 'max:80'], 'description' => ['required', 'string', 'max:1000'], 'receipt_kind' => ['nullable', 'in:general,customer_payment,customer_prepayment'], 'payment_kind' => ['nullable', 'in:general,supplier_bill'], 'receivable_id' => ['nullable', 'exists:receivables,id'], 'payable_id' => ['nullable', 'exists:payables,id']]);
         $data['entry_account'] = $r->validate(['entry_account' => ['required', 'string', 'max:160']])['entry_account'];
         $inventory = $r->validate(['track_inventory' => ['nullable', 'boolean'], 'inventory_store_id'=>['nullable','required_if:track_inventory,1','exists:inventory_stores,id'], 'inventory_unit' => ['nullable', 'required_if:track_inventory,1', 'string', 'max:40'], 'inventory_location' => ['nullable', 'required_if:track_inventory,1', 'string', 'max:100']]);
         $departmentCode = Department::whereKey($data['department_id'])->value('code');
@@ -212,6 +246,26 @@ class TransactionController extends Controller
         }
         $definition = $types[$data['transaction_category']];
         $data['type'] = $definition['ledger_type'];
+        if ($data['transaction_category'] === 'revenue') {
+            $allowedOtherIncome = ['Other Income', 'Interest Earned', 'Dividend Earned', 'Farm Equipment Rental Income'];
+            if (! in_array($data['entry_account'], $allowedOtherIncome, true)) {
+                return back()->withErrors(['entry_account' => 'Product sales must be recorded in the Sales module.'])->withInput();
+            }
+        }
+        if ($data['transaction_category'] === 'staff_payment') {
+            $data['counterparty'] = trim($r->validate(['counterparty' => ['required', 'string', 'max:160']])['counterparty']);
+            $employee = Employee::active()->get()->first(fn (Employee $employee) => strcasecmp($employee->fullName(), $data['counterparty']) === 0);
+            if (! $employee) return back()->withErrors(['counterparty' => 'Choose a registered staff member.'])->withInput();
+            if (($data['payment_method'] ?? null) === 'bank') {
+                if (! $employee->bank_account) return back()->withErrors(['recipient_account' => 'This worker has no bank account registered by HR.'])->withInput();
+                $data['recipient_account'] = trim(($employee->bank_name ? $employee->bank_name.' - ' : '').$employee->bank_account);
+            } elseif (($data['payment_method'] ?? null) === 'mobile_money') {
+                $data['recipient_account'] = trim((string) ($data['recipient_account'] ?? ''));
+                if ($data['recipient_account'] === '') return back()->withErrors(['recipient_account' => 'Choose or enter the mobile money phone number.'])->withInput();
+            } elseif (($data['payment_method'] ?? null) === 'cash') {
+                $data['recipient_account'] = 'Cash collected by '.$employee->fullName();
+            }
+        }
         if ($data['transaction_category'] === 'capital_and_equity') {
             $equityActions = [
                 'Capital Introduced' => 'money_received',
@@ -274,12 +328,34 @@ class TransactionController extends Controller
         } try {
             DB::transaction(function () use ($data, $r, $kind, $payKind, $trackInventory, $inventory) {
                 $transaction = FinancialTransaction::create($data + ['recorded_by' => $r->user()->id]);
+                if ($data['transaction_category'] === 'staff_payment' && $data['entry_account'] === 'Salary Withdrawal') {
+                    $employee = Employee::active()->get()->first(fn (Employee $employee) => strcasecmp($employee->fullName(), $data['counterparty']) === 0);
+                    if (! $employee) {
+                        throw new \RuntimeException('Choose a valid staff member.');
+                    }
+                    $salaryLines = \App\Models\PayrollLine::query()->where('employee_id', $employee->id)
+                        ->whereColumn('wallet_credited', '>', 'wallet_withdrawn')->oldest('id')->lockForUpdate()->get();
+                    $available = (float) $salaryLines->sum(fn ($line) => (float) $line->wallet_credited - (float) $line->wallet_withdrawn);
+                    if ((float) $data['amount'] > $available) {
+                        throw new \RuntimeException('Withdrawal blocked. '.$employee->fullName().' has only UGX '.number_format($available, 2).' available.');
+                    }
+                    $remaining = (float) $data['amount'];
+                    foreach ($salaryLines as $line) {
+                        if ($remaining <= 0) break;
+                        $lineBalance = (float) $line->wallet_credited - (float) $line->wallet_withdrawn;
+                        $allocated = min($remaining, $lineBalance);
+                        StaffSalaryWalletTransaction::create(['employee_id'=>$employee->id,'payroll_run_id'=>$line->payroll_run_id,'payroll_line_id'=>$line->id,'type'=>'withdrawal','amount'=>$allocated,'transaction_date'=>$data['transaction_date'],'company_account'=>$data['account'],'payment_method'=>$data['payment_method'],'reference'=>$data['reference'],'notes'=>$data['description'],'recorded_by'=>$r->user()->id]);
+                        $withdrawn = (float) $line->wallet_withdrawn + $allocated;
+                        $line->update(['wallet_withdrawn'=>$withdrawn,'payment_status'=>$withdrawn >= (float) $line->wallet_credited ? 'cleared' : 'partly_withdrawn']);
+                        $remaining -= $allocated;
+                    }
+                }
                 if ($trackInventory) {
                     $itemName = $data['sub_account'] ?: $data['entry_account'];
                     $code = 'AUTO-'.strtoupper(substr(hash('sha256', strtolower($data['entry_account'].'|'.$itemName.'|'.$inventory['inventory_unit'])), 0, 10));
                     $item = InventoryItem::firstOrCreate(['code' => $code], ['inventory_store_id'=>$inventory['inventory_store_id'],'name' => $itemName, 'category' => strtolower($data['entry_account']), 'unit' => $inventory['inventory_unit'], 'reorder_level' => 0, 'default_location' => $inventory['inventory_location'], 'notes' => 'Created automatically from Finance Data Entry.', 'created_by' => $r->user()->id]);
                     if(!$item->inventory_store_id)$item->update(['inventory_store_id'=>$inventory['inventory_store_id']]);
-                    InventoryMovement::create(['inventory_item_id' => $item->id, 'inventory_store_id'=>$item->inventory_store_id,'financial_transaction_id' => $transaction->id, 'movement_date' => $data['transaction_date'], 'movement_type' => 'received', 'location' => $inventory['inventory_location'], 'quantity' => $data['quantity'], 'unit_cost' => $data['unit_price'], 'total_cost' => $data['amount'], 'supplier_or_recipient' => $data['counterparty'], 'reference' => $data['reference'], 'notes' => $data['description'], 'recorded_by' => $r->user()->id]);
+                    InventoryMovement::create(['inventory_item_id' => $item->id, 'inventory_store_id'=>$item->inventory_store_id,'financial_transaction_id' => $transaction->id, 'movement_date' => $data['transaction_date'], 'movement_type' => 'received', 'receipt_status' => 'pending', 'location' => $inventory['inventory_location'], 'quantity' => $data['quantity'], 'unit_cost' => $data['unit_price'], 'total_cost' => $data['amount'], 'supplier_or_recipient' => $data['counterparty'], 'reference' => $data['reference'], 'notes' => $data['description'], 'recorded_by' => $r->user()->id]);
                 }
                 if ($kind === 'customer_payment') {
                     $due = Receivable::lockForUpdate()->findOrFail($r->receivable_id);
@@ -308,7 +384,10 @@ class TransactionController extends Controller
             return back()->withErrors(['amount' => $e->getMessage()])->withInput();
         }
 
-        return redirect()->route('finance.transactions.index')->with('status', 'Transaction posted to the register and ledger.');
+        $status = $trackInventory
+            ? 'Transaction posted. The delivery was sent to the selected store for receipt confirmation and is not yet included in stock.'
+            : 'Transaction posted to the register and ledger.';
+        return redirect()->route('finance.transactions.index')->with('status', $status);
     }
 
     public function generalLedger(Request $r): View
@@ -365,20 +444,31 @@ class TransactionController extends Controller
     public function bankBook(Request $r): View
     {
         abort_unless($r->user()->canAccess('bank-book'), 403);
-        $accounts = collect(['Centenary Bank - Sales', 'Centenary Bank - Operations', 'Centenary Bank - Garden'])->merge(FinancialTransaction::where('payment_method', 'bank')->distinct()->orderBy('account')->pluck('account'))->unique()->values();
-        $q = FinancialTransaction::with('recorder')->where('payment_method', 'bank');
-        if ($r->filled('account')) {
-            $q->where('account', $r->query('account'));
+        $accounts = Schema::hasTable('finance_payment_accounts')
+            ? DB::table('finance_payment_accounts')->where('kind','bank')->where('is_active',true)->orderBy('name')->pluck('name')
+            : collect(['Centenary Bank - Sales','Centenary Bank - Operations','Centenary Bank - Garden']);
+        $accounts=$accounts->unique()->values();$selected=$r->string('account')->trim()->toString() ?: null;
+        $transactions=FinancialTransaction::with('recorder')->where(function($query)use($accounts){$query->whereIn('account',$accounts)->orWhere(fn($transfer)=>$transfer->where('type','transfer')->whereIn('counterparty',$accounts))->orWhere('payment_method','bank');})->orderBy('transaction_date')->orderBy('id')->get();
+        $movements=collect();
+        foreach($transactions as $transaction){
+            $amount=(float)$transaction->amount;$source=(string)$transaction->account;$destination=(string)$transaction->counterparty;
+            $details=collect([$transaction->entry_account,$transaction->sub_account,$transaction->description])->filter()->unique()->join(' — ');
+            $add=function(string $bank,float $debit,float $credit,string $from,string $to,bool $unassigned=false)use($movements,$transaction,$details){$movements->push((object)['transaction'=>$transaction,'date'=>$transaction->transaction_date,'bank_account'=>$bank,'from_account'=>$from,'to_account'=>$to,'details'=>$details,'reference'=>$transaction->reference,'debit'=>$debit,'credit'=>$credit,'unassigned'=>$unassigned]);};
+            if($transaction->type==='transfer'){
+                if($accounts->contains($source))$add($source,0,$amount,$source,$destination?:'Destination not recorded');
+                if($accounts->contains($destination))$add($destination,$amount,0,$source?:'Source not recorded',$destination);
+            }elseif($accounts->contains($source)){
+                if($transaction->type==='money_received')$add($source,$amount,0,$destination?:'External source',$source);
+                elseif($transaction->type==='money_paid')$add($source,0,$amount,$source,$transaction->recipient_account?:($destination?:$transaction->entry_account?:'Payee not recorded'));
+            }elseif($transaction->payment_method==='bank'){
+                $add('Bank account not recorded',$transaction->type==='money_received'?$amount:0,$transaction->type==='money_received'?0:$amount,$transaction->type==='money_received'?($destination?:'External source'):'Bank account not recorded',$transaction->type==='money_received'?'Bank account not recorded':($transaction->recipient_account?:$destination?:$transaction->entry_account?:'Payee not recorded'),true);
+            }
         }
-        $q->when($r->filled('from'), fn($query)=>$query->whereDate('transaction_date','>=',$r->query('from')))
-            ->when($r->filled('to'), fn($query)=>$query->whereDate('transaction_date','<=',$r->query('to')));
-        $rows = $q->orderBy('transaction_date')->orderBy('id')->get();
-        $balance = 0;
-        $rows->each(function ($x) use (&$balance) {
-            $balance += $x->type === 'money_received' ? $x->amount : -$x->amount;
-            $x->running_balance = $balance;
-        });
-
-        return view('finance.transactions.bank-book', compact('rows', 'balance', 'accounts'));
+        if($selected)$movements=$movements->where('bank_account',$selected)->values();
+        $from=$r->filled('from')?$r->date('from')->toDateString():null;$to=$r->filled('to')?$r->date('to')->toDateString():null;abort_if($from&&$to&&$from>$to,422,'The From date must not be after the To date.');
+        $opening=(float)$movements->filter(fn($row)=>$from&&$row->date->toDateString()<$from)->sum(fn($row)=>$row->debit-$row->credit);
+        $rows=$movements->filter(fn($row)=>(!$from||$row->date->toDateString()>=$from)&&(!$to||$row->date->toDateString()<=$to))->values();$balance=$opening;
+        $rows->each(function($row)use(&$balance){$balance+=$row->debit-$row->credit;$row->running_balance=$balance;});
+        return view('finance.transactions.bank-book',compact('rows','balance','opening','accounts','selected','from','to'));
     }
 }

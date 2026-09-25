@@ -80,11 +80,13 @@
         <span class="figure-unit">{{ number_format($batch->total_mortality) }} birds</span>
     </div>
 
+    @if(!auth()->user()->isProductionUser())
     <div class="card">
         <p class="card-label">Bird cost each</p>
         <span class="figure">{{ number_format($batch->costPerBirdAlive()) }}</span>
         <span class="figure-unit">UGX · birds only, spread over survivors</span>
     </div>
+    @endif
 </div>
 
 <div class="detail-grid" style="margin-top:12px;">
@@ -196,8 +198,10 @@
             <dt>Free birds</dt><dd>{{ number_format($batch->quantity_free) }}</dd>
             <dt>Died in transit</dt><dd>{{ number_format($batch->transit_deaths) }}</dd>
             <dt>Received alive</dt><dd><strong>{{ number_format($batch->liveReceived()) }}</strong></dd>
+            @if(!auth()->user()->isProductionUser())
             <dt>Cost each</dt><dd>{{ number_format((float) $batch->unit_cost) }} UGX</dd>
             <dt>Total</dt><dd><strong>{{ number_format((float) $batch->total_cost) }} UGX</strong></dd>
+            @endif
             <dt>Supplier</dt><dd>{{ $batch->supplier_name ?: '—' }}</dd>
             <dt>Invoice</dt><dd class="mono">{{ $batch->invoice_no ?: '—' }}</dd>
         </dl>

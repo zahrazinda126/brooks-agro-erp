@@ -1,7 +1,13 @@
 @extends('layouts.app')
 @section('title', $title)
 @section('content')
-<div class="page-head"><h2>{{ $title }}</h2><p>Executive oversight based on current system records.</p></div>
+<div class="executive-workspace executive-workspace--{{ $screen }}">
+<header class="executive-workspace__head"><div><p class="eyebrow">Chief Executive Office</p><h2>{{ $title }}</h2><p>Executive oversight based on current system records.</p></div><div class="executive-workspace__period">{{ now()->format('F Y') }}</div></header>
+<nav class="executive-workspace__nav" aria-label="CEO workspace">
+@foreach(['kpis'=>'Dashboard','reports'=>'Reports','messages'=>'Messages','notifications'=>'Approvals','security'=>'Users','settings'=>'Settings'] as $key=>$label)
+    <a class="{{ $screen===$key?'is-active':'' }}" href="{{ route('executive.index',['screen'=>$key]) }}">{{ $label }}</a>
+@endforeach
+</nav>
 
 @if($screen === 'kpis')
 <div class="exec-kpi-grid">
@@ -24,8 +30,8 @@
 </section>
 <section class="report-feature">
     <div class="report-feature__icon">UGX</div>
-    <div><p class="card-label">Farm-unit economics</p><h3>Unit Costs & Profitability</h3><p>Compare money spent and sales by unit, then calculate acquisition, feed and health cost per bird or animal group up to any date.</p></div>
-    <div class="report-feature__actions"><a class="btn" href="{{ route('finance.reports.profitability') }}">Open unit costing</a></div>
+    <div><p class="card-label">Financial and farm economics</p><h3>Profitability and Unit Costs</h3><p>Review overall farm profit separately from acquisition, feed and health cost per bird or animal group.</p></div>
+    <div class="report-feature__actions"><a class="btn btn--quiet" href="{{ route('finance.reports.profitability') }}">Profitability</a><a class="btn" href="{{ route('finance.reports.unit-costs') }}">Unit Costs</a></div>
 </section>
 <div class="report-section-head"><div><p class="card-label">Financial statements</p><h3>Core management reports</h3></div><span>{{ now()->format('F Y') }}</span></div>
 <div class="report-card-grid">
@@ -89,4 +95,5 @@
 @endforeach
 </div><div class="notice"><strong>Why these are protected:</strong> changing them can affect every account or report. The Director can review them here; controlled editing can be added for selected settings that should be changed through the application.</div>
 @endif
+</div>
 @endsection

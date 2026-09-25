@@ -27,6 +27,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -42,12 +43,18 @@ class SalesController extends Controller
         $screen = $request->query('screen', 'sale');
         abort_unless(in_array($screen, ['sale', 'inventory', 'setup', 'reports', 'analysis', 'balancing', 'receipt_archive'], true), 404);
         $inventoryUnit = $request->query('unit');
+        $priceUnit = $screen === 'setup' ? $request->query('price_unit') : null;
         $analysisView = $request->query('analysis_view');
+        $revenueView = $analysisView === 'revenue' ? $request->query('revenue_view') : null;
         if ($screen === 'inventory' && $inventoryUnit !== null) {
             abort_unless(in_array($inventoryUnit, ['poultry', 'goats', 'rabbits', 'dogs', 'garden'], true), 404);
         }
         if ($screen === 'analysis' && $analysisView !== null) {
-            abort_unless(in_array($analysisView, ['summary', 'monthly', 'product_amount', 'product_quantity'], true), 404);
+            abort_unless(in_array($analysisView, ['summary', 'monthly', 'product_amount', 'product_quantity', 'revenue'], true), 404);
+        }
+        if ($revenueView !== null) abort_unless(in_array($revenueView, ['ytd', 'monthly'], true), 404);
+        if ($priceUnit !== null) {
+            abort_unless(in_array($priceUnit, ['poultry', 'goats', 'rabbits', 'dogs', 'garden', 'other'], true), 404);
         }
         abort_unless(match ($screen) {
             'setup' => $this->canManagePrices($request),
@@ -55,7 +62,25 @@ class SalesController extends Controller
             'reports', 'analysis' => $this->canViewSalesReports($request),
             default => $request->user()->canAccess('sales'),
         }, 403);
-        $products = SaleProduct::with('eggGrade')->when($screen !== 'setup', fn($query) => $query->where('is_active', true))->orderBy('category')->orderBy('name')->get();
+        $nonSalePoultryStock = ['BIRD-BROILER','BIRD-COCKEREL','BIRD-CHICK','BIRD-LOCAL','BIRD-PULLET','BIRD-SPENT-LAYER'];
+        $nonSaleEggConditions = ['Broken eggs','Dirty eggs','Soft shell eggs'];
+        $products = SaleProduct::with('eggGrade')->whereNotIn('code', $nonSalePoultryStock)->whereNotIn('name', $nonSaleEggConditions)->when($screen !== 'setup', fn($query) => $query->where('is_active', true))->orderBy('category')->orderBy('name')->get();
+        if ($priceUnit) {
+            $products = $products->filter(function (SaleProduct $product) use ($priceUnit) {
+                $category = strtolower((string) $product->category);
+                $name = strtolower((string) $product->name);
+                $unit = match (true) {
+                    in_array($category, ['eggs', 'poultry'], true) => 'poultry',
+                    $category === 'goats' || $category === 'milk' || str_contains($name, 'goat') => 'goats',
+                    $category === 'rabbits' || str_contains($name, 'rabbit') => 'rabbits',
+                    $category === 'dogs' || str_contains($name, 'dog') => 'dogs',
+                    $category === 'garden' => 'garden',
+                    $category === 'manure' => str_contains($name, 'goat') ? 'goats' : (str_contains($name, 'rabbit') ? 'rabbits' : 'poultry'),
+                    default => 'other',
+                };
+                return $unit === $priceUnit;
+            })->values();
+        }
         $products->each(fn ($product) => $product->display_stock = $this->availableStock($product));
         $eggStock = $products->whereNotNull('egg_grade_id')->unique('egg_grade_id')->map(function (SaleProduct $product) {
             $eggs = (int) floor($this->availableEggCount($product));
@@ -101,6 +126,25 @@ class SalesController extends Controller
                 'amounts' => $analysisProductColumns->mapWithKeys(fn ($product) => [$product => (float) $lines->where('description', $product)->sum('line_total')]),
                 'quantities' => $analysisProductColumns->mapWithKeys(fn ($product) => [$product => (float) $lines->where('description', $product)->sum('quantity')]),
             ];
+        });
+        $revenueFinancialYear = (int) $request->query('financial_year', now()->month >= 7 ? now()->year : now()->subYear()->year);
+        abort_unless($revenueFinancialYear >= 2000 && $revenueFinancialYear <= now()->addYear()->year, 422, 'Choose a valid financial year.');
+        $revenueYearStart = \Carbon\Carbon::create($revenueFinancialYear, 7, 1)->startOfDay();
+        $revenueYearEnd = $revenueYearStart->copy()->addYear()->subDay()->endOfDay();
+        $revenueMonths = collect(\Carbon\CarbonPeriod::create($revenueYearStart, '1 month', $revenueYearEnd->copy()->startOfMonth()))
+            ->map(fn ($month) => ['key'=>$month->format('Y-m'), 'label'=>$month->format('M-y')])->values();
+        $revenueSales = Sale::with('lines')->whereBetween('sale_date', [$revenueYearStart->copy()->subYear()->toDateString(), $revenueYearEnd->toDateString()])
+            ->whereNotIn('status', ['void'])->where('approval_status', 'approved')->where('is_staff_consumption', false)->get();
+        $revenueLines = $this->normalisedRevenueLines($revenueSales);
+        $revenueCategories = collect(['Large eggs','Manure','Off-layers','Starter eggs','Damaged eggs','Medium eggs','Garden sales','Other sales','Goat sales','Rabbit sales','Rabbit meat sales','Goat meat sales']);
+        $revenueMonthlyAnalysis = $revenueCategories->map(fn ($category) => ['category'=>$category, 'months'=>$revenueMonths->mapWithKeys(fn ($month) => [$month['key'] => (float) $revenueLines->where('category', $category)->where('month', $month['key'])->sum('amount')])]);
+        $revenueYtdEnd = min(now()->endOfDay(), $revenueYearEnd);
+        if ($revenueYtdEnd->lt($revenueYearStart)) $revenueYtdEnd = $revenueYearEnd;
+        $revenuePriorYtdEnd = $revenueYtdEnd->copy()->subYear();
+        $revenueYtdAnalysis = $revenueCategories->map(function ($category) use ($revenueLines, $revenueYearStart, $revenueYtdEnd, $revenuePriorYtdEnd) {
+            $current = (float) $revenueLines->where('category', $category)->filter(fn ($row) => $row['date']->betweenIncluded($revenueYearStart, $revenueYtdEnd))->sum('amount');
+            $previous = (float) $revenueLines->where('category', $category)->filter(fn ($row) => $row['date']->betweenIncluded($revenueYearStart->copy()->subYear(), $revenuePriorYtdEnd))->sum('amount');
+            return ['category'=>$category, 'current'=>$current, 'previous'=>$previous, 'variance'=>$current-$previous, 'percent'=>$previous > 0 ? (($current-$previous)/$previous*100) : null];
         });
         $monthly = collect(range(5, 0))->map(function ($offset) {
             $month = now()->startOfMonth()->subMonths($offset);
@@ -173,7 +217,7 @@ class SalesController extends Controller
                 ->get();
         }
 
-        return view('sales.index', compact('products', 'eggStock', 'farmStock', 'inventoryUnit', 'analysisView', 'customers', 'poultryHouses', 'prepayments', 'sales', 'screen', 'from', 'to', 'fromMonth', 'toMonth', 'customerReport', 'productReport', 'paymentAnalysis', 'unitAnalysis', 'analysisMonths', 'customerMonthlyAnalysis', 'analysisProductColumns', 'customerProductAnalysis', 'monthly', 'reportTotal', 'reportSales', 'priceHistory', 'balanceDate', 'balanceSales', 'balancePayments', 'balanceByMethod', 'balanceOpening', 'balanceCashReceived', 'balanceCashDue', 'dailyBalance', 'receiptArchive', 'receiptFrom', 'receiptTo', 'receiptDestination', 'receiptSalesPerson', 'receiptSalesPeople') + [
+        return view('sales.index', compact('products', 'eggStock', 'farmStock', 'inventoryUnit', 'priceUnit', 'analysisView', 'revenueView', 'customers', 'poultryHouses', 'prepayments', 'sales', 'screen', 'from', 'to', 'fromMonth', 'toMonth', 'customerReport', 'productReport', 'paymentAnalysis', 'unitAnalysis', 'analysisMonths', 'customerMonthlyAnalysis', 'analysisProductColumns', 'customerProductAnalysis', 'revenueFinancialYear', 'revenueMonths', 'revenueMonthlyAnalysis', 'revenueYtdAnalysis', 'revenueYearStart', 'revenueYtdEnd', 'monthly', 'reportTotal', 'reportSales', 'priceHistory', 'balanceDate', 'balanceSales', 'balancePayments', 'balanceByMethod', 'balanceOpening', 'balanceCashReceived', 'balanceCashDue', 'dailyBalance', 'receiptArchive', 'receiptFrom', 'receiptTo', 'receiptDestination', 'receiptSalesPerson', 'receiptSalesPeople') + [
             'todayTotal' => (float) Sale::whereDate('sale_date', today())->whereNotIn('status', ['void'])->where('approval_status','approved')->where('is_staff_consumption', false)->sum('total'),
             'monthTotal' => (float) Sale::whereBetween('sale_date', [now()->startOfMonth(), now()->endOfMonth()])->whereNotIn('status', ['void'])->where('approval_status','approved')->where('is_staff_consumption', false)->sum('total'),
             'pendingApprovalCount'=>Sale::where('approval_status','pending')->count(),
@@ -311,11 +355,45 @@ class SalesController extends Controller
         return $stock;
     }
 
+    private function normalisedRevenueLines($sales)
+    {
+        return $sales->flatMap(function (Sale $sale) {
+            $lineTotal = max(0.0, (float) $sale->lines->sum('line_total'));
+            $factor = $lineTotal > 0 ? (float) $sale->total / $lineTotal : 1.0;
+            return $sale->lines->map(fn (SaleLine $line) => [
+                'category'=>$this->revenueCategory($line),
+                'month'=>$sale->sale_date->format('Y-m'),
+                'date'=>$sale->sale_date->copy()->startOfDay(),
+                'amount'=>(float) $line->line_total * $factor,
+            ]);
+        });
+    }
+
+    private function revenueCategory(SaleLine $line): string
+    {
+        $category = Str::lower((string) $line->category);
+        $name = Str::lower((string) $line->description);
+        return match (true) {
+            str_contains($name, 'large egg') => 'Large eggs',
+            str_contains($name, 'starter egg') => 'Starter eggs',
+            str_contains($name, 'medium egg') => 'Medium eggs',
+            str_contains($name, 'damaged egg') || str_contains($name, 'broken egg') || str_contains($name, 'dirty egg') || str_contains($name, 'soft shell') => 'Damaged eggs',
+            str_contains($name, 'off layer') || str_contains($name, 'spent layer') => 'Off-layers',
+            $category === 'manure' || str_contains($name, 'manure') => 'Manure',
+            $category === 'garden' => 'Garden sales',
+            $category === 'goats' && str_contains($name, 'meat') => 'Goat meat sales',
+            $category === 'goats' || str_contains($name, 'goat') => 'Goat sales',
+            $category === 'rabbits' && str_contains($name, 'meat') => 'Rabbit meat sales',
+            $category === 'rabbits' || str_contains($name, 'rabbit') => 'Rabbit sales',
+            default => 'Other sales',
+        };
+    }
+
     public function exportAnalysis(Request $request, BrandedReportExport $export): StreamedResponse
     {
         abort_unless($this->canViewSalesReports($request), 403);
         $view = $request->query('analysis_view');
-        abort_unless(in_array($view, ['summary', 'monthly', 'product_amount', 'product_quantity'], true), 404);
+        abort_unless(in_array($view, ['summary', 'monthly', 'product_amount', 'product_quantity', 'revenue'], true), 404);
 
         if ($view === 'monthly') {
             $fromMonth = $request->query('from_month', now()->subMonths(11)->format('Y-m'));
@@ -333,7 +411,23 @@ class SalesController extends Controller
         $total = (float) $sales->sum('total');
         $customers = SalesCustomer::where('is_active', true)->pluck('name')->merge($sales->pluck('customer_name'))->filter()->unique()->sort()->values();
 
-        if ($view === 'summary') {
+        if ($view === 'revenue') {
+            $year = (int) $request->query('financial_year', now()->month >= 7 ? now()->year : now()->subYear()->year);
+            abort_unless($year >= 2000 && $year <= now()->addYear()->year, 422, 'Choose a valid financial year.');
+            $yearStart = \Carbon\Carbon::create($year, 7, 1)->startOfDay();
+            $yearEnd = $yearStart->copy()->addYear()->subDay()->endOfDay();
+            $months = collect(\Carbon\CarbonPeriod::create($yearStart, '1 month', $yearEnd->copy()->startOfMonth()));
+            $revenueSales = Sale::with('lines')->whereBetween('sale_date', [$yearStart->toDateString(), $yearEnd->toDateString()])->whereNotIn('status', ['void'])->where('approval_status', 'approved')->where('is_staff_consumption', false)->get();
+            $lines = $this->normalisedRevenueLines($revenueSales);
+            $categories = collect(['Large eggs','Manure','Off-layers','Starter eggs','Damaged eggs','Medium eggs','Garden sales','Other sales','Goat sales','Rabbit sales','Rabbit meat sales','Goat meat sales']);
+            $headers = array_merge(['Revenue category'], $months->map->format('M-y')->all(), ['Total (UGX)']);
+            $rows = $categories->map(function ($category) use ($months, $lines) {
+                $values = $months->map(fn ($month) => (float) $lines->where('category', $category)->where('month', $month->format('Y-m'))->sum('amount'));
+                return array_merge([$category], $values->map(fn ($value) => number_format($value, 2))->all(), [number_format($values->sum(), 2)]);
+            });
+            $rows->push(array_merge(['Total operating revenue'], $months->map(fn ($month) => number_format((float) $lines->where('month', $month->format('Y-m'))->sum('amount'), 2))->all(), [number_format((float) $lines->sum('amount'), 2)]));
+            return $export->download('Revenue Analysis', 'Financial year: '.$yearStart->format('d M Y').' to '.$yearEnd->format('d M Y'), $headers, $rows, 'revenue-analysis-'.$year.'.xls', $request->user()->displayName());
+        } elseif ($view === 'summary') {
             $ranked = $sales->groupBy('customer_name')->map(fn ($items, $name) => ['name'=>$name, 'amount'=>(float)$items->sum('total')])->sortByDesc('amount')->values();
             $rows = $ranked->map(fn ($row, $index) => [$row['name'], number_format($row['amount'], 2), number_format($total > 0 ? $row['amount'] / $total * 100 : 0, 1).'%', $index + 1]);
             $headers = ['Current receivables', 'Amount (UGX)', '%', 'Rank'];
@@ -360,15 +454,46 @@ class SalesController extends Controller
     public function storeProduct(Request $request, CommunicationService $communications): RedirectResponse
     {
         abort_unless($this->canManagePrices($request), 403);
-        $data = $request->validate(['code' => ['required', 'string', 'max:50', 'unique:sale_products,code'], 'name' => ['required', 'string', 'max:160'], 'category_choice' => ['required', Rule::in([...self::CATEGORIES, 'custom'])], 'custom_category' => ['nullable', 'required_if:category_choice,custom', 'string', 'max:40'], 'unit' => ['required', 'string', 'max:40'], 'unit_price' => ['required', 'numeric', 'min:0'], 'loose_unit_price' => ['nullable', 'numeric', 'min:0'], 'stock_quantity' => ['nullable', 'numeric', 'min:0'], 'notes' => ['nullable', 'string', 'max:1000']]);
+        $data = $request->validate(['code' => ['nullable', 'string', 'max:50'], 'name' => ['required', 'string', 'max:160'], 'category_choice' => ['required', Rule::in([...self::CATEGORIES, 'custom'])], 'custom_category' => ['nullable', 'required_if:category_choice,custom', 'string', 'max:40'], 'unit' => ['required', 'string', 'max:40'], 'unit_price' => ['required', 'numeric', 'min:0'], 'loose_unit_price' => ['nullable', 'numeric', 'min:0'], 'availability' => ['required', Rule::in(['in_stock', 'out_of_stock', 'untracked'])], 'stock_quantity' => ['nullable', 'required_if:availability,in_stock', 'numeric', 'gt:0'], 'notes' => ['nullable', 'string', 'max:1000']]);
         $data['category'] = $data['category_choice'] === 'custom' ? strtolower(trim($data['custom_category'])) : $data['category_choice'];
-        unset($data['category_choice'],$data['custom_category']);
+        $wholeUnits = ['animal', 'head', 'bird', 'chick', 'egg', 'piece'];
+        if ($data['availability'] === 'in_stock' && in_array($data['unit'], $wholeUnits, true) && floor((float) $data['stock_quantity']) !== (float) $data['stock_quantity']) {
+            return back()->withInput()->withErrors(['stock_quantity' => 'Availability for '.$data['unit'].' must be entered as a whole number.']);
+        }
+        $data['code'] = $this->uniqueProductCode($data['category'], $data['name']);
+        $data['stock_quantity'] = match ($data['availability']) {
+            'out_of_stock' => 0,
+            'untracked' => null,
+            default => $data['stock_quantity'],
+        };
+        unset($data['category_choice'],$data['custom_category'],$data['availability']);
         $proposedPrice=$data['unit_price']; $proposedLoose=$data['loose_unit_price']??null;
         $productData=$data; $productData['unit_price']=0; $productData['loose_unit_price']=null; $productData['is_active']=false;
         $product=SaleProduct::create($productData);
         SalePriceChangeRequest::create(['sale_product_id'=>$product->id,'previous_unit_price'=>0,'proposed_unit_price'=>$proposedPrice,'previous_loose_unit_price'=>null,'proposed_loose_unit_price'=>$proposedLoose,'effective_from'=>now()->toDateString(),'request_note'=>'Initial selling price for a new catalogue product.','status'=>'pending','requested_by'=>$request->user()->id]);
         $communications->toRole('director','New product price approval: '.$product->name,'Approve the initial price of UGX '.number_format((float)$proposedPrice).' before this product becomes available for sale.',$request->user()->id,route('sales.price-approvals',[],false));
         return back()->with('status', 'Product saved and its initial price sent to the Director. It will appear for sale after approval.');
+    }
+
+    private function uniqueProductCode(string $category, string $name): string
+    {
+        $itemWords = explode('-', Str::upper(Str::slug($name, '-')));
+        $prefix = match (true) {
+            in_array('RABBIT', $itemWords, true) => 'RABBIT',
+            in_array('GOAT', $itemWords, true) => 'GOAT',
+            count(array_intersect(['EGG', 'EGGS'], $itemWords)) > 0 => 'EGG',
+            count(array_intersect(['DOG', 'PUPPY', 'PUPPIES'], $itemWords)) > 0 => 'DOG',
+            default => ['eggs'=>'EGG', 'rabbits'=>'RABBIT', 'goats'=>'GOAT', 'poultry'=>'BIRD', 'dogs'=>'DOG', 'garden'=>'GARDEN'][$category] ?? Str::upper(Str::slug($category, '-')),
+        };
+        $item = implode('-', array_values(array_filter($itemWords, fn ($word) => ! in_array($word, [$prefix, $prefix.'S'], true)))) ?: 'ITEM';
+        $base = Str::limit(trim($prefix.'-'.$item, '-'), 45, '');
+        $code = $base;
+        $suffix = 2;
+        while (SaleProduct::where('code', $code)->exists()) {
+            $code = Str::limit($base, 45 - strlen((string) $suffix), '').'-'.$suffix++;
+        }
+
+        return $code;
     }
 
     public function updatePrice(Request $request, SaleProduct $product, CommunicationService $communications): RedirectResponse
@@ -432,8 +557,7 @@ class SalesController extends Controller
         $roleCodes = $user->roles->pluck('code')->push($user->role?->code)->filter();
 
         return $user->canViewAllReports()
-            || $user->canAccess('sales')
-            || $roleCodes->intersect(['ceo', 'director', 'finance-manager', 'sales-manager'])->isNotEmpty();
+            || $roleCodes->intersect(['ceo', 'director', 'finance-manager'])->isNotEmpty();
     }
 
     public function storeCustomer(Request $request): RedirectResponse

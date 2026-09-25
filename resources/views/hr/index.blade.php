@@ -11,7 +11,9 @@
         </div>
 
         @if ($user->canDo('hr', 'create'))
-            <a class="btn btn--inline" href="{{ route('employees.create') }}">Add employee</a>
+            <div class="form-actions"><a class="btn btn--quiet btn--inline" href="{{ route('hr.accommodation.index') }}">Staff accommodation</a><a class="btn btn--inline" href="{{ route('employees.create') }}">Add employee</a></div>
+        @else
+            <a class="btn btn--quiet btn--inline" href="{{ route('hr.accommodation.index') }}">Staff accommodation</a>
         @endif
     </div>
 

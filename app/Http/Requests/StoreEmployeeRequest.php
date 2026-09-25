@@ -15,7 +15,7 @@ class StoreEmployeeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'staff_no'    => ['nullable', 'string', 'max:30', Rule::unique('employees', 'staff_no')],
+            'staff_no'    => ['nullable', 'string', 'max:30', 'regex:/^BAF [0-9]{3,}$/', Rule::unique('employees', 'staff_no')],
             'first_name'  => ['required', 'string', 'max:80'],
             'last_name'   => ['required', 'string', 'max:80'],
             'other_names' => ['nullable', 'string', 'max:80'],

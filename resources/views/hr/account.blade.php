@@ -28,6 +28,13 @@
                     <p class="field-hint">Lowercase letters, numbers, dots and dashes. This is what they type to sign in.</p>
                 </div>
 
+                <div class="field @error('email') field--error @enderror">
+                    <label for="email">Email <span class="req">required</span></label>
+                    <input id="email" name="email" type="email" maxlength="190" autocomplete="email"
+                           value="{{ old('email', $employee->email) }}" required>
+                    @error('email')<p class="field-error">{{ $message }}</p>@enderror
+                </div>
+
                 <div class="field @error('role_id') field--error @enderror">
                     <label for="role_id">Access role <span class="req">required</span></label>
                     <select id="role_id" name="role_id" required>

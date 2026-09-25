@@ -205,6 +205,13 @@ class User extends Authenticatable
         return array_values(array_unique(array_merge($direct, $children)));
     }
 
+    public function isProductionUser(): bool
+    {
+        return $this->roles->pluck('code')->push($this->role?->code)->contains('production-manager')
+            || $this->departments->pluck('code')->push($this->department?->code)
+                ->intersect(['production', 'div-production'])->isNotEmpty();
+    }
+
     public function canAccess(string $moduleKey): bool
     {
         return (bool) ($this->abilities()[$moduleKey]['view'] ?? false);

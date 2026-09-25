@@ -1,10 +1,10 @@
 @extends('layouts.app')
-@section('title', $screen === 'analysis' ? (['summary'=>'Sales Summary','monthly'=>'Month-on-Month Analysis','product_amount'=>'Product Type by Amount','product_quantity'=>'Product Type by Quantity'][$analysisView] ?? 'Sales Analysis') : (['inventory'=>'Inventory','setup'=>'Selling Prices','reports'=>'Sales Report','balancing'=>'Daily Sales Balancing','receipt_archive'=>'Receipt Archive'][$screen] ?? 'Record Daily Sale'))
+@section('title', $screen === 'analysis' ? (['summary'=>'Sales Summary','monthly'=>'Month-on-Month Analysis','product_amount'=>'Product Type by Amount','product_quantity'=>'Product Type by Quantity','revenue'=>'Revenue Analysis'][$analysisView] ?? 'Sales Analysis') : (['inventory'=>'Inventory','setup'=>'Selling Prices','reports'=>'Sales Report','balancing'=>'Daily Sales Balancing','receipt_archive'=>'Receipt Archive'][$screen] ?? 'Record Daily Sale'))
 @section('content')
 @if($screen==='reports')<x-report-header eyebrow="Sales & customers" title="Sales Report" description="Sales performance, customer frequency, products sold and receipts for the selected period." :period="\Carbon\Carbon::parse($from)->format('d M Y').' – '.\Carbon\Carbon::parse($to)->format('d M Y')"><x-slot:actions><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button></x-slot:actions></x-report-header>@endif
 @if(!in_array($screen, ['inventory', 'sale'], true))
 <div class="page-head">
-    <p class="eyebrow">{{ $screen === 'analysis' ? (['summary'=>'Sales Summary','monthly'=>'Month-on-Month Analysis','product_amount'=>'Product Type by Amount','product_quantity'=>'Product Type by Quantity'][$analysisView] ?? 'Sales Analysis') : (['setup'=>'Selling Prices','reports'=>'Sales Report','balancing'=>'Daily Sales Balancing','receipt_archive'=>'Receipt Archive'][$screen] ?? 'Record Daily Sale') }}</p>
+    <p class="eyebrow">{{ $screen === 'analysis' ? (['summary'=>'Sales Summary','monthly'=>'Month-on-Month Analysis','product_amount'=>'Product Type by Amount','product_quantity'=>'Product Type by Quantity','revenue'=>'Revenue Analysis'][$analysisView] ?? 'Sales Analysis') : (['setup'=>'Selling Prices','reports'=>'Sales Report','balancing'=>'Daily Sales Balancing','receipt_archive'=>'Receipt Archive'][$screen] ?? 'Record Daily Sale') }}</p>
     @if($screen !== 'analysis')
     <h2>{{ ['inventory' => 'Inventory', 'setup' => 'Selling Prices', 'reports' => 'Sales Report', 'analysis' => 'Sales Analysis', 'balancing' => 'Daily Sales Balancing', 'receipt_archive' => 'Receipt Archive'][$screen] ?? 'Record Daily Sale' }}</h2>
     <p>{{ ['inventory' => 'View the farm products currently available for sale from Poultry, Goats, Rabbits, Dogs and Garden.', 'setup' => 'Update the current market price used when recording sales.', 'reports' => 'Review individual sales and receipts for the selected period.', 'analysis' => 'Compare sales performance by farm unit, product, customer and payment method.', 'balancing' => 'Reconcile today’s sales collections and transfer physical cash to Bank or the Reservoir account.', 'receipt_archive' => 'Find previously uploaded banking and cash-handover receipts.'][$screen] ?? 'Record a customer sale or staff consumption, then send it for Finance and CEO approval.' }}</p>
@@ -131,7 +131,7 @@
 </section>
 @endforeach
 @elseif($screen === 'setup')
-<section class="exec-panel"><div class="section-heading"><div><p class="card-label">Product catalogue</p><h3>Add an item to be priced</h3></div></div><form method="POST" action="{{ route('sales.products.store') }}" class="form-grid">@csrf<div class="field"><label>Item code</label><input name="code" required placeholder="e.g. EGG-DAMAGED"></div><div class="field"><label>Item name</label><input name="name" required></div><div class="field"><label>Category</label><select name="category_choice" required>@foreach($categories as $category)<option value="{{ $category }}">{{ ucfirst($category) }}</option>@endforeach<option value="custom">Other category</option></select></div><div class="field"><label>Other category</label><input name="custom_category"></div><div class="field"><label>Standard unit</label><select name="unit" required>@foreach(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'] as $unit)<option value="{{ $unit }}">{{ ucfirst($unit) }}</option>@endforeach</select></div><div class="field"><label>Standard selling price (UGX)</label><input type="number" name="unit_price" min="0" step="0.01" required></div><div class="field"><label>Individual / loose price (UGX)</label><input type="number" name="loose_unit_price" min="0" step="0.01"><small>Use when the item can also be sold individually.</small></div><div class="field"><label>Opening stock (optional)</label><input type="number" name="stock_quantity" min="0" step="0.01"></div><div class="field field--wide"><label>Notes</label><textarea name="notes"></textarea></div><button class="btn">Add priced item</button></form></section>
+<form method="GET" class="card filters selling-price-filter"><input type="hidden" name="screen" value="setup"><div class="field"><label>Farm unit</label><select name="price_unit"><option value="">All units</option>@foreach(['poultry'=>'Poultry','goats'=>'Goats','rabbits'=>'Rabbits','dogs'=>'Dogs','garden'=>'Garden','other'=>'Other'] as $code=>$label)<option value="{{ $code }}" @selected($priceUnit===$code)>{{ $label }}</option>@endforeach</select></div><button class="btn">Filter prices</button>@if($priceUnit)<a class="btn btn--quiet" href="{{ route('sales.index',['screen'=>'setup']) }}">Clear</a>@endif</form>
 @if($priceHistory->isNotEmpty())
 <section class="price-change-notice"><div><p class="eyebrow">Latest price update</p><strong>{{ $priceHistory->first()->description }}</strong><span>{{ $priceHistory->first()->created_at->format('d M Y, H:i') }} &middot; Previous UGX {{ number_format((float) data_get($priceHistory->first()->old_values,'unit_price')) }} &rarr; New UGX {{ number_format((float) data_get($priceHistory->first()->new_values,'unit_price')) }}</span></div><span>Price history is retained</span></section>
 @endif
@@ -143,6 +143,7 @@
     @empty<tr><td colspan="5">No products have been configured by stock control.</td></tr>@endforelse
     </tbody></table>
 </section>
+@include('sales.partials.product-catalogue-entry')
 <section class="exec-panel"><div class="section-heading"><div><p class="card-label">Accountability</p><h3>Recent price changes</h3></div></div><div class="price-history">@forelse($priceHistory as $change)<article><div><strong>{{ $change->description }}</strong><small>{{ $change->created_at->format('d M Y, H:i') }} &middot; {{ $change->user?->displayName() ?? $change->username ?? 'System' }}</small></div><span>UGX {{ number_format((float)data_get($change->old_values,'unit_price')) }} &rarr; <b>UGX {{ number_format((float)data_get($change->new_values,'unit_price')) }}</b></span></article>@empty<p class="muted">No price changes have been recorded yet.</p>@endforelse</div></section>
 <script>document.querySelectorAll('.price-update-form').forEach(form=>{form.querySelector('button').textContent='Request Director approval';form.addEventListener('submit',event=>{const input=form.querySelector('[name="unit_price"]'),current=Number(form.dataset.currentPrice),next=Number(input.value);if(next===current)return;const message=`${form.dataset.product} is currently UGX ${current.toLocaleString()}. Send the proposed price of UGX ${next.toLocaleString()} to the Director for approval?`;if(!window.confirm(message)){event.preventDefault();return;}form.querySelector('[data-confirm-price]').value='1';});});</script>
 @elseif($screen === 'receipt_archive')
@@ -234,18 +235,27 @@
     </section>
 </section>
 @elseif($screen === 'analysis')
-@if(!$analysisView)
+@if(!$analysisView || ($analysisView === 'revenue' && !$revenueView))
 <div class="summary-grid" aria-label="Sales analysis reports">
-    @foreach([
+    @php
+        $analysisCards = $analysisView === 'revenue' ? [
+        'ytd'=>['Year-to-date comparison','Compare each revenue category with the same period in the previous financial year.'],
+        'monthly'=>['Month-on-month comparison','Compare monthly product-category revenue and total operating revenue.'],
+    ] : [
         'summary'=>'Sales Summary',
         'monthly'=>'Analysis (Month-on-Month)',
         'product_amount'=>'Product Type by Amount',
         'product_quantity'=>'Product Type by Quantity',
-    ] as $viewCode=>$viewTitle)
-        <a class="summary-card" style="color:inherit;text-decoration:none" href="{{ route('sales.index',['screen'=>'analysis','analysis_view'=>$viewCode,'from'=>$from,'to'=>$to]) }}">
-            <span>Sales analysis report</span>
+    ];
+    @endphp
+    @foreach($analysisCards as $viewCode=>$card)
+        @php
+            [$viewTitle, $viewDescription] = is_array($card) ? $card : [$card, 'Open report'];
+        @endphp
+        <a class="summary-card" style="color:inherit;text-decoration:none" href="{{ route('sales.index', $analysisView === 'revenue' ? ['screen'=>'analysis','analysis_view'=>'revenue','revenue_view'=>$viewCode] : ['screen'=>'analysis','analysis_view'=>$viewCode,'from'=>$from,'to'=>$to]) }}">
+            <span>{{ $analysisView === 'revenue' ? 'Revenue analysis report' : 'Sales analysis report' }}</span>
             <strong>{{ $viewTitle }}</strong>
-            <small>Open report</small>
+            <small>{{ $viewDescription }}</small>
         </a>
     @endforeach
 </div>
@@ -257,17 +267,24 @@
     <form class="sales-report__filter" method="GET" action="{{ route('sales.index') }}">
         <input type="hidden" name="screen" value="analysis">
         <input type="hidden" name="analysis_view" value="{{ $analysisView }}">
+        @if($analysisView === 'revenue')<input type="hidden" name="revenue_view" value="{{ $revenueView }}">@endif
         @if($analysisView === 'monthly')
         <div class="field"><label>From month</label><input type="month" name="from_month" value="{{ $fromMonth }}" required></div>
         <div class="field"><label>To month</label><input type="month" name="to_month" value="{{ $toMonth }}" required></div>
+        @elseif($analysisView === 'revenue')
+        <div class="field"><label>Financial year starts</label><input type="number" name="financial_year" value="{{ $revenueFinancialYear }}" min="2000" max="{{ now()->addYear()->year }}" required><small>July to June</small></div>
         @else
         <div class="field"><label>From</label><input type="date" name="from" value="{{ $from }}"></div>
         <div class="field"><label>To</label><input type="date" name="to" value="{{ $to }}"></div>
         @endif
         <button class="btn">Analyse</button>
-        <a class="btn btn--quiet" href="{{ route('sales.analysis.export', $analysisView === 'monthly' ? ['analysis_view'=>$analysisView,'from_month'=>$fromMonth,'to_month'=>$toMonth] : ['analysis_view'=>$analysisView,'from'=>$from,'to'=>$to]) }}">Download Excel</a>
+        <a class="btn btn--quiet" href="{{ route('sales.analysis.export', $analysisView === 'monthly' ? ['analysis_view'=>$analysisView,'from_month'=>$fromMonth,'to_month'=>$toMonth] : ($analysisView === 'revenue' ? ['analysis_view'=>'revenue','financial_year'=>$revenueFinancialYear] : ['analysis_view'=>$analysisView,'from'=>$from,'to'=>$to])) }}">Download Excel</a>
     </form>
-    @if($analysisView === 'summary')
+    @if($analysisView === 'revenue' && $revenueView === 'ytd')
+    <section class="exec-panel table-wrap"><div class="section-heading"><div><p class="card-label">Revenue summary</p><h3>Year-to-date comparison</h3><p>{{ $revenueYearStart->format('d M Y') }} to {{ $revenueYtdEnd->format('d M Y') }}, compared with the previous financial year.</p></div></div><table><thead><tr><th>Revenue category</th><th>{{ $revenueYearStart->format('Y') }}/{{ $revenueYearStart->copy()->addYear()->format('y') }}</th><th>Previous year</th><th>Variance</th><th>% variance</th></tr></thead><tbody>@foreach($revenueYtdAnalysis as $row)<tr><td><strong>{{ $row['category'] }}</strong></td><td>{{ $row['current'] ? number_format($row['current'],2) : '-' }}</td><td>{{ $row['previous'] ? number_format($row['previous'],2) : '-' }}</td><td>{{ $row['variance'] ? number_format($row['variance'],2) : '-' }}</td><td class="{{ $row['percent'] !== null && $row['percent'] < 0 ? 'movement-down' : 'movement-up' }}">{{ $row['percent'] === null ? '-' : number_format($row['percent'],1).'%' }}</td></tr>@endforeach</tbody><tfoot><tr><th>Total operating revenue</th><th>{{ number_format($revenueYtdAnalysis->sum('current'),2) }}</th><th>{{ number_format($revenueYtdAnalysis->sum('previous'),2) }}</th><th>{{ number_format($revenueYtdAnalysis->sum('variance'),2) }}</th><th></th></tr></tfoot></table></section>
+    @elseif($analysisView === 'revenue' && $revenueView === 'monthly')
+    <section class="exec-panel table-wrap"><div class="section-heading"><div><p class="card-label">Month-on-month comparison</p><h3>Revenue by product category</h3></div></div><table><thead><tr><th>Revenue category</th>@foreach($revenueMonths as $month)<th>{{ $month['label'] }}</th>@endforeach<th>Total</th></tr></thead><tbody>@foreach($revenueMonthlyAnalysis as $row)<tr><td><strong>{{ $row['category'] }}</strong></td>@foreach($revenueMonths as $month)<td>{{ ($row['months'][$month['key']] ?? 0) ? number_format($row['months'][$month['key']],2) : '-' }}</td>@endforeach<td><strong>{{ number_format($row['months']->sum(),2) }}</strong></td></tr>@endforeach</tbody><tfoot><tr><th>Total operating revenue</th>@foreach($revenueMonths as $month)<th>{{ number_format($revenueMonthlyAnalysis->sum(fn($row) => $row['months'][$month['key']] ?? 0),2) }}</th>@endforeach<th>{{ number_format($revenueMonthlyAnalysis->sum(fn($row) => $row['months']->sum()),2) }}</th></tr></tfoot></table></section>
+    @elseif($analysisView === 'summary')
     <section class="exec-panel table-wrap"><div class="section-heading"><div><p class="card-label">Summary</p><h3>Customer sales ranking</h3></div></div><table><thead><tr><th>Current receivables</th><th>Amount (UGX)</th><th>%</th><th>Rank</th></tr></thead><tbody>@forelse($customerReport as $row)<tr><td><strong>{{ $row['name'] }}</strong></td><td>{{ number_format($row['amount'],2) }}</td><td>{{ number_format($row['share'],1) }}%</td><td>{{ $row['rank'] }}</td></tr>@empty<tr><td colspan="4">No approved sales in this period.</td></tr>@endforelse</tbody><tfoot><tr><th>Total</th><th>{{ number_format($reportTotal,2) }}</th><th>100%</th><th></th></tr></tfoot></table></section>
     @elseif($analysisView === 'monthly')
 

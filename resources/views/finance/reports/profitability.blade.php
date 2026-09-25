@@ -1,42 +1,29 @@
 @extends('layouts.app')
-@section('title','Unit Costs & Profitability')
+@section('title','Profitability')
 @section('content')
-<x-report-header eyebrow="Director's management report" title="Unit Costs & Profitability" description="Revenue, spending and accumulated lifecycle cost for each farm unit." :period="\Carbon\Carbon::parse($from)->format('d M Y').' – '.\Carbon\Carbon::parse($to)->format('d M Y')"><x-slot:actions><a class="btn btn--quiet" href="{{ route('sales.index',['screen'=>'reports']) }}">Revenue analysis</a><a class="btn" href="{{ route('finance.reports.statement',['report'=>'profit-loss','from'=>$from,'to'=>$to]) }}">Income statement</a></x-slot:actions></x-report-header>
-
-<form class="card filters" method="GET">
-    <div class="field"><label>From</label><input type="date" name="from" value="{{ $from }}" required></div>
-    <div class="field"><label>To / costing date</label><input type="date" name="to" value="{{ $to }}" required></div>
-    <div class="field"><label>Lifecycle detail</label><select name="unit"><option value="">Unit summary only</option>@foreach($unitOptions as $option)<option value="{{ $option }}" @selected($selectedUnit===$option)>{{ $option }}</option>@endforeach</select></div>
-    <button class="btn">Calculate</button>
-</form>
-
-<div class="summary-grid">
-    <div class="summary-card"><span>Revenue received</span><strong>UGX {{ number_format($totalRevenue) }}</strong><small>All finance receipts in the selected period</small></div>
-    <div class="summary-card"><span>Money spent</span><strong>UGX {{ number_format($totalSpent) }}</strong><small>All payments in the selected period</small></div>
-    <div class="summary-card"><span>Cash-basis result</span><strong>UGX {{ number_format($totalRevenue-$totalSpent) }}</strong><small>Revenue received less money paid</small></div>
-    <div class="summary-card"><span>Not allocated to a farm unit</span><strong>UGX {{ number_format($unallocated) }}</strong><small>Finance, HR, executive or entries missing a cost centre</small></div>
-</div>
-
-<section class="card table-card">
-    <div class="section-heading"><div><p class="card-label">Selected period</p><h3>Money by farm unit</h3></div></div>
-    <table><thead><tr><th>Unit</th><th>Sales revenue</th><th>Direct spending</th><th>Result before shared costs</th><th></th></tr></thead><tbody>
-    @foreach($units as $row)<tr><td><strong>{{ $row['unit'] }}</strong></td><td>UGX {{ number_format($row['revenue']) }}</td><td>UGX {{ number_format($row['spent']) }}</td><td>UGX {{ number_format($row['result']) }}</td><td><a href="{{ route('finance.reports.profitability',['from'=>$from,'to'=>$to,'unit'=>$row['unit']]) }}">View lifecycle costs</a></td></tr>@endforeach
-    </tbody></table>
-    <p class="muted">Unit spending comes from Finance entries carrying that cost centre. Sales are grouped by product category. Shared and unallocated costs are shown separately and are not silently assigned to a unit.</p>
-</section>
-
-@if($selectedUnit)
-<section class="card table-card">
-    <div class="section-heading"><div><p class="card-label">From acquisition through {{ \Carbon\Carbon::parse($to)->format('d M Y') }}</p><h3>{{ $selectedUnit }} lifecycle costs</h3></div></div>
-    @if($selectedUnit==='Garden')
-        <p class="muted">Garden costs are available in the unit summary. Per-animal costing does not apply to the Garden unit.</p>
-    @else
-    <table><thead><tr><th>Batch / group</th><th>Acquired</th><th>Initial</th><th>Remaining</th><th>Purchase</th><th>Feed</th><th>Health</th><th>Total cost</th><th>Cost per animal</th><th>Status</th></tr></thead><tbody>
-    @forelse($lifeCycles as $row)<tr><td><strong>{{ $row['code'] }}</strong><br><span class="muted">{{ $row['description'] }}</span></td><td>{{ \Carbon\Carbon::parse($row['acquired_on'])->format('d M Y') }}</td><td>{{ number_format($row['initial']) }}</td><td>{{ number_format($row['remaining']) }}</td><td>UGX {{ number_format($row['acquisition']) }}</td><td>UGX {{ number_format($row['feed']) }}</td><td>UGX {{ number_format($row['health']) }}</td><td><strong>UGX {{ number_format($row['total']) }}</strong></td><td>UGX {{ number_format($row['per_animal']) }}</td><td>{{ Str::headline($row['stage']) }}</td></tr>
-    @empty<tr><td colspan="10">No groups were acquired by the selected costing date.</td></tr>@endforelse
-    </tbody></table>
-    <p class="muted">Cost per animal uses the original number received, including free birds for poultry. It includes recorded acquisition, feed and health costs. Unit sales remain at unit level until a sale is linked to a specific batch or group.</p>
-    @endif
-</section>
-@endif
+<x-report-header eyebrow="Finance report" title="Profitability" description="Revenue, cost of goods sold, expenses and profit by account." :period="\Carbon\Carbon::parse($from)->format('d M Y').' – '.\Carbon\Carbon::parse($to)->format('d M Y')" />
+<div class="form-actions"><a class="btn" href="{{ route('finance.reports.export',['report'=>'profitability','from'=>$from,'to'=>$to]) }}">Download Excel</a></div>
+<form class="card filters" method="GET"><div class="field"><label>From</label><input type="date" name="from" value="{{ $from }}" required></div><div class="field"><label>To</label><input type="date" name="to" value="{{ $to }}" required></div><button class="btn">Calculate</button></form>
+<section class="card table-card profitability-accounts"><div class="section-heading"><div><p class="card-label">Selected period</p><h3>Profitability by account</h3><p>All farm-operation accounts remain visible, including accounts with no entry in this period.</p></div></div><div class="profitability-sheet"><table><thead><tr><th>Code</th><th>Account</th><th class="num">UGX</th></tr></thead><tbody>
+@foreach($accountProfitability['sections'] as $section)
+<tr class="profitability-section"><th colspan="3">{{ $section['name']==='Operating Costs' ? 'Expenses' : ($section['name']==='Cost of Sales' ? 'Cost of Goods Sold (COGS)' : $section['name']) }}</th></tr>
+@foreach($section['rows'] as $accountRow)<tr class="profitability-account-row"><td>{{ $accountRow['code'] }}</td><td>{{ $accountRow['account'] }}</td><td class="num">{{ $accountRow['amount'] == 0 ? '—' : number_format($accountRow['amount'], 2) }}</td></tr>@endforeach
+<tr class="profitability-subtotal"><th colspan="2">{{ $section['name']==='Revenue' ? 'Total Revenue' : ($section['name']==='Cost of Sales' ? 'Total COGS' : 'Total Expenses') }}</th><th class="num">UGX {{ number_format($section['total']) }}</th></tr>
+@if($section['name']==='Cost of Sales')<tr class="profitability-result"><th colspan="2">Gross Profit</th><th class="num">UGX {{ number_format($accountProfitability['grossProfit']) }}</th></tr>@endif
+@endforeach
+<tr class="profitability-result profitability-result--final"><th colspan="2">Net Profit</th><th class="num">UGX {{ number_format($accountProfitability['netProfit']) }}</th></tr>
+</tbody></table></div></section>
+<style>
+.profitability-accounts,.profitability-accounts button,.profitability-accounts input{font-family:"Gill Sans MT","Segoe UI",Arial,sans-serif}
+.profitability-accounts{font-size:12px}.profitability-accounts .section-heading h3{font-size:17px}.profitability-accounts .section-heading p{font-size:12px}
+.profitability-sheet{width:100%;max-width:980px}.profitability-sheet table{width:100%;font-size:12px}
+.profitability-sheet th,.profitability-sheet td{padding:7px 10px;line-height:1.2}
+.profitability-accounts td:first-child{width:100px;color:#6e6259;font-size:11px}
+.profitability-account-row td{font-size:12px;border-bottom:1px dotted #d8c7ae}
+.profitability-account-row td:nth-child(2)::before{content:'+ ';color:#9f2630}
+.profitability-section th{padding-block:6px;background:#f4ecdf;text-transform:uppercase;font-size:12px}
+.profitability-subtotal th{background:#d6b665;font-size:12px}
+.profitability-result th{background:#70400d;color:#fff;font-size:12px}
+.profitability-result--final th{background:#4f2708;font-size:13px}
+</style>
 @endsection

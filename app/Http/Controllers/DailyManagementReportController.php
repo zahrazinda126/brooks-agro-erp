@@ -297,11 +297,14 @@ class DailyManagementReportController extends Controller
         ];
     }
 
-    private function productionSnapshot(string $date): array
+    /** Build the production sheet data for one day or a reporting period. */
+    public function productionSnapshot(string $date, ?string $toDate = null): array
     {
+        $toDate ??= $date;
+        $daysInPeriod = max(1, \Carbon\Carbon::parse($date)->diffInDays(\Carbon\Carbon::parse($toDate)) + 1);
         $collections = DB::table('egg_collections')
             ->leftJoin('users', 'users.id', '=', 'egg_collections.recorded_by')
-            ->whereDate('egg_collections.collected_on', $date)
+            ->whereBetween('egg_collections.collected_on', [$date, $toDate])
             ->where('egg_collections.status', 'approved')
             ->select('egg_collections.*', 'users.name as recorder_name')->get();
         $collectionIds = $collections->pluck('id');
@@ -311,13 +314,13 @@ class DailyManagementReportController extends Controller
             ->select('egg_collection_lines.*', 'egg_grades.is_defect')->get()->groupBy('egg_collection_id');
         $mortality = DB::table('mortality_records')
             ->leftJoin('mortality_causes', 'mortality_causes.id', '=', 'mortality_records.mortality_cause_id')
-            ->whereDate('mortality_records.occurred_on', $date)
+            ->whereBetween('mortality_records.occurred_on', [$date, $toDate])
             ->select('mortality_records.*', 'mortality_causes.name as cause_name')->get();
 
         $attendants = DB::table('poultry_house_assignments')
             ->join('employees', 'employees.id', '=', 'poultry_house_assignments.employee_id')
-            ->whereDate('assigned_from', '<=', $date)
-            ->where(fn ($query) => $query->whereNull('assigned_until')->orWhereDate('assigned_until', '>=', $date))
+            ->whereDate('assigned_from', '<=', $toDate)
+            ->where(fn ($query) => $query->whereNull('assigned_until')->orWhereDate('assigned_until', '>=', $toDate))
             ->select('poultry_house_id', 'employees.first_name', 'employees.last_name')->get()
             ->groupBy('poultry_house_id')->map(fn ($rows) => $rows->map(fn ($row) => trim($row->first_name.' '.$row->last_name))->join(', '));
 
@@ -328,7 +331,7 @@ class DailyManagementReportController extends Controller
             ->select('poultry_houses.*', 'animal_groups.code as batch_code', 'animal_groups.expected_lay_date', 'animal_groups.actual_lay_date', 'breeds.peak_lay_percent')
             ->orderBy('animal_groups.code')->orderBy('poultry_houses.house_number')->get();
 
-        $poultryRows = $houses->map(function ($house) use ($collections, $lines, $mortality, $attendants, $date) {
+        $poultryRows = $houses->map(function ($house) use ($collections, $lines, $mortality, $attendants, $toDate, $daysInPeriod) {
             $entries = $collections->where('poultry_house_id', $house->id);
             $normalEggs = 0; $normalTrays = 0; $normalLoose = 0; $damaged = 0;
             foreach ($entries as $entry) {
@@ -340,10 +343,10 @@ class DailyManagementReportController extends Controller
             $deaths = (int) $mortality->where('poultry_house_id', $house->id)->sum(fn ($row) => $row->quantity_died + $row->quantity_culled);
             $birds = (int) $house->bird_quantity;
             $total = (int) $entries->sum('total_eggs');
-            $laying = ($house->actual_lay_date && $house->actual_lay_date <= $date)
-                || ($house->expected_lay_date && $house->expected_lay_date <= $date);
+            $laying = ($house->actual_lay_date && $house->actual_lay_date <= $toDate)
+                || ($house->expected_lay_date && $house->expected_lay_date <= $toDate);
             $expectedRate = $laying ? (float) ($house->peak_lay_percent ?? 0) : 0;
-            $expected = (int) round($birds * $expectedRate / 100);
+            $expected = (int) round($birds * $expectedRate / 100 * $daysInPeriod);
             return (object) [
                 'batch_code' => $house->batch_code, 'attendant' => $attendants->get($house->id, 'Unassigned'),
                 'house' => trim((string) preg_replace('/\s*[-–—]\s*B-\d+\/\d+\s*$/i', '', $house->house_number)),
@@ -356,22 +359,22 @@ class DailyManagementReportController extends Controller
             ];
         });
 
-        $livestock = collect(['goats', 'rabbits', 'dogs', 'sheep'])->mapWithKeys(function ($unit) use ($date) {
+        $livestock = collect(['goats', 'rabbits', 'dogs', 'sheep'])->mapWithKeys(function ($unit) use ($date, $toDate) {
             $groups = DB::table('livestock_groups')->where('unit_code', $unit)->where('status', 'active')->orderBy('group_code')->get();
             $ids = $groups->pluck('id');
             return [$unit => [
                 'groups' => $groups,
-                'feed' => $ids->isEmpty() ? collect() : DB::table('livestock_feed_records')->whereIn('livestock_group_id', $ids)->whereDate('recorded_on', $date)->get(),
-                'mortality' => $ids->isEmpty() ? collect() : DB::table('livestock_mortality_records')->whereIn('livestock_group_id', $ids)->whereDate('occurred_on', $date)->get(),
-                'production' => $ids->isEmpty() ? collect() : DB::table('livestock_production_records')->whereIn('livestock_group_id', $ids)->whereDate('recorded_on', $date)->get(),
+                'feed' => $ids->isEmpty() ? collect() : DB::table('livestock_feed_records')->whereIn('livestock_group_id', $ids)->whereBetween('recorded_on', [$date, $toDate])->get(),
+                'mortality' => $ids->isEmpty() ? collect() : DB::table('livestock_mortality_records')->whereIn('livestock_group_id', $ids)->whereBetween('occurred_on', [$date, $toDate])->get(),
+                'production' => $ids->isEmpty() ? collect() : DB::table('livestock_production_records')->whereIn('livestock_group_id', $ids)->whereBetween('recorded_on', [$date, $toDate])->get(),
             ]];
         })->all();
 
         return [
             'poultry_rows' => $poultryRows, 'poultry_batches' => $poultryRows->groupBy('batch_code'),
-            'mortality' => $mortality, 'feed' => DB::table('feed_consumptions')->whereDate('used_on', $date)->where('status', 'approved')->get(),
-            'units' => DB::table('farm_unit_records')->whereDate('record_date', $date)->orderBy('unit_code')->orderBy('id')->get(),
-            'livestock' => $livestock, 'sales' => DB::table('sales')->whereDate('sale_date', $date)->where('status', '!=', 'void')->get(),
+            'mortality' => $mortality, 'feed' => DB::table('feed_consumptions')->whereBetween('used_on', [$date, $toDate])->where('status', 'approved')->get(),
+            'units' => DB::table('farm_unit_records')->whereBetween('record_date', [$date, $toDate])->orderBy('unit_code')->orderBy('id')->get(),
+            'livestock' => $livestock, 'sales' => DB::table('sales')->whereBetween('sale_date', [$date, $toDate])->where('status', '!=', 'void')->get(),
         ];
     }
 

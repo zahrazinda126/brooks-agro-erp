@@ -53,7 +53,7 @@ class MortalityAssessmentController extends Controller
     {
         $this->assertVisible($request, $record);
 
-        $record->load(['batch.breed', 'recorder.employee', 'department']);
+        $record->load(['batch.breed', 'house', 'recorder.employee', 'department']);
 
         /*
          | Recent deaths in the same flock. A single bird is noise; four
@@ -70,7 +70,8 @@ class MortalityAssessmentController extends Controller
 
         return view('poultry.assess.edit', [
             'record'   => $record,
-            'causes'   => MortalityCause::ordered()->get()->groupBy('category'),
+            'causes'   => MortalityCause::where(fn ($q) => $q->where('is_active', true)
+                ->orWhere('id', $record->mortality_cause_id))->orderBy('sort_order')->get()->groupBy('category'),
             'context'  => $context,
             'recent14' => $context->sum(fn ($r) => $r->totalLost()) + $record->totalLost(),
         ]);
@@ -86,16 +87,24 @@ class MortalityAssessmentController extends Controller
             403
         );
 
+        if (is_string($request->input('vet_name'))) {
+            $request->merge(['vet_name' => trim($request->input('vet_name'))]);
+        }
         $data = $request->validate([
-            'mortality_cause_id' => ['required', 'exists:mortality_causes,id'],
+            'cause_name' => ['required', 'string', 'max:100'],
             'assessment_note'    => ['nullable', 'string', 'max:2000'],
             'action_taken'       => ['nullable', 'string', 'max:2000'],
             'vet_called'         => ['nullable', 'boolean'],
+            'vet_name'           => [\Illuminate\Validation\Rule::excludeIf(!$request->boolean('vet_called')), 'required', 'string', 'max:160'],
         ], [
-            'mortality_cause_id.required' => 'Choose what caused this. If you are not sure, choose "Cause not established" — that is a real answer.',
+            'cause_name.required' => 'Choose what caused this. If you are not sure, choose "Cause not established" — that is a real answer.',
         ]);
 
-        $cause = MortalityCause::find($data['mortality_cause_id']);
+        $customName = trim($data['cause_name']);
+        if ($customName === '') {
+            return back()->withInput()->withErrors(['cause_name' => 'Write the cause before saving.']);
+        }
+        $cause = MortalityCause::whereRaw('LOWER(name) = ?', [\Illuminate\Support\Str::lower($customName)])->first();
 
         // A contagious diagnosis without an action is a diagnosis nobody
         // acted on. Ask for it while the manager is still on the screen.
@@ -105,11 +114,19 @@ class MortalityAssessmentController extends Controller
             ]);
         }
 
+        // Keep free-text assessments out of the shared list of standard causes.
+        // Using a related cause preserves the wording in existing reports.
+        $cause ??= MortalityCause::create([
+            'code' => 'custom-'.\Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(24)),
+            'name' => $customName, 'category' => 'other', 'is_active' => false,
+        ]);
+
         $record->update([
-            'mortality_cause_id' => $data['mortality_cause_id'],
+            'mortality_cause_id' => $cause->id,
             'assessment_note'    => $data['assessment_note'] ?? null,
             'action_taken'       => $data['action_taken'] ?? null,
             'vet_called'         => (bool) ($data['vet_called'] ?? false),
+            'vet_name'           => $data['vet_name'] ?? null,
             'assessed_by'        => $request->user()->id,
             'assessed_at'        => now(),
             'status'             => 'assessed',
@@ -119,7 +136,7 @@ class MortalityAssessmentController extends Controller
             'assessed', $record,
             "Assessed {$record->totalLost()} deaths in {$record->batch->code} as {$cause->name}.",
             null,
-            ['cause' => $cause->name, 'vet_called' => $record->vet_called],
+            ['cause' => $cause->name, 'vet_called' => $record->vet_called, 'vet_name' => $record->vet_name],
             'mortality-assess'
         );
 

@@ -6,16 +6,46 @@ use Illuminate\Http\{Request,RedirectResponse};
 use Illuminate\View\View;
 class VaccinationScheduleController extends Controller {
     public function index(Request $r):View{
+        $filters = $r->validate([
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', ...($r->filled('from') ? ['after_or_equal:from'] : [])],
+            'batch_id' => ['nullable', 'integer', 'exists:animal_groups,id'],
+            'vaccine_id' => ['nullable', 'integer', Rule::exists('medications', 'id')->where('type', 'vaccine')],
+            'schedule_status' => ['nullable', 'in:active,inactive'],
+        ]);
+        $filterBatches = AnimalGroup::with('breed')->visibleTo($r->user())->orderBy('code')->get();
+        $records = HealthEvent::with(['batch.breed', 'medication', 'recorder'])
+            ->where('event_type', 'vaccination')->whereIn('animal_group_id', $filterBatches->pluck('id'));
+        $plans = VaccinationPlan::with(['medication', 'breed', 'batch'])
+            ->where(fn ($q) => $q->whereNull('animal_group_id')->orWhereIn('animal_group_id', $filterBatches->pluck('id')));
+        if ($r->filled('from')) $records->whereDate('occurred_on', '>=', $filters['from']);
+        if ($r->filled('to')) $records->whereDate('occurred_on', '<=', $filters['to']);
+        if ($r->filled('batch_id')) {
+            $batch = $filterBatches->firstWhere('id', (int) $filters['batch_id']);
+            abort_unless($batch, 403);
+            $records->where('animal_group_id', $batch->id);
+            $plans->where(fn ($q) => $q->where('animal_group_id', $batch->id)
+                ->orWhere(fn ($general) => $general->whereNull('animal_group_id')
+                    ->where('purpose', $batch->purpose === 'broiler' ? 'broiler' : 'layer')
+                    ->where(fn ($breed) => $breed->whereNull('breed_id')->orWhere('breed_id', $batch->breed_id))));
+        }
+        if ($r->filled('vaccine_id')) {
+            $records->where('medication_id', $filters['vaccine_id']);
+            $plans->where('medication_id', $filters['vaccine_id']);
+        }
+        if ($r->filled('schedule_status')) $plans->where('is_active', $filters['schedule_status'] === 'active');
         $vaccines=Medication::where('type','vaccine')->where('is_active',true)->orderBy('name')->get();
         return view('vaccination-schedule.index',[
-            'plans'=>VaccinationPlan::with(['medication','breed'])->orderBy('purpose')->orderBy('age_days')->get(),
+            'filters'=>$filters, 'filterBatches'=>$filterBatches,
+            'filterVaccines'=>Medication::where('type','vaccine')->orderBy('name')->get(),
+            'plans'=>$plans->orderBy('purpose')->orderBy('age_days')->get(),
             'medications'=>$vaccines,'breeds'=>Breed::orderBy('name')->get(),'canEdit'=>$this->canEdit($r),
-            'batches'=>AnimalGroup::with('breed')->where('status','active')->orderBy('code')->get(),
-            'records'=>HealthEvent::with(['batch.breed','medication','recorder'])->where('event_type','vaccination')->latest('occurred_on')->latest('id')->paginate(30),
+            'batches'=>AnimalGroup::with('breed')->visibleTo($r->user())->where('status','active')->orderBy('code')->get(),
+            'records'=>$records->latest('occurred_on')->latest('id')->paginate(30)->withQueryString(),
         ]);
     }
     public function store(Request $r):RedirectResponse{abort_unless($this->canEdit($r),403);VaccinationPlan::create($this->data($r));return back()->with('status','Vaccination schedule item added.');}
-    public function update(Request $r,VaccinationPlan $plan):RedirectResponse{abort_unless($this->canEdit($r),403);$plan->update($this->data($r));return back()->with('status','Vaccination schedule updated.');}
+    public function update(Request $r,VaccinationPlan $plan):RedirectResponse{abort_unless($this->canEdit($r),403);$plan->update($this->data($r,$plan));return back()->with('status','Vaccination schedule updated.');}
     public function storeRecord(Request $r):RedirectResponse{
         abort_unless($this->canEdit($r),403);
         $data=$r->validate([
@@ -38,6 +68,30 @@ class VaccinationScheduleController extends Controller {
         AuditLog::record('vaccination_recorded',$event,'Vaccination recorded for '.$batch->code.': '.$event->medication?->name.'.',null,$event->toArray(),'health');
         return redirect()->route('vaccination-schedule.index')->with('status','Vaccination recorded for '.$batch->code.'.');
     }
-    private function data(Request $r):array{return $r->validate(['medication_id'=>['required','exists:medications,id'],'breed_id'=>['nullable','exists:breeds,id'],'purpose'=>['required','in:layer,broiler'],'age_days'=>['required','integer','min:0','max:2000'],'window_days'=>['required','integer','min:0','max:60'],'repeat_every_days'=>['nullable','integer','min:1'],'repeat_until_days'=>['nullable','integer','gte:age_days'],'is_essential'=>['nullable','boolean'],'is_active'=>['nullable','boolean'],'note'=>['nullable','string','max:1000']])+['is_essential'=>$r->boolean('is_essential'),'is_active'=>$r->boolean('is_active')];}
+    private function data(Request $r, ?VaccinationPlan $plan = null): array
+    {
+        $batchRequired = !$plan || $plan->animal_group_id !== null;
+        $data = $r->validate([
+            'animal_group_id' => [$batchRequired ? 'required' : 'nullable', 'integer'],
+            'medication_id' => ['required', Rule::exists('medications', 'id')->where('type', 'vaccine')->where('is_active', true)],
+            'age_days' => ['required', 'integer', 'min:0', 'max:2000'],
+            'window_days' => ['required', 'integer', 'min:0', 'max:60'],
+            'repeat_every_days' => ['nullable', 'integer', 'min:1'],
+            'repeat_until_days' => ['nullable', 'integer', 'gte:age_days'],
+            'is_essential' => ['nullable', 'boolean'], 'is_active' => ['nullable', 'boolean'],
+            'note' => ['nullable', 'string', 'max:1000'],
+        ]);
+        if (!empty($data['animal_group_id'])) {
+            $batch = AnimalGroup::visibleTo($r->user())->where('status', 'active')->find($data['animal_group_id']);
+            if (!$batch) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['animal_group_id' => 'Choose an existing active batch you can access.']);
+            }
+            $data['breed_id'] = $batch->breed_id;
+            $data['purpose'] = $batch->purpose === 'broiler' ? 'broiler' : 'layer';
+        }
+        $data['is_essential'] = $r->boolean('is_essential');
+        $data['is_active'] = $r->boolean('is_active');
+        return $data;
+    }
     private function canEdit(Request $r):bool{$u=$r->user();return $u->isSuperuser()||$u->role?->code==='production-manager'||$u->roles->contains('code','production-manager');}
 }

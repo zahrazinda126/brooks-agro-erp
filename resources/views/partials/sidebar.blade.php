@@ -19,10 +19,17 @@
     $groups     = $user->sidebarModules();
     $currentKey = request()->route('key')
         ?? (request()->routeIs('hr.records.*') ? request()->route('module') : null)
-        ?? (request()->routeIs('executive.*') ? request()->route('screen') : null)
+        ?? (request()->routeIs('executive.*') ? request('screen', request()->route('screen')) : null)
         ?? (request()->routeIs('communications.*') ? 'messages' : null)
         ?? (request()->routeIs('dashboard') ? 'dashboard' : null)
         ?? (request()->routeIs('approvals.*') ? 'approvals' : null)
+        ?? (request()->routeIs('hr.data-entry.*') ? 'hr-entry' : null)
+        ?? (request()->routeIs('hr.accommodation.*') ? 'accommodation' : null)
+        ?? (request()->routeIs('hr.vehicles.*') ? 'vehicles' : null)
+        ?? (request()->routeIs('hr.fleet.*') ? 'fleet' : null)
+        ?? (request()->routeIs('hr.welfare-budget.*') ? 'budget' : null)
+        ?? (request()->routeIs('hr.reports.*') ? 'reports' : null)
+        ?? (request()->routeIs('hr.kpis.*') ? 'kpi-dashboards' : null)
         ?? (request()->routeIs('employees.*') ? 'hr' : null)
         ?? (request()->routeIs('daily.*') ? 'egg-entry' : null)
         ?? (request()->routeIs('batches.*') ? 'batches' : null)
@@ -123,9 +130,9 @@
             ['key' => 'reports', 'label' => 'Garden Unit Report', 'page' => 'garden'],
         ],
         '📊 Executive View' => [
-            ['key' => 'kpi-dashboards', 'label' => 'KPIs & Analytics'],
             ['key' => 'reports', 'label' => 'Financial & Executive Reports'],
             ['key' => 'sales', 'label' => 'Sales Analysis', 'screen' => 'reports'],
+            ['key' => 'sales', 'label' => 'Revenue Analysis', 'screen' => 'analysis', 'analysis_view' => 'revenue'],
         ],
         '✅ Decisions' => [
             ['key' => 'assign-supervisors', 'label' => 'Daily Supervisors'],
@@ -161,7 +168,6 @@
             ['key' => 'reports', 'label' => 'Garden Unit Report', 'page' => 'garden'],
         ],
         '📊 Board View' => [
-            ['key' => 'kpi-dashboards', 'label' => 'KPIs & Analytics'],
             ['key' => 'reports', 'label' => 'Financial & Executive Reports'],
         ],
         '✅ Final Decisions' => [
@@ -200,7 +206,8 @@
         'Reports & Briefing' => [
             ['key' => 'reports', 'label' => 'Executive Reports'],
             ['key' => 'pa-finance-reports', 'label' => 'Financial Reports'],
-            ['key' => 'pa-profitability-reports', 'label' => 'Unit Costs & Profitability'],
+            ['key' => 'pa-profitability-reports', 'label' => 'Profitability'],
+            ['key' => 'pa-unit-costs-reports', 'label' => 'Unit Costs'],
             ['key' => 'pa-sales-reports', 'label' => 'Sales Report'],
             ['key' => 'pa-hr-reports', 'label' => 'HR Reports'],
             ['key' => 'pa-production-reports', 'label' => 'Overall Production Report'],
@@ -267,6 +274,7 @@
             ['key' => 'payroll', 'label' => 'Payroll'],
         ],
         '🚚 Administration & Fleet' => [
+            ['key' => 'vehicles', 'label' => 'Company Vehicle Register'],
             ['key' => 'fleet', 'label' => 'Daily Fleet Management'],
         ],
         '📚 Development' => [
@@ -302,11 +310,6 @@
         'Suppliers' => [
             ['key' => 'payables', 'label' => 'Supplier Bills & Balances'],
         ],
-        'Farm Costs' => [
-            ['key' => 'purchases', 'label' => 'Farm Purchases'],
-            ['key' => 'production', 'label' => 'Production Costs'],
-            ['key' => 'veterinary', 'label' => 'Veterinary Costs'],
-        ],
         'Inventory' => [
             ['key' => 'inventory', 'label' => 'Inventory & Stores'],
         ],
@@ -321,6 +324,11 @@
         ],
         '📈 Reports' => [
             ['key' => 'reports', 'label' => 'Financial Reports'],
+            ['key' => 'profitability-report', 'label' => 'Profitability'],
+            ['key' => 'unit-costs-report', 'label' => 'Unit Costs'],
+            ['key' => 'expenditure-analysis-report', 'label' => 'Expenditure Analysis'],
+            ['key' => 'profit-analysis-report', 'label' => 'Profit Analysis'],
+            ['key' => 'performance-analysis-report', 'label' => 'P&L Performance Analysis'],
         ],
         '⚙️ Administration' => [
             ['key' => 'approvals', 'label' => 'Approval Tracking'],
@@ -339,8 +347,6 @@
             ['key'=>'sales','label'=>'Inventory','screen'=>'inventory'],
         ],
         '📈 Reports' => [
-            ['key'=>'sales','label'=>'Sales Report','screen'=>'reports'],
-            ['key'=>'sales','label'=>'Sales Analysis','screen'=>'analysis'],
         ],
         'Communication' => [
             ['key'=>'messages','label'=>'Messages & Updates'],
@@ -351,6 +357,11 @@
        Sales reports). Match the complete destination so only the link for the
        page being viewed is highlighted and expanded. */
     $navItemIsActive = function (array $item) use ($currentKey): bool {
+        if (($item['key'] ?? null) === 'profitability-report') return request()->routeIs('finance.reports.profitability');
+        if (($item['key'] ?? null) === 'unit-costs-report') return request()->routeIs('finance.reports.unit-costs');
+        if (($item['key'] ?? null) === 'expenditure-analysis-report') return request()->routeIs('finance.reports.expenditure-analysis');
+        if (($item['key'] ?? null) === 'profit-analysis-report') return request()->routeIs('finance.reports.profit-analysis');
+        if (($item['key'] ?? null) === 'performance-analysis-report') return request()->routeIs('finance.reports.performance-analysis');
         if (isset($item['page'])) {
             $page = $item['page'];
             if ($page === 'production') return request()->routeIs('operations.reports*');
@@ -388,6 +399,10 @@
     unset($productionSections['Plan & Resources']);
 
     $hrSections = [
+        'HR Data Entry' => [
+            ['key' => 'hr-entry', 'label' => 'HR Data Entry'],
+            ['key' => 'accommodation', 'label' => 'Staff Accommodation'],
+        ],
         'People & Payroll' => array_merge($hrSections['👥 Employees'], $hrSections['💰 Payroll']),
         'Welfare & Development' => array_merge($hrSections['❤️ Welfare'], $hrSections['📚 Development']),
         'Administration & Fleet' => $hrSections['🚚 Administration & Fleet'],
@@ -450,7 +465,7 @@
                                     'hr' => route('employees.index'),
                                     'customers' => route('owner.customers'),
                                     'directives' => route('directives.index'),
-                                    'sales' => route('sales.index', ['screen' => $item['screen'] ?? 'setup']),
+                                    'sales' => route('sales.index', array_filter(['screen' => $item['screen'] ?? 'setup', 'analysis_view' => $item['analysis_view'] ?? null])),
                                     'budget' => route('finance.budgets.index'),
                                     'purchases' => route('finance.farm.purchases'),
                                     'assets' => route('finance.assets.index'),
@@ -480,6 +495,7 @@
                             'reports', 'notifications' => route('executive.index',['screen'=>$item['key']]),
                             'pa-finance-reports' => route('finance.reports.index'),
                             'pa-profitability-reports' => route('finance.reports.profitability'),
+                            'pa-unit-costs-reports' => route('finance.reports.unit-costs'),
                             'pa-sales-reports' => route('sales.index',['screen'=>'reports']),
                             'pa-hr-reports' => route('hr.reports.index'),
                             'pa-production-reports' => route('operations.reports'),
@@ -557,7 +573,7 @@
                     <summary>{{ $section }}</summary>
                     @foreach ($items as $item)
                         @continue(in_array($item['key'], ['settings', 'notifications'], true))
-                        @if ($user->canAccess($item['key']) || ($isSalesManager && $item['key'] === 'sales') || in_array($item['key'], ['department-budget','customers'], true) || ($isFinanceUser && in_array($item['key'], ['sales','reports','accounts'], true)))
+                        @if ($user->canAccess($item['key']) || ($isHrManager && in_array($item['key'], ['hr-entry', 'accommodation', 'vehicles'], true)) || ($isSalesManager && $item['key'] === 'sales') || in_array($item['key'], ['department-budget','customers'], true) || ($isFinanceUser && in_array($item['key'], ['sales','reports','accounts','profitability-report','unit-costs-report','expenditure-analysis-report','profit-analysis-report','performance-analysis-report'], true)))
                             @php
                                 $href = $isSalesManager
                                     ? match ($item['key']) {
@@ -570,6 +586,9 @@
                                     : ($isHrManager
                                     ? match ($item['key']) {
                                         'hr' => route('employees.index'),
+                                        'hr-entry' => route('hr.data-entry.index'),
+                                        'accommodation' => route('hr.accommodation.index'),
+                                        'vehicles' => route('hr.vehicles.index'),
                                         'reports' => route('hr.reports.index'),
                                         'kpi-dashboards' => route('hr.kpis.index'),
                                         'staff-performance' => route('poultry.performance.index'),
@@ -597,6 +616,11 @@
                                         'production' => route('finance.farm.production'),
                                         'veterinary' => route('finance.farm.veterinary'),
                                         'reports' => route('finance.reports.index'),
+                                        'profitability-report' => route('finance.reports.profitability'),
+                                        'unit-costs-report' => route('finance.reports.unit-costs'),
+                                        'expenditure-analysis-report' => route('finance.reports.expenditure-analysis'),
+                                        'profit-analysis-report' => route('finance.reports.profit-analysis'),
+                                        'performance-analysis-report' => route('finance.reports.performance-analysis'),
                                         'sales' => route('sales.index', ['screen' => $item['screen'] ?? 'setup']),
                                         'kpi-dashboards' => route('finance.reports.kpis'),
                                         'profit-loss', 'balance-sheet', 'cash-flow', 'trial-balance' => route('finance.reports.statement', ['report' => $item['key']]),

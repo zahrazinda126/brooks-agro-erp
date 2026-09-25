@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title','Poultry Feed Verification')
 @section('content')
-<div class="page-head"><p class="eyebrow">Two-person verification</p><h2>Feeds Delivery</h2><p>Production records supplier weights before dispatch. The Farm Store Manager independently records arrival weights and the system calculates variance.</p></div>
+<div class="page-head"><p class="eyebrow">Two-person verification</p><h2>Feeds Delivery</h2></div>
 
 @if($canFarmReceive && $storeCards->isNotEmpty())
 <nav class="inventory-store-nav feed-store-nav" aria-label="Inventory stores">
@@ -11,7 +11,6 @@
 </nav>
 @endif
 
-<div class="approval-timeline feed-workflow"><div class="approval-step"><strong>1. Supplier weighing</strong><span>Production Manager</span><small>Before leaving the supplier</small></div><div class="approval-step"><strong>2. Farm weighing</strong><span>Farm Store Manager</span><small>On arrival at the farm</small></div><div class="approval-step"><strong>3. Variance & stock</strong><span>Automatic</span><small>After farm receipt</small></div></div>
 
 @if($canFarmReceive)
 @php($pendingDeliveries=$deliveries->where('status','awaiting_farm_receipt'))
@@ -28,10 +27,10 @@
 
 @if($canDispatch)
 <form method="POST" action="{{ route('operations.feed-stock.store') }}" class="exec-panel feed-sheet" id="feedDelivery">@csrf
- <div class="section-heading"><div><p class="card-label">Production Manager · Step 1</p><h3>Record weights at the supplier</h3><p>Farm weights are deliberately unavailable here. The Farm Store Manager records them independently.</p></div></div>
  <div class="form-grid"><div class="field"><label>Tuesday delivery date</label><input type="date" name="delivery_date" value="{{ now()->isTuesday()?now()->toDateString():now()->previous('Tuesday')->toDateString() }}" required></div><div class="field"><label>Quantity ordered (kg)</label><input type="number" step="0.01" min="0.01" name="quantity_ordered_kg" id="orderedKg" value="{{ old('quantity_ordered_kg') }}" required></div><div class="field"><label>Supplier</label><input name="supplier" required></div><div class="field"><label>Vehicle number</label><input name="vehicle_number"></div><div class="field"><label>Driver name</label><input name="driver_name"></div><div class="field"><label>Farm representative at supplier</label><input name="farm_representative"></div><div class="field"><label>Delivery reference</label><input name="reference"></div></div>
- <div class="feed-entry-head"><div><p class="card-label">Dispatch weights</p><h3>Supplier weighing sheet</h3></div><button type="button" class="btn btn--quiet btn--inline" id="addBag">Add weight entry</button></div>
+ <div class="feed-entry-head"><div><p class="card-label">Dispatch weights</p><h3>Supplier weighing sheet</h3></div></div>
  <div class="table-wrap"><table class="feed-entry-table"><thead><tr><th>No.</th><th>Feed</th><th>Weight from store (kg) <small>(fill here)</small></th><th>Weight at farm (kg) <small>(locked)</small></th><th>Action</th></tr></thead><tbody id="bags"></tbody></table></div>
+ <div style="display:flex;justify-content:flex-end;margin-top:12px;"><button type="button" class="btn btn--quiet btn--inline" id="addBag">Add weight entry</button></div>
  <template id="bagTemplate"><tr><td data-row></td><td><select data-feed required>@foreach($feeds as $feed)<option>{{ $feed }}</option>@endforeach</select></td><td><input data-store type="number" step="0.01" min="0.01" required></td><td><input type="number" disabled placeholder="Store Manager fills this"></td><td><button type="button" class="btn btn--quiet btn--small" data-remove>Remove</button></td></tr></template>
  <div class="feed-delivery-totals"><div><span>Quantity ordered</span><strong id="totalOrdered">0.00 kg</strong></div><div><span>Supplier weight</span><strong id="totalSupplier">0.00 kg</strong></div><div><span>Status after saving</span><strong>Awaiting farm receipt</strong></div></div><div class="field"><label>Dispatch notes</label><textarea name="notes"></textarea></div><div class="form-actions"><button class="btn">Save dispatch & notify Farm Store Manager</button></div>
 </form>

@@ -92,7 +92,7 @@ class DashboardController extends Controller
         if ($isFinanceManager) return ['finance-dashboard'];
         if ($isPersonalAssistant) return ['pa-dashboard'];
         if ($isHrManager) return ['hr-dashboard'];
-        if ($isProductionManager) $panels[] = 'production-overview';
+        if ($isProductionManager) return ['production-overview'];
 
         if ($user->canAccess('batches') && ! $isProductionManager) {
             $panels[] = 'flocks';
@@ -157,7 +157,7 @@ class DashboardController extends Controller
 
         if ($user->canAccess('inventory')) {
             $balanceSql="coalesce(sum(case when movement_type in ('received','return','adjustment_in','transfer_in') then quantity else -quantity end),0)";
-            $stockItems=InventoryItem::query()->select('inventory_items.*')->selectSub(fn($q)=>$q->from('inventory_movements')->whereColumn('inventory_item_id','inventory_items.id')->selectRaw($balanceSql),'balance')->get();
+            $stockItems=InventoryItem::query()->select('inventory_items.*')->selectSub(fn($q)=>$q->from('inventory_movements')->whereColumn('inventory_item_id','inventory_items.id')->where('receipt_status','confirmed')->selectRaw($balanceSql),'balance')->get();
             $data['stock']=['items'=>$stockItems->count(),'low'=>$stockItems->filter(fn($item)=>(float)$item->balance<=(float)$item->reorder_level)->count(),'feedLines'=>DB::table('feed_stock_movements')->select('unit_code','feed_name')->groupBy('unit_code','feed_name')->get()->count()];
         }
 
@@ -387,6 +387,16 @@ class DashboardController extends Controller
 
     private function productionOverview(): array
     {
+        $eggRecords = EggCollection::whereBetween('collected_on', [now()->startOfMonth()->subMonths(11)->toDateString(), today()->toDateString()])
+            ->whereIn('status', ['approved', 'submitted', 'pending'])
+            ->selectRaw('collected_on, sum(total_eggs) as total_eggs, sum(damaged_eggs) as damaged_eggs')
+            ->groupBy('collected_on')->get();
+        $monthly = collect(range(11, 0))->map(function (int $offset) use ($eggRecords) {
+            $date = now()->startOfMonth()->subMonths($offset);
+            $rows = $eggRecords->filter(fn ($row) => $row->collected_on->format('Y-m') === $date->format('Y-m'));
+            return ['label' => $date->format('M'), 'period' => $date->format('M Y'),
+                'eggs' => (int) $rows->sum('total_eggs'), 'damaged' => (int) $rows->sum('damaged_eggs')];
+        });
         $activityStart=now()->subDays(30)->toDateString();
         $poultryHouses = AnimalGroup::where('status', 'active')->where('current_quantity', '>', 0)
             ->orderByRaw("coalesce(house, code)")->get();
@@ -408,7 +418,9 @@ class DashboardController extends Controller
             ['code'=>'dogs','label'=>'Dogs','icon'=>'🐕','value'=>LivestockAnimal::where('unit_code','dogs')->where('status','active')->count(),'measure'=>'animals','activity'=>FarmUnitRecord::where('unit_code','dogs')->where('record_date','>=',$activityStart)->count()],
             ['code'=>'garden','label'=>'Garden','icon'=>'🌱','value'=>FarmUnitRecord::where('unit_code','garden')->where('record_type','plot')->distinct('subject')->count('subject'),'measure'=>'plots','activity'=>FarmUnitRecord::where('unit_code','garden')->where('record_date','>=',$activityStart)->count()],
         ]);
-        return ['units'=>$units,'needsAttention'=>FarmUnitRecord::where('status','needs_attention')->count(),'activity'=>$units->sum('activity'),
+        return ['monthly'=>$monthly, 'eggsToday'=>(int)$eggRecords->filter(fn ($row) => $row->collected_on->isToday())->sum('total_eggs'),
+            'eggsMonth'=>$monthly->last()['eggs'], 'damagedMonth'=>$monthly->last()['damaged'],
+            'units'=>$units,'needsAttention'=>FarmUnitRecord::where('status','needs_attention')->count(),'activity'=>$units->sum('activity'),
             'feedPlan'=>$feedPlan, 'dailyFeedKg'=>(float)$feedPlan->sum('requiredKg'),
             'recordedFeedKg'=>(float)$feedPlan->sum('recordedKg'), 'feedShortageKg'=>(float)$feedPlan->sum('shortageKg'),
             'totalBirds'=>(int)$feedPlan->sum('birds')];

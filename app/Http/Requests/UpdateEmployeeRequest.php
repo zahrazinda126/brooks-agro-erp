@@ -17,7 +17,7 @@ class UpdateEmployeeRequest extends FormRequest
         $id = $this->route('employee')->id;
 
         return [
-            'staff_no'    => ['required', 'string', 'max:30',
+            'staff_no'    => ['required', 'string', 'max:30', 'regex:/^BAF [0-9]{3,}$/',
                               Rule::unique('employees', 'staff_no')->ignore($id)],
             'first_name'  => ['required', 'string', 'max:80'],
             'last_name'   => ['required', 'string', 'max:80'],

@@ -27,10 +27,13 @@ class ExecutiveController extends Controller
         'settings' => 'Company & System Settings',
     ];
 
-    public function index(Request $request, string $screen): View
+    public function index(Request $request, string $screen): View|RedirectResponse
     {
         abort_unless(isset(self::TITLES[$screen]), 404);
         $this->authorizeExecutive($request, $screen);
+        if ($screen === 'reports') {
+            return redirect()->route('finance.reports.index');
+        }
 
         $month = FinancialTransaction::whereBetween('transaction_date', [now()->startOfMonth(), now()->endOfMonth()])->get();
         $trend = collect(range(5, 0))->map(function (int $monthsAgo) {

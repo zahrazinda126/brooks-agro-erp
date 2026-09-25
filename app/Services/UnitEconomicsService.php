@@ -38,6 +38,7 @@ class UnitEconomicsService
         $lifeCycles = $selected === 'Poultry'
             ? $this->poultryLifeCycles($to)
             : ($selected && $selected !== 'Garden' ? $this->livestockLifeCycles(strtolower($selected), $to) : collect());
+        $accountProfitability = $this->accountProfitability($from, $to);
 
         return [
             'units'=>$unitRows,
@@ -49,7 +50,79 @@ class UnitEconomicsService
             'from'=>$from,
             'to'=>$to,
             'unitOptions'=>self::UNITS,
+            'accountProfitability'=>$accountProfitability,
         ];
+    }
+
+    private function accountProfitability(string $from, string $to): array
+    {
+        $catalog = config('finance_entry.profitability_accounts', []);
+        $values = collect($catalog)->mapWithKeys(fn ($accounts, $section) => [
+            $section => collect($accounts)->mapWithKeys(fn ($name, $code) => [$name => 0.0]),
+        ]);
+
+        $saleLines = SaleLine::whereHas('sale', fn ($query) => $query
+            ->whereBetween('sale_date', [$from, $to])->where('status', '!=', 'void'))->get();
+        foreach ($saleLines as $line) {
+            $text = str((string) $line->category.' '.(string) $line->description)->lower();
+            $account = match (true) {
+                $text->contains('damaged') => 'Sales Damaged Eggs',
+                $text->contains('starter') => 'Sales Starter Eggs',
+                $text->contains('medium') => 'Sales Medium Eggs',
+                $text->contains('large') => 'Sales Large Eggs',
+                $text->contains('off layer') => 'Sales Off Layers',
+                $text->contains('manure') => 'Sales Manure',
+                $text->contains('rabbit') && $text->contains('meat') => 'Rabbit Meat Sales',
+                $text->contains('goat') && $text->contains('meat') => 'Goat Meat Sales',
+                $text->contains('garden') => 'Garden Sales',
+                $text->contains('rabbit') => 'Rabbit Sales',
+                $text->contains('goat') => 'Goat Sales',
+                default => 'Other Sales',
+            };
+            $revenueValues = $values->get('Revenue');
+            if ($revenueValues?->has($account)) $revenueValues->put($account, (float) $revenueValues->get($account) + (float) $line->line_total);
+        }
+
+        $transactions = FinancialTransaction::whereBetween('transaction_date', [$from, $to])->get();
+        $welfare = ['Staff Medication', 'Condolence Support', 'Medical Support', 'Emergency Support', 'Other Staff Welfare'];
+        foreach ($transactions as $transaction) {
+            $account = (string) $transaction->entry_account;
+            $account = match ($account) {
+                'Interest Income' => 'Interest Earned',
+                'Dividend Income' => 'Dividend Earned',
+                'Poultry Manure' => 'Sales Manure',
+                'goats manure Sales' => 'Goats Manure Sales',
+                'rabbits manure' => 'Rabbits Manure Sales',
+                default => $account,
+            };
+            $revenueValues = $values->get('Revenue');
+            if ($transaction->type === 'money_received' && $revenueValues?->has($account)) {
+                $revenueValues->put($account, (float) $revenueValues->get($account) + (float) $transaction->amount);
+                continue;
+            }
+            if ($transaction->type !== 'money_paid' && ! str_starts_with($account, 'Depreciation - ')) continue;
+            if (in_array($account, ['Salary Withdrawal', 'Staff Advance'], true)) continue;
+            if (in_array($account, $welfare, true)) $account = 'Staff Welfare Related Costs';
+            if ($account === 'Casual Wages') $account = 'Salary Expense';
+            if ($account === 'Staff Reimbursement') $account = 'Other Expenses';
+            foreach (['Cost of Sales', 'Operating Costs'] as $section) {
+                $sectionValues = $values->get($section);
+                if ($sectionValues?->has($account)) $sectionValues->put($account, (float) $sectionValues->get($account) + (float) $transaction->amount);
+            }
+        }
+
+        $sections = collect($catalog)->map(function ($accounts, $section) use ($values) {
+            return [
+                'name'=>$section,
+                'rows'=>collect($accounts)->map(fn ($name, $code) => ['code'=>(string)$code, 'account'=>$name, 'amount'=>(float)$values[$section][$name]])->values(),
+                'total'=>(float)$values[$section]->sum(),
+            ];
+        })->values();
+        $revenue = (float) data_get($sections->firstWhere('name', 'Revenue'), 'total', 0);
+        $costOfSales = (float) data_get($sections->firstWhere('name', 'Cost of Sales'), 'total', 0);
+        $operatingCosts = (float) data_get($sections->firstWhere('name', 'Operating Costs'), 'total', 0);
+
+        return ['sections'=>$sections, 'grossProfit'=>$revenue-$costOfSales, 'netProfit'=>$revenue-$costOfSales-$operatingCosts];
     }
 
     private function salesRevenue(string $unit, string $from, string $to): float

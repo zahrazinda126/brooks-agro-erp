@@ -1,3 +1,4 @@
+@php($showBatchCosts = !auth()->user()->isProductionUser())
 ﻿{{--
     Shared by create and edit.
 
@@ -10,7 +11,7 @@
     <p class="card-label">What arrived</p>
 
     <div class="form-grid">
-        @if(!isset($batch) && isset($batchOrders))<div class="field field--wide"><label for="batch_order_id">Finance pre-arrival order</label><select id="batch_order_id" name="batch_order_id"><option value="">No finance order / legacy arrival</option>@foreach($batchOrders as $order)<option value="{{ $order->id }}" data-supplier="{{ $order->supplier_name }}" data-breed="{{ $order->breed }}" data-quantity="{{ $order->quantity_ordered }}" data-total="{{ $order->order_total }}" @selected(old('batch_order_id')==$order->id)>{{ $order->order_number }} · {{ $order->supplier_name }} · {{ number_format($order->quantity_ordered) }} birds · paid UGX {{ number_format($order->paidAmount()) }}</option>@endforeach</select><p class="field-hint">Finance owns all payments. Production selects the order and records only arrival quantities, condition, housing and other production details.</p></div>@endif
+        @if(!isset($batch) && isset($batchOrders))<div class="field field--wide"><label for="batch_order_id">Finance pre-arrival order</label><select id="batch_order_id" name="batch_order_id"><option value="">No finance order / legacy arrival</option>@foreach($batchOrders as $order)<option value="{{ $order->id }}" data-supplier="{{ $order->supplier_name }}" data-breed="{{ $order->breed }}" data-quantity="{{ $order->quantity_ordered }}" @if($showBatchCosts) data-total="{{ $order->order_total }}" @endif @selected(old('batch_order_id')==$order->id)>{{ $order->order_number }} · {{ $order->supplier_name }} · {{ number_format($order->quantity_ordered) }} birds · paid UGX {{ number_format($order->paidAmount()) }}</option>@endforeach</select><p class="field-hint">Finance owns all payments. Production selects the order and records only arrival quantities, condition, housing and other production details.</p></div>@endif
         <div class="field @error('code') field--error @enderror">
             <label for="code">Batch code</label>
             <input id="code" name="code" type="text"
@@ -146,6 +147,7 @@
         </div>
         @endif
 
+        @if($showBatchCosts)
         <div class="field @error('unit_cost') field--error @enderror">
             <label for="unit_cost">Cost per bird (UGX)</label>
             <input id="unit_cost" name="unit_cost" type="number"
@@ -164,6 +166,8 @@
             <p class="field-hint">Enter this instead of cost per bird to calculate the unit cost.</p>
         </div>
 
+        @endif
+
         {{-- Three figures, because the free birds change two of them. --}}
         <div class="field field--wide">
             <div class="arrival-summary">
@@ -171,6 +175,7 @@
                     <span class="figure" data-total-birds>&mdash;</span>
                     <span class="figure-unit">Live birds to allocate</span>
                 </div>
+                @if($showBatchCosts)
                 <div>
                     <span class="figure" data-total-cost>&mdash;</span>
                     <span class="figure-unit">UGX &middot; total paid</span>
@@ -179,16 +184,20 @@
                     <span class="figure" data-real-cost>&mdash;</span>
                     <span class="figure-unit">UGX &middot; real cost per bird</span>
                 </div>
+                @endif
             </div>
+            @if($showBatchCosts)
             <p class="field-hint" style="margin-top:8px;">
                 The free birds lower the real cost per bird. That is the point of
                 a supplier giving them, and the figure the farm should judge the
                 deal on.
             </p>
+            @endif
         </div>
     </div>
 </div>
 
+@if(!auth()->user()->isProductionUser())
 <div class="card">
     <p class="card-label">Where it came from</p>
 
@@ -211,6 +220,8 @@
         </div>
     </div>
 </div>
+
+@endif
 
 @if (! isset($batch))
 <div class="card">
@@ -273,15 +284,15 @@
     function recalc() {
         var p = parseInt(paid.value, 10) || 0;
         var f = parseInt(free.value, 10) || 0;
-        var c = parseFloat(cost.value) || 0;
+        var c = parseFloat(cost && cost.value) || 0;
 
         var d = parseInt(transitDeaths && transitDeaths.value, 10) || 0;
         var birds = Math.max(0, p + f - d);
         var total = p * c;
 
         outBirds.textContent = birds ? birds.toLocaleString() : '\u2014';
-        outCost.textContent  = total ? Math.round(total).toLocaleString() : '\u2014';
-        outReal.textContent  = (birds && total)
+        if (outCost) outCost.textContent  = total ? Math.round(total).toLocaleString() : '\u2014';
+        if (outReal) outReal.textContent  = (birds && total)
             ? Math.round(total / birds).toLocaleString()
             : '\u2014';
 

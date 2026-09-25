@@ -32,6 +32,7 @@ class MortalityCause extends Model
             'predator'    => 'Predator or theft',
             'injury'      => 'Injury',
             'culling'     => 'Culled on purpose',
+            'other'       => 'Other recorded causes',
             default       => 'Not established',
         };
     }

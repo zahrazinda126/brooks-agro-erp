@@ -8,7 +8,7 @@
     @csrf @method('PUT')
     <section class="form-card">
         <div class="form-grid">
-            <div class="field"><label for="username">Username</label><input id="username" name="username" value="{{ old('username', $account->username) }}" required autocapitalize="none"><small class="field-hint">Lowercase letters, numbers, dots, dashes or underscores.</small></div>
+            <div class="field"><label for="username">Username</label><input id="username" name="username" value="{{ old('username', $account->username) }}" required autocapitalize="none"><small class="field-hint">Staff number such as BAF 001, or lowercase letters, numbers, dots, dashes or underscores.</small></div>
             <div class="field"><label for="email">Email address</label><input type="email" id="email" name="email" value="{{ old('email', $account->email) }}"></div>
             <div class="field"><label for="role_id">Access role</label><select id="role_id" name="role_id" required>@foreach($roles as $role)<option value="{{ $role->id }}" @selected((int)old('role_id',$account->role_id)===$role->id)>{{ $role->name }}</option>@endforeach</select><small class="field-hint">Only roles below your own authority can be assigned.</small></div>
             <div class="field"><label for="department_id">Department</label><select id="department_id" name="department_id"><option value="">Use employment department</option>@foreach($departments as $department)<option value="{{ $department->id }}" @selected((int)old('department_id',$account->department_id)===$department->id)>{{ $department->name }}</option>@endforeach</select></div>

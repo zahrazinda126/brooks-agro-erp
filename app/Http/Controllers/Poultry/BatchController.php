@@ -119,7 +119,8 @@ class BatchController extends Controller
         if (isset($data['total_cost'])) {
             $data['unit_cost'] = round((float) $data['total_cost'] / $data['quantity_received'], 2);
         } else {
-            $data['total_cost'] = round($data['quantity_received'] * (float) $data['unit_cost'], 2);
+            $data['unit_cost'] = (float) ($data['unit_cost'] ?? 0);
+            $data['total_cost'] = round($data['quantity_received'] * $data['unit_cost'], 2);
         }
         $data['created_by']       = $request->user()->id;
         $data['status']           = 'active';
@@ -216,7 +217,10 @@ class BatchController extends Controller
         $before = $batch->only(array_keys($data));
 
         // Only the paid birds carry cost. Free extras never do.
-        if (isset($data['total_cost'])) {
+        if ($request->user()->isProductionUser()) {
+            // Arrival corrections must not overwrite Finance's recorded costs.
+            unset($data['unit_cost'], $data['total_cost']);
+        } elseif (isset($data['total_cost'])) {
             $data['unit_cost'] = round((float) $data['total_cost'] / $data['quantity_received'], 2);
         } else {
             $data['total_cost'] = round($data['quantity_received'] * (float) $data['unit_cost'], 2);

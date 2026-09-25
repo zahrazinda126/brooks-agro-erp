@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class VaccinationPlan extends Model
 {
     protected $fillable = [
-        'medication_id', 'breed_id', 'purpose', 'age_days', 'window_days',
+        'animal_group_id', 'medication_id', 'breed_id', 'purpose', 'age_days', 'window_days',
         'repeat_every_days', 'repeat_until_days',
         'is_essential', 'note', 'is_active',
     ];
@@ -35,10 +35,16 @@ class VaccinationPlan extends Model
         return $this->belongsTo(Breed::class);
     }
 
+    public function batch(): BelongsTo
+    {
+        return $this->belongsTo(AnimalGroup::class, 'animal_group_id');
+    }
+
     public function scopeFor($query, AnimalGroup $batch)
     {
         return $query
             ->where('is_active', true)
+            ->where(fn ($q) => $q->whereNull('animal_group_id')->orWhere('animal_group_id', $batch->id))
             ->where('purpose', $batch->purpose === 'broiler' ? 'broiler' : 'layer')
             ->where(function ($q) use ($batch) {
                 $q->whereNull('breed_id')->orWhere('breed_id', $batch->breed_id);

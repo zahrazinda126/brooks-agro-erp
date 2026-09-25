@@ -14,14 +14,14 @@
         <div class="field @error('staff_no') field--error @enderror">
             <label for="staff_no">Staff number</label>
             <input id="staff_no" name="staff_no" type="text"
-                   value="{{ old('staff_no', $employee->staff_no ?? $nextStaffNo ?? '') }}"
-                   @if (! isset($employee)) readonly @endif>
+                   value="{{ old('staff_no', $employee->staff_no ?? $nextStaffNo ?? '') }}">
             @error('staff_no')<p class="field-error">{{ $message }}</p>@enderror
             @if (! isset($employee))
                 <p class="field-hint">
-                    Allocated on save, from the series for the kind of worker
-                    chosen below. Numbers are never reused.
+                    Use BAF 001, BAF 002 and so on, or keep the suggested number.
                 </p>
+            @else
+                <p class="field-hint">You can change this number. Use a unique number such as BAF 001. The login username is edited separately under the employee's account.</p>
             @endif
         </div>
 

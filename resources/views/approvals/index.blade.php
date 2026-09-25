@@ -2,17 +2,6 @@
 
 @section('title', 'Approval Queue')
 @section('content')
-<div class="page-head">
-    <div><p class="eyebrow">Executive control</p><h1>Approval Queue</h1><p>Review submitted requests and leave a clear decision trail.</p></div>
-</div>
-
-<div class="card" style="margin-bottom:1rem">
-    <a class="btn {{ $status === 'pending' ? '' : 'btn--ghost' }}" href="{{ route('approvals.index') }}">Pending</a>
-    <a class="btn btn--ghost" href="{{ route('approvals.index', ['status' => 'approved']) }}">Approved</a>
-    <a class="btn btn--ghost" href="{{ route('approvals.index', ['status' => 'sent']) }}">Sent to Director</a>
-    <a class="btn btn--ghost" href="{{ route('approvals.index', ['status' => 'rejected']) }}">Rejected</a>
-</div>
-
 @if($ownApprovalRoles->isNotEmpty())
 <details class="card disclosure" style="margin-bottom:1rem"><summary><span><strong>Approval cover while I am absent</strong><small>Temporarily authorize another active user to approve on your behalf</small></span></summary><div class="disclosure__body">
     <form method="POST" action="{{ route('approvals.delegations.store') }}" class="form-grid">@csrf

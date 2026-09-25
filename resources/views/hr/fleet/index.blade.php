@@ -1,12 +1,12 @@
 @extends('layouts.app')
 @section('title','Daily Fleet Management')
 @section('content')
-<div class="page-head"><p class="eyebrow">HR & Administration</p><h2>Daily Fleet Management</h2><p>Vehicle journeys, mileage, fuel efficiency, costs and service reminders.</p></div>
+<div class="page-head page-head--split"><div><p class="eyebrow">HR & Administration</p><h2>Daily Fleet Management</h2><p>Vehicle journeys, mileage, fuel efficiency, costs and service reminders.</p></div><a class="btn btn--quiet btn--inline" href="{{ route('hr.vehicles.index') }}">Vehicle register</a></div>
 @if($vehicleSummaries->isNotEmpty())<div class="summary-grid">@foreach($vehicleSummaries as $vehicle)<div class="summary-card"><span>{{ $vehicle['vehicle'] }}</span><strong>{{ number_format($vehicle['distance'],1) }} km</strong><small>{{ $vehicle['fuel']>0?number_format($vehicle['distance']/$vehicle['fuel'],2).' km/L':'Fuel efficiency pending' }}</small>@if($vehicle['service_at']!==null)<small style="color:{{ (float)$vehicle['odometer']>=(float)$vehicle['service_at']?'#b4232a':'inherit' }}">{{ (float)$vehicle['odometer']>=(float)$vehicle['service_at']?'Service due now':number_format((float)$vehicle['service_at']-(float)$vehicle['odometer'],1).' km to service' }}</small>@endif</div>@endforeach</div>@endif
 @if($canRecord)<form method="POST" action="{{ route('hr.fleet.store') }}" class="exec-panel" enctype="multipart/form-data">@csrf
 <h3>Add fleet journey</h3><div class="form-grid">
 <div class="field"><label>Date</label><input type="date" name="recorded_on" value="{{ old('recorded_on',now()->toDateString()) }}" required></div>
-<div class="field"><label>Vehicle ID / registration</label><input name="vehicle_id" value="{{ old('vehicle_id') }}" required></div>
+<div class="field"><label>Company vehicle</label><select name="vehicle_id" required><option value="">Choose registered vehicle</option>@foreach($vehicles as $vehicle)<option value="{{ $vehicle->registration_number }}" @selected(old('vehicle_id') === $vehicle->registration_number)>{{ $vehicle->registration_number }}{{ $vehicle->make_model ? ' · '.$vehicle->make_model : '' }}</option>@endforeach</select><small>Only active company vehicles can be used. <a href="{{ route('hr.vehicles.index') }}">Register a vehicle</a>.</small></div>
 <div class="field"><label>Driver name</label><input name="driver_name" value="{{ old('driver_name') }}" required></div>
 <div class="field"><label>Set-off date and time</label><input type="datetime-local" name="set_off_at" value="{{ old('set_off_at') }}"></div>
 <div class="field"><label>Pick-up point</label><input name="pickup_point" value="{{ old('pickup_point') }}"></div>

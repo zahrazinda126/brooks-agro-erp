@@ -1,10 +1,17 @@
 @extends('layouts.app')
 @section('title','Daily Department Reports')
 @section('content')
+<div class="daily-report-print">
 <x-report-header eyebrow="Daily reporting protocol" title="Daily Department Reports" description="Unit reports are reviewed by the CEO, then combined automatically into one report for each department." :period="\Carbon\Carbon::parse($date)->format('l, d F Y')"><x-slot:actions><form method="GET"><input type="date" name="date" value="{{ $date }}" onchange="this.form.submit()"></form><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button></x-slot:actions></x-report-header>
 @if($dailySummary && $summaryMode)
     @if($summaryMode === 'finance')
-        @php($financeApproved = $rows->get('finance', collect())->isNotEmpty() && $rows->get('finance', collect())->every(fn($report) => $report->status === 'ceo_reviewed'))
+        @php
+            $financeRows = $rows->get('finance', collect());
+            $financeApproved = $financeRows->isNotEmpty()
+                && $financeRows->every(function ($report) {
+                    return $report->status === 'ceo_reviewed';
+                });
+        @endphp
         <section class="report-preview-heading">
             <div>
                 <p class="card-label">Finance departmental report</p>
@@ -60,13 +67,25 @@
     @endif
 @endif
 @if($hrSummary)
-    @php($hrApproved = $rows->get('hr', collect())->isNotEmpty() && $rows->get('hr', collect())->every(fn($report) => $report->status === 'ceo_reviewed'))
+    @php
+        $hrRows = $rows->get('hr', collect());
+        $hrApproved = $hrRows->isNotEmpty()
+            && $hrRows->every(function ($report) {
+                return $report->status === 'ceo_reviewed';
+            });
+    @endphp
     <section class="report-preview-heading"><div><p class="card-label">HR &amp; Administration departmental report</p><h2>Submitted HR daily report</h2><p>The CEO reviews and approves this complete template.</p></div><span class="status-pill">{{ $hrApproved ? 'CEO approved' : 'Awaiting CEO review' }}</span></section>
     @include('daily-reports.partials.hr-legacy', ['snapshot'=>$hrSummary, 'date'=>$date, 'departmentRows'=>$rows->get('hr', collect()), 'submitted'=>$rows->get('hr', collect())->whereIn('status',['manager_shared','changes_requested','ceo_reviewed'])])
     @include('daily-reports.partials.ceo-department-decision', ['departmentCode'=>'hr'])
 @endif
 @if($productionSummary)
-    @php($productionApproved = $rows->get('production', collect())->isNotEmpty() && $rows->get('production', collect())->every(fn($report) => $report->status === 'ceo_reviewed'))
+    @php
+        $productionRows = $rows->get('production', collect());
+        $productionApproved = $productionRows->isNotEmpty()
+            && $productionRows->every(function ($report) {
+                return $report->status === 'ceo_reviewed';
+            });
+    @endphp
     <section class="report-preview-heading"><div><p class="card-label">Production departmental report</p><h2>Submitted production report</h2><p>The CEO reviews and approves this complete template.</p></div><span class="status-pill">{{ $productionApproved ? 'CEO approved' : 'Awaiting CEO review' }}</span></section>
     @include('daily-reports.partials.production-legacy', ['snapshot'=>$productionSummary, 'date'=>$date])
     @include('daily-reports.partials.ceo-department-decision', ['departmentCode'=>'production'])
@@ -141,6 +160,7 @@
 </section>
 @endif
 @endforeach
+</div>
 <style>
 .daily-sheet{margin:14px 0 18px;padding:14px;background:#fff;border:1px solid #b8b1a8;overflow-x:auto;color:#17120f}.daily-sheet h3,.daily-sheet h4{text-align:center;margin:2px 0 8px}.daily-sheet h3{font-size:16px}.daily-sheet h4{font-size:14px}.daily-sheet table{width:100%;min-width:760px;border-collapse:collapse}.daily-sheet th,.daily-sheet td{border:1px solid #322b26;padding:10px;text-align:left;vertical-align:top}.daily-sheet th{background:#d9ead0;font-weight:800}.daily-sheet td:first-child{width:18%}.daily-sheet td:nth-child(2){width:30%}
 </style>

@@ -47,7 +47,7 @@
         </div>
 
         @if ($user->canDo('hr', 'edit'))
-            <a class="btn btn--quiet btn--inline" href="{{ route('employees.edit', $employee) }}">Edit</a>
+            <a class="btn btn--quiet btn--inline" href="{{ route('employees.edit', $employee) }}">Edit staff details</a>
         @endif
     </div>
 

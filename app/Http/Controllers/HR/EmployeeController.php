@@ -9,7 +9,6 @@ use App\Models\AuditLog;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Role;
-use App\Models\Setting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -85,9 +84,8 @@ class EmployeeController extends Controller
         return view('hr.create', [
             'departments' => $this->departments(),
             'roles'       => $this->roles(),
-            // Shown as a guide; the real number is allocated on save, once
-            // the kind of worker is known.
-            'nextStaffNo' => $this->nextStaffNo('permanent'),
+            // Shown as a guide; a blank number is allocated on save.
+            'nextStaffNo' => $this->nextStaffNo(),
         ]);
     }
 
@@ -95,12 +93,7 @@ class EmployeeController extends Controller
     {
         $data = $request->validated();
 
-        /*
-         | The number depends on what kind of worker this is, so it is
-         | allocated here rather than on the form — a builder must not
-         | consume a number from the permanent range.
-         */
-        $data['staff_no']   = $data['staff_no'] ?: $this->nextStaffNo($data['employment_type']);
+        $data['staff_no'] = $data['staff_no'] ?: $this->nextStaffNo();
         $data['created_by'] = $request->user()->id;
 
         $employee = Employee::create($data);
@@ -190,63 +183,13 @@ class EmployeeController extends Controller
         return Role::where('is_active', true)->orderBy('rank')->orderBy('name')->get();
     }
 
-    /**
-     * Next staff number for a given kind of worker.
-     *
-     * Each kind has its own series — BAF for permanent, CAS for casual, TMP
-     * for builders and other short engagements, INT for interns, VAC for
-     * holiday workers.
-     *
-     * NUMBERS ARE NEVER REUSED. Not when someone leaves, not ever. The
-     * moment BAF-0007 means two different people, every payroll line, task,
-     * performance figure and record against that number becomes ambiguous —
-     * and nobody discovers it until a payment is queried two years later.
-     *
-     * Separate series also keep a three-week builder from consuming a number
-     * in the permanent range, which is what makes the register readable at a
-     * glance: anyone can see INT-0004 is an intern without looking it up.
-     *
-     * The sequence reads the highest number ever issued in that series,
-     * including soft-deleted records, so a deletion can never cause a
-     * duplicate.
-     */
-    private function nextStaffNo(string $employmentType = 'permanent'): string
+    /** One BAF series for all staff, including previously deleted records. */
+    private function nextStaffNo(): string
     {
-        $prefix = $this->prefixFor($employmentType);
+        $highest = Employee::withTrashed()->where('staff_no', 'like', 'BAF %')->pluck('staff_no')
+            ->filter(fn ($number) => preg_match('/^BAF [0-9]+$/', $number))
+            ->map(fn ($number) => (int) substr($number, 4))->max() ?? 0;
 
-        $last = Employee::withTrashed()
-            ->where('staff_no', 'like', "{$prefix}-%")
-            ->orderByRaw('LENGTH(staff_no) DESC, staff_no DESC')
-            ->value('staff_no');
-
-        $next = $last ? ((int) substr($last, strlen($prefix) + 1)) + 1 : 1;
-
-        return sprintf('%s-%04d', $prefix, $next);
-    }
-
-    /** Which series a kind of worker belongs to. Editable in settings. */
-    private function prefixFor(string $employmentType): string
-    {
-        $key = match ($employmentType) {
-            'casual'    => 'hr.staff_no_prefix_casual',
-            'temporary' => 'hr.staff_no_prefix_temporary',
-            'intern'    => 'hr.staff_no_prefix_intern',
-            'student'   => 'hr.staff_no_prefix_student',
-            'vacist'    => 'hr.staff_no_prefix_vacist',
-            'other'     => 'hr.staff_no_prefix_other',
-            default     => 'hr.staff_no_prefix_permanent',
-        };
-
-        $fallback = match ($employmentType) {
-            'casual'    => 'CAS',
-            'temporary' => 'TMP',
-            'intern'    => 'INT',
-            'student'   => 'STU',
-            'vacist'    => 'VAC',
-            'other'     => 'OTH',
-            default     => 'BAF',
-        };
-
-        return Setting::get($key, $fallback);
+        return sprintf('BAF %03d', $highest + 1);
     }
 }

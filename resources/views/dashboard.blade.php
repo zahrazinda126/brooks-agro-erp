@@ -170,7 +170,9 @@
                     @endforelse
                 </tbody></table></div>
             </section>
-            @php($salesCashReminders = $f['salesBalances']->where('closed', false))
+            @php
+                $salesCashReminders = $f['salesBalances']->where('closed', false);
+            @endphp
             @if($salesCashReminders->isNotEmpty())
                 <section class="finance-close-reminders" aria-label="Sales cash awaiting Finance closure">
                     @foreach($salesCashReminders as $row)
@@ -183,14 +185,7 @@
             @endif
         </section>
     @elseif ($panel === 'production-overview')
-        @php
-            $po = $data['productionOverview'];
-        @endphp
-        <section class="production-overview">
-            <div class="production-hero"><div><span class="finance-panel-kicker">Farm operations</span><h3>Production control centre</h3><p>Today's feed position and poultry-house records needing management attention.</p></div><a class="btn" href="{{ route('operations.reports') }}">Open production reports</a></div>
-            <section class="feed-reminder {{ $po['feedShortageKg'] > 0 ? 'feed-reminder--attention' : 'feed-reminder--complete' }}"><div class="feed-reminder__icon" aria-hidden="true">&#9670;</div><div><span class="finance-panel-kicker">Daily feed reminder &middot; {{ now()->format('D, d M') }}</span><h3>{{ number_format($po['dailyFeedKg'], 2) }} kg required today</h3><p>Calculated for {{ number_format($po['totalBirds']) }} remaining birds at 125g per bird per day.</p></div><div class="feed-reminder__status"><small>Recorded today</small><strong>{{ number_format($po['recordedFeedKg'], 2) }} kg</strong><em>{{ $po['feedShortageKg'] > 0 ? number_format($po['feedShortageKg'], 2).' kg still to supply' : 'Daily requirement covered' }}</em></div></section>
-            <section class="exec-panel production-feed-plan"><div class="section-heading"><div><p class="card-label">House-by-house monitoring</p><h3>Bird balance and estimated feed</h3></div><a href="{{ route('poultry.report.index') }}">Review workers' entries &rarr;</a></div><div class="feed-house-list">@forelse($po['feedPlan'] as $house)<a href="{{ route('batches.show',$house['batch']) }}" class="feed-house-row"><div><strong>{{ $house['house'] }}</strong><small>{{ $house['batch']->code }} &middot; {{ number_format($house['birds']) }} birds remaining</small></div><div class="feed-house-meter"><i style="width:{{ $house['percent'] }}%"></i></div><div><small>Estimated</small><strong>{{ number_format($house['requiredKg'],2) }} kg</strong></div><div class="{{ $house['shortageKg'] > 0 ? 'feed-short' : 'feed-covered' }}"><small>{{ $house['shortageKg'] > 0 ? 'Still needed' : 'Recorded' }}</small><strong>{{ number_format($house['shortageKg'] > 0 ? $house['shortageKg'] : $house['recordedKg'],2) }} kg</strong></div></a>@empty<div class="finance-empty"><span aria-hidden="true">&#9670;</span><strong>No active poultry houses</strong><p>Open a poultry batch to begin daily feed estimates.</p></div>@endforelse</div></section>
-        </section>
+        @include('partials.production-dashboard')
 
     {{-- ============================================================
          Flocks. Trouble first, then the totals ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a supervisor opening
@@ -284,54 +279,20 @@
             $spendMax = max(1, $e['spendingByArea']->max('amount') ?? 1);
             $hasCashData = $e['monthly']->contains(fn ($month) => $month['income'] > 0 || $month['spending'] > 0);
         @endphp
-        <section class="owner-dashboard">
-            <header class="owner-hero">
-                <div><span class="finance-panel-kicker">Briefing &middot; {{ now()->format('F Y') }}</span><h3>The farm at a glance</h3><p>Financial position, production, livestock and decisions that need attention.</p></div>
-                <div class="owner-hero__actions"><a class="btn btn--quiet" href="{{ route('account.edit') }}">Edit my account</a><a class="btn" href="{{ route('executive.index', ['screen' => 'kpis']) }}">Full analysis</a></div>
-            </header>
-
-            <div class="owner-kpis">
-                <article class="owner-kpi owner-kpi--income"><span>&uarr;</span><div><small>Money received</small><strong>UGX {{ number_format($e['income']) }}</strong><em>This month</em></div></article>
-                <article class="owner-kpi owner-kpi--expense"><span>&darr;</span><div><small>Money spent</small><strong>UGX {{ number_format($e['spending']) }}</strong><em>This month</em></div></article>
-                <article class="owner-kpi owner-kpi--net"><span>&bull;</span><div><small>Net cash movement</small><strong>UGX {{ number_format($e['net']) }}</strong><em>{{ $e['net'] >= 0 ? 'Positive position' : 'Spending exceeds receipts' }}</em></div></article>
-                <article class="owner-kpi owner-kpi--attention"><span>!</span><div><small>Pending decisions</small><strong>{{ $e['pending'] }}</strong><em>{{ $e['overdue'] ? $e['overdue'].' overdue' : 'Nothing overdue' }}</em></div></article>
+        <section class="finance-simple-dashboard">
+            <div class="finance-simple-head"><div><p class="card-label">CEO dashboard</p><h2>Farm performance</h2></div><div class="form-actions"><a class="btn btn--small" href="{{ route('finance.reports.index') }}">View reports</a></div></div>
+            <div class="finance-annual-chart">@foreach($e['monthly'] as $month)<div class="finance-annual-month"><div><i class="revenue" style="height:{{ max(2, $month['income'] / $cashMax * 100) }}%" title="Income UGX {{ number_format($month['income']) }}"></i><i class="spending" style="height:{{ max(2, $month['spending'] / $cashMax * 100) }}%" title="Spending UGX {{ number_format($month['spending']) }}"></i></div><small>{{ $month['label'] }}</small></div>@endforeach</div>
+            <div class="finance-simple-legend"><span><i class="revenue"></i>Income</span><span><i class="spending"></i>Spending</span></div>
+            <div class="finance-simple-grid">
+                <section><h3>Financial position</h3><div class="finance-simple-row"><span>Money received</span><b><i style="width:{{ $e['income'] / $cashMax * 100 }}%"></i></b><strong>UGX {{ number_format($e['income']) }}</strong></div><div class="finance-simple-row"><span>Money spent</span><b><i style="width:{{ $e['spending'] / $cashMax * 100 }}%"></i></b><strong>UGX {{ number_format($e['spending']) }}</strong></div><div class="finance-simple-row"><span>Customers owe</span><b><i style="width:{{ min(100, $e['receivables'] / max(1, $e['receivables'] + $e['payables']) * 100) }}%"></i></b><strong>UGX {{ number_format($e['receivables']) }}</strong></div><div class="finance-simple-row"><span>Suppliers owed</span><b><i style="width:{{ min(100, $e['payables'] / max(1, $e['receivables'] + $e['payables']) * 100) }}%"></i></b><strong>UGX {{ number_format($e['payables']) }}</strong></div></section>
+                <section><h3>Production position</h3><div class="finance-simple-row"><span>Eggs today</span><b><i style="width:{{ min(100, $e['eggsToday'] / max(1, $e['birds']) * 100) }}%"></i></b><strong>{{ number_format($e['eggsToday']) }}</strong></div><div class="finance-simple-row"><span>Birds on farm</span><b><i style="width:100%"></i></b><strong>{{ number_format($e['birds']) }}</strong></div><div class="finance-simple-row"><span>Feed in stock</span><b><i style="width:{{ min(100, $e['feedBalance'] / 1000 * 100) }}%"></i></b><strong>{{ number_format($e['feedBalance'],1) }} kg</strong></div><div class="finance-simple-row"><span>Other livestock</span><b><i style="width:{{ min(100, $e['livestock']->sum() / max(1, $e['birds']) * 100) }}%"></i></b><strong>{{ number_format($e['livestock']->sum()) }}</strong></div></section>
             </div>
-
-            <div class="owner-analysis-grid">
-                <section class="owner-panel owner-panel--cash">
-                    <div class="owner-panel__head"><div><span class="finance-panel-kicker">Six-month trend</span><h3>Income versus spending</h3></div><span>UGX</span></div>
-                    @if($hasCashData)
-                        <div class="owner-bars">@foreach($e['monthly'] as $month)<div class="owner-bar-group"><div><i class="income" style="height:{{ max(3, $month['income'] / $cashMax * 100) }}%" title="Income UGX {{ number_format($month['income']) }}"></i><i class="expense" style="height:{{ max(3, $month['spending'] / $cashMax * 100) }}%" title="Spending UGX {{ number_format($month['spending']) }}"></i></div><span>{{ $month['label'] }}</span></div>@endforeach</div>
-                        <div class="owner-legend"><span><i class="income"></i>Income</span><span><i class="expense"></i>Spending</span></div>
-                    @else<div class="owner-empty"><strong>No cash movement recorded</strong><p>The trend will build automatically as Finance posts transactions.</p></div>@endif
-                </section>
-                <section class="owner-panel">
-                    <div class="owner-panel__head"><div><span class="finance-panel-kicker">Cost analysis</span><h3>Where money was spent</h3></div></div>
-                    <div class="owner-spend-list">@forelse($e['spendingByArea'] as $row)<div><header><span>{{ Str::limit($row['name'], 30) }}</span><strong>UGX {{ number_format($row['amount']) }}</strong></header><i><b style="width:{{ max(3, $row['amount'] / $spendMax * 100) }}%"></b></i></div>@empty<div class="owner-empty"><strong>No spending posted this month</strong><p>Cost areas appear here when Finance records expenses.</p></div>@endforelse</div>
-                </section>
-            </div>
-
-            <div class="owner-operation-grid">
-                <article><span class="owner-operation-icon">&#129370;</span><div><small>Eggs collected today</small><strong>{{ number_format($e['eggsToday']) }}</strong><em>{{ number_format($e['eggsMonth'] / 30, 1) }} trays this month</em></div></article>
-                <article><span class="owner-operation-icon">&#128020;</span><div><small>Birds on farm</small><strong>{{ number_format($e['birds']) }}</strong><em>Across active poultry batches</em></div></article>
-                <article><span class="owner-operation-icon">&#127806;</span><div><small>Feed in stock</small><strong>{{ number_format($e['feedBalance'], 1) }} kg</strong><em>Recorded stock balance</em></div></article>
-                <article><span class="owner-operation-icon">&#128062;</span><div><small>Other livestock</small><strong>{{ number_format($e['livestock']->sum()) }}</strong><em>{{ $e['livestock']->map(fn($count,$unit) => $count.' '.Str::plural($unit, $count))->implode(' / ') ?: 'No active animals recorded' }}</em></div></article>
-            </div>
-
-            <div class="owner-position-grid">
-                <article><small>Customers owe the farm</small><strong>UGX {{ number_format($e['receivables']) }}</strong><a href="{{ route('finance.receivables.index') }}">Open receivables &rarr;</a></article>
-                <article><small>Farm owes suppliers</small><strong>UGX {{ number_format($e['payables']) }}</strong><a href="{{ route('finance.payables.index') }}">Open payables &rarr;</a></article>
-                <article><small>Purchases awaiting approval</small><strong>UGX {{ number_format($e['purchaseExposure']) }}</strong><a href="{{ route('approvals.index') }}">Review decisions &rarr;</a></article>
-                <article class="{{ $e['withdrawals'] ? 'owner-position--alert' : '' }}"><small>Active egg withdrawals</small><strong>{{ $e['withdrawals'] }}</strong><a href="{{ route('vaccination-schedule.index') }}">Open health schedule &rarr;</a></article>
-            </div>
-            @include('dashboard.pending-approval-rows', [
-                'approvalRows' => $e['pendingApprovals'],
-                'approvalCount' => $e['pending'],
-                'approvalAudience' => $e['approvalRole'] === 'ceo' ? 'CEO' : 'Director',
-            ])
+            <div class="table-wrap"><table class="finance-ratios"><thead><tr><th>CEO indicator</th><th>{{ now()->format('M Y') }}</th></tr></thead><tbody><tr><td>Net cash movement</td><td>UGX {{ number_format($e['net']) }}</td></tr><tr><td>Pending decisions</td><td>{{ number_format($e['pending']) }}{{ $e['overdue'] ? ' · '.$e['overdue'].' overdue' : '' }}</td></tr><tr><td>Purchases awaiting approval</td><td>UGX {{ number_format($e['purchaseExposure']) }}</td></tr><tr><td>Eggs collected this month</td><td>{{ number_format($e['eggsMonth']) }} eggs</td></tr></tbody></table></div>
         </section>
     @elseif ($panel === 'executive-legacy')
-        @php($e=$data['executive'])
+        @php
+            $e = $data['executive'];
+        @endphp
         <section class="executive-brief">
             <div class="executive-brief__head">
                 <div><p class="card-label">Executive briefing Ãƒâ€šÃ‚Â· {{ now()->format('F Y') }}</p><h3>What needs your attention</h3></div>
