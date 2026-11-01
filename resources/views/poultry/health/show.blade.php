@@ -60,7 +60,7 @@
 
 @if ($events->isEmpty())
     <div class="card">
-        <p class="muted" style="margin:0;">Nothing recorded for this flock yet.</p>
+        <p class="muted u-m0">Nothing recorded for this flock yet.</p>
     </div>
 @else
     <div class="timeline">
@@ -118,8 +118,8 @@
     </div>
 @endif
 
-<p style="margin-top:18px;">
-    <a class="btn btn--quiet btn--inline" href="{{ route('health.index') }}">Back to health</a>
+<p class="u-mt-18">
+    <a class="btn btn--quiet btn--inline" href="{{ route('monitor.health', 'treatments') }}">Back to treatments</a>
 </p>
 
 @endsection

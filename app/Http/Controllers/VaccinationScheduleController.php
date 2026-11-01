@@ -6,12 +6,18 @@ use Illuminate\Http\{Request,RedirectResponse};
 use Illuminate\View\View;
 class VaccinationScheduleController extends Controller {
     public function index(Request $r):View{
+        // One "Show" filter: schedule items by status, or the vaccinations actually given.
+        if ($r->filled('show')) {
+            $show = $r->input('show');
+            $r->merge(['view' => $show === 'given' ? 'records' : 'schedule',
+                'schedule_status' => in_array($show, ['active', 'finished', 'inactive'], true) ? $show : null]);
+        }
         $filters = $r->validate([
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', ...($r->filled('from') ? ['after_or_equal:from'] : [])],
             'batch_id' => ['nullable', 'integer', 'exists:animal_groups,id'],
             'vaccine_id' => ['nullable', 'integer', Rule::exists('medications', 'id')->where('type', 'vaccine')],
-            'schedule_status' => ['nullable', 'in:active,inactive'],
+            'schedule_status' => ['nullable', 'in:active,finished,inactive'],
         ]);
         $filterBatches = AnimalGroup::with('breed')->visibleTo($r->user())->orderBy('code')->get();
         $records = HealthEvent::with(['batch.breed', 'medication', 'recorder'])
@@ -33,17 +39,45 @@ class VaccinationScheduleController extends Controller {
             $records->where('medication_id', $filters['vaccine_id']);
             $plans->where('medication_id', $filters['vaccine_id']);
         }
-        if ($r->filled('schedule_status')) $plans->where('is_active', $filters['schedule_status'] === 'active');
         $vaccines=Medication::where('type','vaccine')->where('is_active',true)->orderBy('name')->get();
         return view('vaccination-schedule.index',[
+            // Two pages: the programme (default) and the vaccinations actually given.
+            // Links that pre-select a batch (reminders, batch pages) open the record form, which lives on the records page.
+            'view'=>$r->input('view') === 'records' || (! $r->filled('view') && $r->filled('batch')) ? 'records' : 'schedule',
             'filters'=>$filters, 'filterBatches'=>$filterBatches,
             'filterVaccines'=>Medication::where('type','vaccine')->orderBy('name')->get(),
-            'plans'=>$plans->orderBy('purpose')->orderBy('age_days')->get(),
+            'plans'=>$this->withProgress($plans->orderBy('purpose')->orderBy('age_days')->get(), $batch ?? null, $filters['schedule_status'] ?? null),
             'medications'=>$vaccines,'breeds'=>Breed::orderBy('name')->get(),'canEdit'=>$this->canEdit($r),
             'batches'=>AnimalGroup::with('breed')->visibleTo($r->user())->where('status','active')->orderBy('code')->get(),
             'records'=>$records->latest('occurred_on')->latest('id')->paginate(30)->withQueryString(),
         ]);
     }
+    /**
+     * Mark each schedule item finished when every planned dose (first dose plus repeats) has been
+     * recorded for its batch. General programmes are judged against the batch chosen in the filter.
+     */
+    private function withProgress($plans, ?AnimalGroup $selectedBatch, ?string $status)
+    {
+        $doses = HealthEvent::where('event_type', 'vaccination')
+            ->whereIn('animal_group_id', $plans->pluck('animal_group_id')->filter()->push($selectedBatch?->id)->filter()->unique())
+            ->selectRaw('animal_group_id, medication_id, count(*) as total')->groupBy('animal_group_id', 'medication_id')->get()
+            ->mapWithKeys(fn ($row) => [$row->animal_group_id.'-'.$row->medication_id => (int) $row->total]);
+
+        $plans->each(function (VaccinationPlan $plan) use ($doses, $selectedBatch) {
+            $batchId = $plan->animal_group_id ?? $selectedBatch?->id;
+            $given = $batchId ? ($doses[$batchId.'-'.$plan->medication_id] ?? 0) : 0;
+            $plan->setAttribute('doses_given', $given);
+            $plan->setAttribute('is_finished', $batchId !== null && $given >= count($plan->dueAges()));
+        });
+
+        return match ($status) {
+            'finished' => $plans->filter(fn ($plan) => $plan->is_finished)->values(),
+            'active' => $plans->filter(fn ($plan) => $plan->is_active && ! $plan->is_finished)->values(),
+            'inactive' => $plans->filter(fn ($plan) => ! $plan->is_active)->values(),
+            default => $plans,
+        };
+    }
+
     public function store(Request $r):RedirectResponse{abort_unless($this->canEdit($r),403);VaccinationPlan::create($this->data($r));return back()->with('status','Vaccination schedule item added.');}
     public function update(Request $r,VaccinationPlan $plan):RedirectResponse{abort_unless($this->canEdit($r),403);$plan->update($this->data($r,$plan));return back()->with('status','Vaccination schedule updated.');}
     public function storeRecord(Request $r):RedirectResponse{
@@ -66,7 +100,7 @@ class VaccinationScheduleController extends Controller {
             'cost'=>$data['cost']??0,
         ]);
         AuditLog::record('vaccination_recorded',$event,'Vaccination recorded for '.$batch->code.': '.$event->medication?->name.'.',null,$event->toArray(),'health');
-        return redirect()->route('vaccination-schedule.index')->with('status','Vaccination recorded for '.$batch->code.'.');
+        return redirect()->route('vaccination-schedule.index', ['view' => 'records'])->with('status','Vaccination recorded for '.$batch->code.'.');
     }
     private function data(Request $r, ?VaccinationPlan $plan = null): array
     {

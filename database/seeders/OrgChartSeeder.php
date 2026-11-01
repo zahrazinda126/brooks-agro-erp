@@ -130,6 +130,7 @@ class OrgChartSeeder extends Seeder
             'production-manager' => ['feed-consumption', 'attendance', 'kpi-dashboards'],
             'daily-supervisor'   => ['feed-consumption', 'attendance'],
             'casual-worker'      => ['feed-consumption'],
+            'poultry-attendant'  => ['feed-consumption'],
         ];
 
         $approvers = ['finance-manager', 'hr-manager', 'daily-supervisor'];
@@ -151,7 +152,7 @@ class OrgChartSeeder extends Seeder
                     [
                         'can_view'    => true,
                         'can_create'  => true,
-                        'can_edit'    => $roleCode !== 'casual-worker',
+                        'can_edit'    => ! in_array($roleCode, \App\Models\User::DATA_ENTRY_ROLES, true),
                         'can_delete'  => false,
                         'can_approve' => in_array($roleCode, $approvers, true),
                         'updated_at'  => now(),

@@ -8,12 +8,12 @@
 @foreach($accountProfitability['sections'] as $section)
 <tr class="profitability-section"><th colspan="3">{{ $section['name']==='Operating Costs' ? 'Expenses' : ($section['name']==='Cost of Sales' ? 'Cost of Goods Sold (COGS)' : $section['name']) }}</th></tr>
 @foreach($section['rows'] as $accountRow)<tr class="profitability-account-row"><td>{{ $accountRow['code'] }}</td><td>{{ $accountRow['account'] }}</td><td class="num">{{ $accountRow['amount'] == 0 ? '—' : number_format($accountRow['amount'], 2) }}</td></tr>@endforeach
-<tr class="profitability-subtotal"><th colspan="2">{{ $section['name']==='Revenue' ? 'Total Revenue' : ($section['name']==='Cost of Sales' ? 'Total COGS' : 'Total Expenses') }}</th><th class="num">UGX {{ number_format($section['total']) }}</th></tr>
-@if($section['name']==='Cost of Sales')<tr class="profitability-result"><th colspan="2">Gross Profit</th><th class="num">UGX {{ number_format($accountProfitability['grossProfit']) }}</th></tr>@endif
+<tr class="profitability-subtotal"><th colspan="2">{{ $section['name']==='Revenue' ? 'Total Revenue' : ($section['name']==='Cost of Sales' ? 'Total COGS' : 'Total Expenses') }}</th><th class="num">@money($section['total'])</th></tr>
+@if($section['name']==='Cost of Sales')<tr class="profitability-result"><th colspan="2">Gross Profit</th><th class="num">@money($accountProfitability['grossProfit'])</th></tr>@endif
 @endforeach
-<tr class="profitability-result profitability-result--final"><th colspan="2">Net Profit</th><th class="num">UGX {{ number_format($accountProfitability['netProfit']) }}</th></tr>
+<tr class="profitability-result profitability-result--final"><th colspan="2">Net Profit</th><th class="num">@money($accountProfitability['netProfit'])</th></tr>
 </tbody></table></div></section>
-<style>
+@pushOnce('styles')<style>
 .profitability-accounts,.profitability-accounts button,.profitability-accounts input{font-family:"Gill Sans MT","Segoe UI",Arial,sans-serif}
 .profitability-accounts{font-size:12px}.profitability-accounts .section-heading h3{font-size:17px}.profitability-accounts .section-heading p{font-size:12px}
 .profitability-sheet{width:100%;max-width:980px}.profitability-sheet table{width:100%;font-size:12px}
@@ -25,5 +25,5 @@
 .profitability-subtotal th{background:#d6b665;font-size:12px}
 .profitability-result th{background:#70400d;color:#fff;font-size:12px}
 .profitability-result--final th{background:#4f2708;font-size:13px}
-</style>
+</style>@endPushOnce
 @endsection

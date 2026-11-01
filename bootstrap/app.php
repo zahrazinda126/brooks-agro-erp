@@ -12,6 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
 
+        // Hosting (DigitalOcean App Platform / Render) ends HTTPS at its proxy: trust it so
+        // the app knows requests are secure and sees each visitor's real address.
+        $middleware->trustProxies(at: '*');
+
         /*
          | Short names for our two guards, so routes can say
          | ->middleware('module:poultry,create') instead of the full

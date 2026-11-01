@@ -1,6 +1,8 @@
 @extends('layouts.app')
 @section('title','Cash Book')
 @section('content')
-<form method="GET" class="card filters"><div class="field"><label>From</label><input type="date" name="from" value="{{ request('from') }}"></div><div class="field"><label>To</label><input type="date" name="to" value="{{ request('to') }}"></div><div class="field field--actions"><button class="btn btn--inline">Apply</button><a class="btn btn--quiet" href="{{ route('finance.cash-book.index') }}">Clear</a></div></form>
-<div class="page-head"><h2>Cash Book</h2><p>Cash transactions and their running balance.</p></div><div class="card"><p class="card-label">Current recorded balance</p><span class="figure">UGX {{ number_format($balance) }}</span></div><div class="data-list"><div class="data-head"><span>Date / recorded at</span><span>Description</span><span>Transaction</span><span>Amount</span><span>Balance</span></div>@foreach($rows as $t)<div class="data-row"><span class="data-cell">{{ $t->transaction_date->format('j M Y') }}<em class="data-sub">{{ $t->created_at->format('j M Y, H:i') }} &middot; {{ $t->recorder?->displayName() ?? 'System' }}</em></span><span class="data-cell">{{ $t->description }}</span><span class="data-cell">{{ Str::headline($t->type) }}</span><span class="data-cell"><strong>UGX {{ number_format($t->amount) }}</strong></span><span class="data-cell">UGX {{ number_format($t->running_balance) }}</span></div>@endforeach</div>
+<div class="page-head"><h2>Cash Book</h2><p>Cash received, paid and moved between accounts, with the running balance.</p></div>
+@include('finance.transactions._book-filters', ['routeName' => 'finance.cash-book.index', 'allLabel' => 'All cash accounts'])
+@include('finance.transactions._book-charts')
+@include('finance.transactions._book-table', ['accountHeader' => 'Cash account', 'emptyText' => 'No cash entries match these filters.'])
 @endsection

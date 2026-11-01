@@ -116,8 +116,8 @@ class AnimalGroup extends Model
     {
         $on = $on ?: now();
 
-        return $this->age_days_on_arrival
-            + $this->received_date->diffInDays($on);
+        return (int) $this->age_days_on_arrival
+            + (int) $this->received_date->diffInDays($on);
     }
 
     public function ageInWeeks(?Carbon $on = null): int

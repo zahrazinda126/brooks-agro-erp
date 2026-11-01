@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\CustomerPrepayment;
 use App\Models\Department;
 use App\Models\FinancialTransaction;
@@ -17,6 +18,7 @@ use App\Models\SalesCustomer;
 use App\Models\Sale;
 use App\Models\Employee;
 use App\Models\StaffSalaryWalletTransaction;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,10 +28,12 @@ use Illuminate\View\View;
 
 class TransactionController extends Controller
 {
-    public function accounts(Request $request): View
+    public function accounts(Request $request): View|RedirectResponse
     {
         abort_unless($request->user()->canAccess('finance') || $request->user()->canAccess('transactions'), 403);
         $view = $request->query('view');
+        // The old Accounts hub only pointed to screens that have their own tabs; send it to where money is held.
+        if ($view === null) return redirect()->route('finance.transactions.index', ['view' => 'balances']);
         abort_unless($view === null || $view === 'staff', 404);
         $staff = collect();
         if ($view === 'staff') {
@@ -47,13 +51,16 @@ class TransactionController extends Controller
     public function index(Request $r): View
     {
         abort_unless($r->user()->canAccess('transactions'), 403);
+        // The register lists Finance's own entries; an account's balance and history count every entry
+        // (customer payments recorded by Sales included), so a wallet never looks overdrawn.
+        $wholeLedger = $r->filled('account') || $r->query('view') === 'balances';
         $q = FinancialTransaction::with(['recorder','department'])
-            ->whereHas('recorder', function ($user) {
+            ->when(! $wholeLedger, fn ($scope) => $scope->whereHas('recorder', function ($user) {
                 $user->whereHas('department', fn ($department) => $department->whereIn('code', ['finance', 'div-finance']))
                     ->orWhereHas('departments', fn ($department) => $department->whereIn('code', ['finance', 'div-finance']))
                     ->orWhereHas('role', fn ($role) => $role->where('code', 'finance-manager'))
                     ->orWhereHas('roles', fn ($role) => $role->where('code', 'finance-manager'));
-            });
+            }));
         $financeEntries = clone $q;
         $selectedAccount = $r->string('account')->trim()->toString() ?: null;
         $from = $r->filled('from') ? $r->date('from')->toDateString() : ($selectedAccount ? ((clone $financeEntries)->min('transaction_date') ?: now()->toDateString()) : now()->toDateString());
@@ -138,7 +145,8 @@ class TransactionController extends Controller
         $moneyIn = (float) $transactions->where('type', 'money_received')->sum('amount');
         $moneyOut = (float) $transactions->where('type', 'money_paid')->sum('amount');
         $transferTotal = (float) $transactions->where('type', 'transfer')->sum('amount');
-        $accountBalances = collect();
+        // Every active farm account is listed, even before any money has moved through it.
+        $accountBalances = collect(config('finance_entry.money_accounts', []))->mapWithKeys(fn ($name) => [$name => 0.0]);
         (clone $financeEntries)->whereDate('transaction_date', '<=', $to)->oldest('transaction_date')->oldest('id')->get()->each(function (FinancialTransaction $transaction) use ($accountBalances) {
             $amount = (float) $transaction->amount;
             if ($transaction->type === 'money_received') {
@@ -157,6 +165,8 @@ class TransactionController extends Controller
         $departments = Department::where('is_active',true)->orderBy('name')->get(['id','name']);
 
         return view('finance.transactions.index', [
+            // One page per job: the register, farm consumption, or account balances (a single account always shows its register).
+            'view'=>$selectedAccount ? 'register' : (in_array($r->query('view'), ['consumption', 'balances'], true) ? $r->query('view') : 'register'),
             'transactions'=>$transactions, 'type'=>$r->query('type'), 'from'=>$from, 'to'=>$to,
             'cashOpening'=>$cashOpening, 'cashClosing'=>$cashRunning, 'moneyIn'=>$moneyIn, 'moneyOut'=>$moneyOut, 'transferTotal'=>$transferTotal, 'accountBalances'=>$accountBalances,
             'selectedAccount'=>$selectedAccount, 'selectedAccountOpening'=>$selectedAccountOpening, 'selectedAccountRunning'=>$selectedAccountRunning,
@@ -223,7 +233,7 @@ class TransactionController extends Controller
     {
         abort_unless($r->user()->canDo('transactions', 'create'), 403);
         $types = config('finance_entry.types');
-        $data = $r->validate(['transaction_date' => ['required', 'date'], 'transaction_category' => ['required', Rule::in(array_keys($types))], 'account_group' => ['required', 'string', 'max:120'], 'department_id' => ['required', 'exists:departments,id'], 'account' => ['required', 'string', 'max:120'], 'counterparty' => ['nullable', 'string', 'max:160'], 'recipient_account' => ['nullable', 'string', 'max:160'], 'amount' => ['nullable', 'numeric', 'min:0.01'], 'quantity' => ['nullable', 'numeric', 'min:0.01'], 'unit_price' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', 'in:cash,bank,mobile_money,credit,in_kind'], 'reference' => ['required', 'string', 'max:80'], 'description' => ['required', 'string', 'max:1000'], 'receipt_kind' => ['nullable', 'in:general,customer_payment,customer_prepayment'], 'payment_kind' => ['nullable', 'in:general,supplier_bill'], 'receivable_id' => ['nullable', 'exists:receivables,id'], 'payable_id' => ['nullable', 'exists:payables,id']]);
+        $data = $r->validate(['transaction_date' => ['required', 'date'], 'transaction_category' => ['required', Rule::in(array_keys($types))], 'account_group' => ['required', 'string', 'max:120'], 'department_id' => ['required', 'exists:departments,id'], 'account' => ['required', 'string', 'max:120'], 'counterparty' => ['nullable', 'string', 'max:160'], 'recipient_account' => ['nullable', 'string', 'max:160'], 'amount' => ['nullable', 'numeric', 'min:0.01'], 'quantity' => ['nullable', 'numeric', 'min:0.01'], 'unit_price' => ['nullable', 'numeric', 'min:0'], 'payment_method' => ['nullable', Rule::exists('finance_payment_methods', 'code')->where('is_active', true)], 'reference' => ['required', 'string', 'max:80'], 'description' => ['required', 'string', 'max:1000'], 'receipt_kind' => ['nullable', 'in:general,customer_payment,customer_prepayment'], 'payment_kind' => ['nullable', 'in:general,supplier_bill'], 'receivable_id' => ['nullable', 'exists:receivables,id'], 'payable_id' => ['nullable', 'exists:payables,id']]);
         $data['entry_account'] = $r->validate(['entry_account' => ['required', 'string', 'max:160']])['entry_account'];
         $inventory = $r->validate(['track_inventory' => ['nullable', 'boolean'], 'inventory_store_id'=>['nullable','required_if:track_inventory,1','exists:inventory_stores,id'], 'inventory_unit' => ['nullable', 'required_if:track_inventory,1', 'string', 'max:40'], 'inventory_location' => ['nullable', 'required_if:track_inventory,1', 'string', 'max:100']]);
         $departmentCode = Department::whereKey($data['department_id'])->value('code');
@@ -252,6 +262,12 @@ class TransactionController extends Controller
                 return back()->withErrors(['entry_account' => 'Product sales must be recorded in the Sales module.'])->withInput();
             }
         }
+        // A cheque is written on a bank account, for a payment, and carries its number.
+        if (($data['payment_method'] ?? null) === 'cheque') {
+            $data['cheque_number'] = trim((string) $r->validate(['cheque_number' => ['required', 'string', 'max:40']], ['cheque_number.required' => 'Enter the cheque number.'])['cheque_number']);
+            if (($data['type'] ?? null) !== 'money_paid') return back()->withErrors(['payment_method' => 'A cheque can only be used to pay money out.'])->withInput();
+            if (! preg_match('/bank|i&m/i', (string) ($data['account'] ?? ''))) return back()->withErrors(['payment_method' => 'A cheque must be written on a bank account. Choose the bank account it is drawn on.'])->withInput();
+        }
         if ($data['transaction_category'] === 'staff_payment') {
             $data['counterparty'] = trim($r->validate(['counterparty' => ['required', 'string', 'max:160']])['counterparty']);
             $employee = Employee::active()->get()->first(fn (Employee $employee) => strcasecmp($employee->fullName(), $data['counterparty']) === 0);
@@ -259,7 +275,7 @@ class TransactionController extends Controller
             if (($data['payment_method'] ?? null) === 'bank') {
                 if (! $employee->bank_account) return back()->withErrors(['recipient_account' => 'This worker has no bank account registered by HR.'])->withInput();
                 $data['recipient_account'] = trim(($employee->bank_name ? $employee->bank_name.' - ' : '').$employee->bank_account);
-            } elseif (($data['payment_method'] ?? null) === 'mobile_money') {
+            } elseif (in_array($data['payment_method'] ?? null, ['mobile_money', 'mtn_merchant', 'airtel_merchant'], true)) {
                 $data['recipient_account'] = trim((string) ($data['recipient_account'] ?? ''));
                 if ($data['recipient_account'] === '') return back()->withErrors(['recipient_account' => 'Choose or enter the mobile money phone number.'])->withInput();
             } elseif (($data['payment_method'] ?? null) === 'cash') {
@@ -325,7 +341,19 @@ class TransactionController extends Controller
         } unset($data['receipt_kind'],$data['payment_kind'],$data['receivable_id'],$data['payable_id']);
         if (in_array($data['type'], ['transfer', 'journal'], true)) {
             $data['payment_method'] = null;
-        } try {
+        }
+        // Entries that also move a receivable, bill, salary balance, prepayment or stock receipt are corrected in those modules.
+        $linked = ($data['transaction_category'] === 'staff_payment' && $data['entry_account'] === 'Salary Withdrawal')
+            || $trackInventory || in_array($kind, ['customer_payment', 'customer_prepayment'], true) || $payKind === 'supplier_bill';
+        $data['source'] = $linked ? 'finance_entry_linked' : 'finance_entry';
+        // Optional link to a construction project (and the builder, for wages) so the PA's project shows it.
+        $project = $r->validate([
+            'construction_project_id' => ['nullable', Rule::exists('construction_projects', 'id')->where('status', 'active')],
+            'construction_worker_id' => ['nullable', Rule::exists('construction_project_workers', 'employee_id')->where('construction_project_id', (int) $r->input('construction_project_id'))],
+        ], ['construction_worker_id.exists' => 'That builder is not on the chosen project.']);
+        $data['construction_project_id'] = $project['construction_project_id'] ?? null;
+        $data['construction_worker_id'] = $data['construction_project_id'] ? ($project['construction_worker_id'] ?? null) : null;
+        try {
             DB::transaction(function () use ($data, $r, $kind, $payKind, $trackInventory, $inventory) {
                 $transaction = FinancialTransaction::create($data + ['recorded_by' => $r->user()->id]);
                 if ($data['transaction_category'] === 'staff_payment' && $data['entry_account'] === 'Salary Withdrawal') {
@@ -371,6 +399,9 @@ class TransactionController extends Controller
                     CustomerPrepayment::create(['customer_id' => $customer->id, 'customer_name' => $customer->name, 'received_date' => $data['transaction_date'], 'amount' => $data['amount'], 'amount_used' => 0, 'farm_account' => $data['account'], 'payment_method' => $data['payment_method'], 'reference' => $data['reference'], 'recorded_by' => $r->user()->id]);
                 }if ($payKind === 'supplier_bill') {
                     $bill = Payable::lockForUpdate()->findOrFail($r->payable_id);
+                    if ($holds = \App\Support\FeedBillMatch::holds($bill)) {
+                        throw new \RuntimeException('This feed bill is on hold: '.implode(' ', $holds));
+                    }
                     $balance = (float) $bill->amount - (float) $bill->amount_paid;
                     if ((float) $data['amount'] > $balance) {
                         throw new \RuntimeException('Payment is more than the supplier bill.');
@@ -388,6 +419,37 @@ class TransactionController extends Controller
             ? 'Transaction posted. The delivery was sent to the selected store for receipt confirmation and is not yet included in stock.'
             : 'Transaction posted to the register and ledger.';
         return redirect()->route('finance.transactions.index')->with('status', $status);
+    }
+
+    /** Correct a posted entry by adding an equal and opposite entry; the original is kept and marked reversed. */
+    public function reverse(Request $r, FinancialTransaction $transaction): RedirectResponse
+    {
+        abort_unless($r->user()->canDo('transactions', 'create'), 403);
+        if (! $transaction->isReversible()) {
+            return back()->withErrors(['reversal_reason' => 'This entry cannot be reversed here. It is already reversed, is itself a reversal, or was posted by another module (correct it there).']);
+        }
+        $data = $r->validate(['reversal_reason' => ['required', 'string', 'max:500'], 'reversal_date' => ['nullable', 'date']]);
+        $date = $data['reversal_date'] ?? now()->toDateString();
+
+        DB::transaction(function () use ($transaction, $data, $date, $r) {
+            $reversal = FinancialTransaction::create(collect($transaction->getAttributes())
+                ->only(['type', 'transaction_category', 'account_group', 'entry_account', 'sub_account', 'finance_account_id', 'department_id', 'cost_centre', 'account', 'counterparty', 'recipient_account', 'payment_method'])
+                ->all() + [
+                    'transaction_date' => $date,
+                    'amount' => -1 * (float) $transaction->amount,
+                    'quantity' => $transaction->quantity !== null ? -1 * (float) $transaction->quantity : null,
+                    'unit_price' => $transaction->unit_price,
+                    'reference' => mb_substr('REV-'.($transaction->reference ?: $transaction->id), 0, 80),
+                    'description' => mb_substr('Reversal of entry #'.$transaction->id.': '.$data['reversal_reason'], 0, 1000),
+                    'recorded_by' => $r->user()->id,
+                    'source' => 'reversal',
+                    'reversal_of_id' => $transaction->id,
+                ]);
+            $transaction->update(['reversed_at' => now(), 'reversed_by' => $r->user()->id, 'reversal_reason' => $data['reversal_reason']]);
+            AuditLog::record('financial_transaction_reversed', $transaction, 'Entry #'.$transaction->id.' reversed by #'.$reversal->id, ['amount' => $transaction->amount], ['reversal_id' => $reversal->id, 'reason' => $data['reversal_reason']], 'transactions');
+        });
+
+        return redirect()->route('finance.transactions.index')->with('status', 'Entry reversed. The original stays in the register, marked reversed, with an equal and opposite entry.');
     }
 
     public function generalLedger(Request $r): View
@@ -428,17 +490,107 @@ class TransactionController extends Controller
     public function cashBook(Request $r): View
     {
         abort_unless($r->user()->canAccess('cash-book'), 403);
-        $rows = FinancialTransaction::with('recorder')->where('payment_method', 'cash')
-            ->when($r->filled('from'), fn($q)=>$q->whereDate('transaction_date','>=',$r->query('from')))
-            ->when($r->filled('to'), fn($q)=>$q->whereDate('transaction_date','<=',$r->query('to')))
-            ->orderBy('transaction_date')->orderBy('id')->get();
-        $balance = 0;
-        $rows->each(function ($x) use (&$balance) {
-            $balance += $x->type === 'money_received' ? $x->amount : -$x->amount;
-            $x->running_balance = $balance;
-        });
+        // Cash accounts from Finance administration; "Cash" is the workbook's name for cash on hand.
+        $accounts = (Schema::hasTable('finance_payment_accounts')
+            ? DB::table('finance_payment_accounts')->where('kind', 'cash')->where('is_active', true)->orderBy('name')->pluck('name')
+            : collect(['Cash on Hand', 'Petty Cash (UGX)']))->push('Cash')->unique()->values();
+        $selected = $r->string('account')->trim()->toString() ?: null;
+        $transactions = FinancialTransaction::with('recorder')->where(function ($query) use ($accounts) {
+            $query->whereIn('account', $accounts)
+                ->orWhere(fn ($transfer) => $transfer->where('type', 'transfer')->whereIn('counterparty', $accounts))
+                ->orWhere('payment_method', 'cash');
+        })->orderBy('transaction_date')->orderBy('id')->get();
 
-        return view('finance.transactions.cash-book', compact('rows', 'balance'));
+        // Same movement rules as the Bank Book: transfers move cash between accounts, so they count too.
+        $movements = collect();
+        foreach ($transactions as $transaction) {
+            $amount = (float) $transaction->amount;
+            $source = (string) $transaction->account;
+            $destination = (string) $transaction->counterparty;
+            $details = collect([$transaction->entry_account, $transaction->sub_account, $transaction->description])->filter()->unique()->join(' — ');
+            $add = function (string $account, float $in, float $out, string $from, string $to) use ($movements, $transaction, $details) {
+                $movements->push((object) ['transaction' => $transaction, 'date' => $transaction->transaction_date, 'bank_account' => $account,
+                    'from_account' => $from, 'to_account' => $to, 'details' => $details, 'debit' => $in, 'credit' => $out, 'unassigned' => false]);
+            };
+            if ($transaction->type === 'transfer') {
+                if ($accounts->contains($source)) $add($source, 0, $amount, $source, $destination ?: 'Destination not recorded');
+                if ($accounts->contains($destination)) $add($destination, $amount, 0, $source ?: 'Source not recorded', $destination);
+            } elseif (in_array($transaction->type, ['money_received', 'money_paid'], true) && ($accounts->contains($source) || $transaction->payment_method === 'cash')) {
+                $account = $accounts->contains($source) ? $source : 'Cash on Hand';
+                $transaction->type === 'money_received'
+                    ? $add($account, $amount, 0, $destination ?: 'External source', $account)
+                    : $add($account, 0, $amount, $account, $transaction->recipient_account ?: ($destination ?: ($transaction->entry_account ?: 'Payee not recorded')));
+            }
+        }
+        if ($selected) $movements = $movements->where('bank_account', $selected)->values();
+        $filters = $this->bookFilters($r);
+        [$from, $to] = [$filters['from'], $filters['to']];
+        $opening = (float) $movements->filter(fn ($row) => $from && $row->date->toDateString() < $from)->sum(fn ($row) => $row->debit - $row->credit);
+        $rows = $movements->filter(fn ($row) => (! $from || $row->date->toDateString() >= $from) && (! $to || $row->date->toDateString() <= $to))->values();
+        $balance = $opening;
+        $rows->each(function ($row) use (&$balance) { $balance += $row->debit - $row->credit; $row->running_balance = $balance; });
+        $charts = $this->bookCharts($rows, $opening, $from, $to);
+        $rows = $this->narrowBook($rows, $filters);
+
+        return view('finance.transactions.cash-book', compact('rows', 'balance', 'opening', 'accounts', 'selected', 'from', 'to', 'filters', 'charts'));
+    }
+
+    /** Shared Cash/Bank Book filters: quick period or dates, direction (in/out/transfers) and search. */
+    private function bookFilters(Request $r): array
+    {
+        $period = in_array($r->query('period'), ['today', 'week', 'month'], true) ? $r->query('period') : null;
+        [$from, $to] = match ($period) {
+            'today' => [today()->toDateString(), today()->toDateString()],
+            'week' => [today()->startOfWeek()->toDateString(), today()->toDateString()],
+            'month' => [today()->startOfMonth()->toDateString(), today()->toDateString()],
+            default => [$r->filled('from') ? $r->date('from')->toDateString() : null, $r->filled('to') ? $r->date('to')->toDateString() : null],
+        };
+        abort_if($from && $to && $from > $to, 422, 'The From date must not be after the To date.');
+        $direction = in_array($r->query('direction'), ['in', 'out', 'transfer'], true) ? $r->query('direction') : null;
+        $search = trim((string) $r->query('search'));
+
+        return compact('from', 'to', 'period', 'direction', 'search');
+    }
+
+    /** Rows narrowed by direction and search. Applied after balances, so running balances stay true. */
+    private function narrowBook($rows, array $filters)
+    {
+        return $rows->filter(function ($row) use ($filters) {
+            $t = $row->transaction;
+            if ($filters['direction'] === 'in' && ! ($row->debit > 0 && $t->type !== 'transfer')) return false;
+            if ($filters['direction'] === 'out' && ! ($row->credit > 0 && $t->type !== 'transfer')) return false;
+            if ($filters['direction'] === 'transfer' && $t->type !== 'transfer') return false;
+            if ($filters['search'] !== '') {
+                $haystack = mb_strtolower(implode(' ', [$row->details, $row->from_account, $row->to_account, $t->reference, $t->counterparty]));
+                if (! str_contains($haystack, mb_strtolower($filters['search']))) return false;
+            }
+            return true;
+        })->values();
+    }
+
+    /** Chart data: end-of-day balance line (filled forward, at most ~90 points) and money out by category (top 4 + Other). */
+    private function bookCharts($rows, float $opening, ?string $from, ?string $to): array
+    {
+        $trend = [];
+        if ($rows->isNotEmpty()) {
+            $start = Carbon::parse($from ?? $rows->first()->date)->startOfDay();
+            $end = Carbon::parse($to ?? now())->startOfDay();
+            if ($start->diffInDays($end) > 365) $start = $end->copy()->subDays(365);
+            $step = max(1, (int) ceil(($start->diffInDays($end) + 1) / 90));
+            $byDay = $rows->groupBy(fn ($row) => $row->date->toDateString())->map(fn ($group) => $group->last()->running_balance);
+            $balance = $opening + (float) $rows->filter(fn ($row) => $row->date->lt($start))->sum(fn ($row) => $row->debit - $row->credit);
+            for ($day = $start->copy(), $i = 0; $day->lte($end); $day->addDay(), $i++) {
+                if (isset($byDay[$day->toDateString()])) $balance = (float) $byDay[$day->toDateString()];
+                if ($i % $step === 0 || $day->eq($end)) $trend[] = ['label' => $day->format('j M Y'), 'value' => round($balance, 2)];
+            }
+        }
+        $out = $rows->filter(fn ($row) => $row->credit > 0)
+            ->groupBy(fn ($row) => $row->transaction->type === 'transfer' ? 'Moved to other accounts' : ($row->transaction->entry_account ?: 'Not categorised'))
+            ->map(fn ($group) => $group->sum('credit'))->sortDesc();
+        $slices = $out->take(4)->map(fn ($value, $label) => ['label' => $label, 'value' => (float) $value])->values();
+        if ($out->count() > 4) $slices->push(['label' => 'Other', 'value' => (float) $out->slice(4)->sum()]);
+
+        return ['trend' => $trend, 'out' => $slices->all(), 'in_total' => (float) $rows->sum('debit'), 'out_total' => (float) $rows->sum('credit')];
     }
 
     public function bankBook(Request $r): View
@@ -465,10 +617,13 @@ class TransactionController extends Controller
             }
         }
         if($selected)$movements=$movements->where('bank_account',$selected)->values();
-        $from=$r->filled('from')?$r->date('from')->toDateString():null;$to=$r->filled('to')?$r->date('to')->toDateString():null;abort_if($from&&$to&&$from>$to,422,'The From date must not be after the To date.');
+        $filters = $this->bookFilters($r);
+        [$from, $to] = [$filters['from'], $filters['to']];
         $opening=(float)$movements->filter(fn($row)=>$from&&$row->date->toDateString()<$from)->sum(fn($row)=>$row->debit-$row->credit);
         $rows=$movements->filter(fn($row)=>(!$from||$row->date->toDateString()>=$from)&&(!$to||$row->date->toDateString()<=$to))->values();$balance=$opening;
         $rows->each(function($row)use(&$balance){$balance+=$row->debit-$row->credit;$row->running_balance=$balance;});
-        return view('finance.transactions.bank-book',compact('rows','balance','opening','accounts','selected','from','to'));
+        $charts = $this->bookCharts($rows, $opening, $from, $to);
+        $rows = $this->narrowBook($rows, $filters);
+        return view('finance.transactions.bank-book',compact('rows','balance','opening','accounts','selected','from','to','filters','charts'));
     }
 }

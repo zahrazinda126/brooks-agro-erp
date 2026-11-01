@@ -113,8 +113,9 @@ class BatchController extends Controller
 
         $transitDeaths = (int) ($data['transit_deaths'] ?? 0);
         $data['current_quantity'] = $data['quantity_received'] + $free - $transitDeaths;
-        $data['expected_brooder_exit_date'] = (int) $data['age_days_on_arrival'] <= 42
-            ? Carbon::parse($data['received_date'])->addDays(42 - (int) $data['age_days_on_arrival'])->toDateString()
+        $brooderAge = config('farm.brooder_max_age_days');
+        $data['expected_brooder_exit_date'] = (int) $data['age_days_on_arrival'] <= $brooderAge
+            ? Carbon::parse($data['received_date'])->addDays($brooderAge - (int) $data['age_days_on_arrival'])->toDateString()
             : null;
         if (isset($data['total_cost'])) {
             $data['unit_cost'] = round((float) $data['total_cost'] / $data['quantity_received'], 2);
@@ -275,7 +276,7 @@ class BatchController extends Controller
 
     /**
      * Close a batch. Nothing is deleted — the record and all its history
-     * stay, which is what makes "what did B-001/26 cost and earn"
+     * stay, which is what makes "what did B001/26 cost and earn"
      * answerable a year later.
      */
     public function close(Request $request, AnimalGroup $batch): RedirectResponse
@@ -382,7 +383,7 @@ class BatchController extends Controller
     }
 
     /**
-     * Next batch code: B-001/26, B-002/26...
+     * Next batch code: B001/26, B002/26...
      *
      * The year makes a code readable long after the fact, and the sequence
      * restarts each year so numbers stay short. It is read from the highest
@@ -394,16 +395,13 @@ class BatchController extends Controller
         $prefix = Setting::get('poultry.batch_prefix', 'B');
         $year   = now()->format('y');          // 26
 
-        $last = AnimalGroup::withTrashed()
-            ->where('code', 'like', "{$prefix}-%/{$year}")
-            ->orderByRaw('LENGTH(code) DESC, code DESC')
-            ->value('code');
+        // B001/26 (older codes were written B-001/26; both count, so numbering carries on).
+        $lastNumber = AnimalGroup::withTrashed()
+            ->where(fn ($q) => $q->where('code', 'like', "{$prefix}%/{$year}"))
+            ->pluck('code')
+            ->map(fn ($code) => preg_match('/^'.preg_quote($prefix, '/').'-?(\d+)\/'.$year.'$/', $code, $m) ? (int) $m[1] : 0)
+            ->max() ?? 0;
 
-        // B-007/26 -> 7
-        $lastNumber = $last
-            ? (int) substr($last, strlen($prefix) + 1, strpos($last, '/') - strlen($prefix) - 1)
-            : 0;
-
-        return sprintf('%s-%03d/%s', $prefix, $lastNumber + 1, $year);
+        return sprintf('%s%03d/%s', $prefix, $lastNumber + 1, $year);
     }
 }

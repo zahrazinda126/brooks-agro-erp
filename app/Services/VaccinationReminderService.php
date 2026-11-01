@@ -54,6 +54,7 @@ class VaccinationReminderService
                         ? abs($daysUntil).' day(s) overdue'
                         : ($daysUntil === 0 ? 'due today' : 'due in '.$daysUntil.' day(s)');
                     $url = route('vaccination-schedule.index', [
+                        'view' => 'records',
                         'batch' => $batch->id,
                         'vaccine' => $plan->medication_id,
                     ], absolute: false).'#record-vaccination';

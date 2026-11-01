@@ -38,12 +38,25 @@ class VaccinationBatchScheduleTest extends TestCase
         }
         $request = \Illuminate\Http\Request::create('/vaccination-schedule', 'GET', [
             'from' => '2026-09-20', 'to' => '2026-09-20', 'batch_id' => $first->id,
-            'vaccine_id' => $vaccine->id, 'schedule_status' => 'active',
+            'vaccine_id' => $vaccine->id, 'schedule_status' => 'finished',
         ]);
         $request->setUserResolver(fn () => $viewer);
         $data = app(\App\Http\Controllers\VaccinationScheduleController::class)->index($request)->getData();
         $this->assertSame(1, $data['records']->total());
+        // B-001 has recorded doses of this vaccine, so both single-dose items are finished for it.
         $this->assertEquals([$general->id, $specific->id], $data['plans']->pluck('id')->all());
+
+        $request->merge(['schedule_status' => 'active']);
+        $data = app(\App\Http\Controllers\VaccinationScheduleController::class)->index($request)->getData();
+        $this->assertCount(0, $data['plans'], 'finished items are no longer listed as still due');
+
+        // A repeating item needs every planned dose: 3 planned (day 7, 14, 21), 2 given.
+        $repeating = VaccinationPlan::create(['animal_group_id' => $first->id, 'medication_id' => $vaccine->id,
+            'purpose' => 'layer', 'age_days' => 7, 'repeat_every_days' => 7, 'repeat_until_days' => 21]);
+        $data = app(\App\Http\Controllers\VaccinationScheduleController::class)->index($request)->getData();
+        $this->assertEquals([$repeating->id], $data['plans']->pluck('id')->all());
+        $this->assertSame(2, $data['plans']->first()->doses_given);
+        $repeating->delete();
 
         $request->merge(['schedule_status' => 'inactive']);
         $data = app(\App\Http\Controllers\VaccinationScheduleController::class)->index($request)->getData();

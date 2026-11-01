@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Human Resources')
+@section('title', 'Employees')
 
 @section('content')
 
@@ -57,7 +57,7 @@
     @if ($employees->isEmpty())
         <div class="card empty">
             <p class="card-label">Nobody here</p>
-            <p class="muted" style="margin:0 0 14px;">
+            <p class="muted u-m0-b14">
                 @if ($filters['q'] || $filters['department'])
                     No one matches those filters.
                 @else

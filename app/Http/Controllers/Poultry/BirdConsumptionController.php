@@ -140,6 +140,10 @@ class BirdConsumptionController extends Controller
             );
         });
 
+        app(\App\Services\CommunicationService::class)->toApprovers('bird-consumption', 'Bird consumption awaiting confirmation',
+            'Birds taken from '.$batch->code.' for farm use were recorded by '.$request->user()->displayName().' and need confirming.',
+            $request->user()->id, route('consumption.index', [], false));
+
         return redirect()
             ->route('consumption.index')
             ->with('status', $data['quantity'] . ' birds recorded as used on the farm.');

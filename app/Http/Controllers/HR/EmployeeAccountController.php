@@ -49,24 +49,21 @@ class EmployeeAccountController extends Controller
         $assignable = $this->assignableRoles($request->user())->pluck('id');
 
         $data = $request->validate([
-            'username' => [
-                'required', 'string', 'min:3', 'max:60',
-                'regex:/^(?:BAF [0-9]{3,}|[a-z][a-z0-9._-]*)$/',
-                Rule::unique('users', 'username'),
-            ],
             'email'         => ['required', 'email', 'max:190', Rule::unique('users', 'email')],
             'role_id'       => ['required', Rule::in($assignable)],
             'department_id' => ['nullable', 'exists:departments,id'],
         ], [
-            'username.regex'  => 'Use a staff number such as BAF 001, or lowercase letters, numbers, dots, dashes or underscores starting with a letter.',
-            'username.unique' => 'That username is already taken.',
             'role_id.in'      => 'You cannot assign a role at or above your own level.',
         ]);
+
+        // The login name is the staff number (set by the User model); it cannot be typed differently.
+        abort_unless($employee->staff_no, 422, 'Give this employee a staff number before creating a login.');
+        abort_if(User::where('username', $employee->staff_no)->exists(), 422, 'Another login already uses staff number '.$employee->staff_no.'.');
 
         $temporary = $this->temporaryPassword();
 
         $user = User::create([
-            'username'             => $data['username'],
+            'username'             => $employee->staff_no,
             'name'                 => $employee->fullName(),
             'email'                => $data['email'],
             'password'             => $temporary,   // hashed by the model cast
@@ -119,7 +116,6 @@ class EmployeeAccountController extends Controller
         $this->assertOutranks($request->user(), $user);
         $assignable = $this->assignableRoles($request->user())->pluck('id');
         $data = $request->validate([
-            'username' => ['required', 'string', 'min:3', 'max:60', 'regex:/^(?:BAF [0-9]{3,}|[a-z][a-z0-9._-]*)$/', Rule::unique('users', 'username')->ignore($user->id)],
             'email' => ['nullable', 'email', 'max:190', Rule::unique('users', 'email')->ignore($user->id)],
             'role_id' => ['required', Rule::in($assignable)],
             'department_id' => ['nullable', 'exists:departments,id'],

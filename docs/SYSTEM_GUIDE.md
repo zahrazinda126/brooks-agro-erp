@@ -1,10 +1,10 @@
 # Brooks Agro ERP — System and User Guide
 
-Version: 1.0 • Prepared: 25 September 2026
+Version: 1.1 • Updated: 26 September 2026
 
 Audience: Director, CEO, HR, Finance, Production, store staff, sales staff, supervisors, workers, and the technical maintainer.
 
-This guide describes the application found in this project and the changes requested during its development. It explains what users do, how records connect, and where the implementation lives. The source code was reviewed for this document; this is not a claim that every screen has been retested or that a public deployment is running. Account details below are the last confirmed configuration from the work recorded in this conversation, not a new database audit. Passwords and database secrets are deliberately excluded.
+This guide describes the application found in this project and the changes requested during its development. It explains what users do, how records connect, and where the implementation lives. The source code was reviewed for this document; this is not a claim that every screen has been retested or that a public deployment is running. Account details below are the last confirmed configuration recorded during development, not a new database audit. Passwords and database secrets are deliberately excluded.
 
 ## Contents
 
@@ -92,7 +92,7 @@ These are functional descriptions, not a complete permission matrix. Role and st
 - HR summarises workforce and payroll matters. Sales focuses on its own sales and cash activity. The Personal Assistant dashboard tracks executive follow-up.
 - Users without a dedicated layout receive applicable access-based panels.
 
-Production feed requirements currently use an estimate of **0.125 kg per remaining bird per day**. This is a fixed dashboard assumption, not an automatically adjusted nutritional plan. Recorded feed includes approved, submitted and pending entries. A dashboard count should therefore be read alongside its period and status description.
+Production feed requirements currently use an estimate of **0.125 kg per remaining bird per day** (`config/farm.php`, adjustable with `FARM_FEED_KG_PER_BIRD_DAY`). This is a planning assumption, not an automatically adjusted nutritional plan. Recorded feed includes approved, submitted and pending entries. A dashboard count should therefore be read alongside its period and status description.
 
 For accounts holding several senior roles, the current dashboard priority is executive, sales, finance, personal assistant, HR, then production. Receiving extra roles does not necessarily combine all those dashboards.
 
@@ -108,17 +108,19 @@ The number is editable. Use **HR → Employees → select employee → Edit staf
 
 ### Staff number versus login username
 
-These are separate fields. Editing an employee's staff number does not automatically rename their login. Account details have their own editing screen and access checks.
+Every login linked to a staff record uses the **staff number as its username** (for example BAF 001). The username cannot be typed differently when a login is created, and changing the staff number renames the login automatically (recorded in the audit trail). Passwords are not affected. The only exception is the System Administrator account `sysadmin`, which has no staff record.
 
 The last confirmed retained-account mapping was:
 
 | Account | Staff number | Login username |
 | --- | --- | --- |
-| HR | BAF 001 | BAF 003 |
+| HR | BAF 001 | BAF 001 |
 | CEO | BAF 002 | BAF 002 |
 | Director | BAF 020 | BAF 020 |
+| Finance Manager | BAF 049 | BAF 049 |
+| System Administrator | — | sysadmin |
 
-HR's staff number was changed without a request to rename the HR login. Director's login was subsequently renamed explicitly. Spaces are part of these usernames. Earlier forms such as BAF001 and BAF-01 are superseded.
+On 26 September 2026 all staff logins were aligned to staff numbers: HR changed from BAF 003 to BAF 001 and the Finance Manager from solomon to BAF 049. Spaces are part of these usernames.
 
 ### Creating a login
 
@@ -151,7 +153,7 @@ Finance can create a pre-arrival poultry order and record its payments. Producti
 Paid birds + free extra birds - transit deaths = live birds to allocate
 ```
 
-Allocation must cover the live birds. The current arrival rule directs chicks aged 42 days or less to houses designated as brooders. Batches receive generated codes such as B-001/26. Batch information is used to calculate age and expected production milestones.
+Allocation must cover the live birds. The current arrival rule directs chicks aged 42 days or less (`FARM_BROODER_MAX_AGE_DAYS`) to houses designated as brooders. Batches receive generated codes such as B-001/26. Batch information is used to calculate age and expected production milestones.
 
 Production's batch create/edit forms hide cost per bird, total paid, cost summaries and the supplier/invoice/notes section managed by Finance. Server-side validation also excludes those production-submitted financial fields. On arrival linked to an order, the application can take the cost and supplier from Finance's order internally. Production edits preserve existing recorded costs.
 
@@ -243,7 +245,7 @@ Store staff enter independent farm weights
 System records variance and received stock
 ```
 
-Production records the supplier, delivery information, ordered quantity and each feed weighing line. The supported delivery feed list currently includes Bran, Broken Maize, Sunflower, Soya, Lime and Hendrix. The current delivery-date validation requires Tuesday and disallows future dates.
+Production records the supplier, delivery information, ordered quantity and each feed weighing line. The supported delivery feed list currently includes Bran, Broken Maize, Sunflower, Soya, Lime and Hendrix. The current delivery-date validation requires Tuesday (`FARM_FEED_DELIVERY_WEEKDAY`, ISO weekday 2) and disallows future dates.
 
 Farm receipt is a separate action for a Store Keeper or Inventory Officer. Each delivery line needs its farm weight. A completed receipt cannot simply be received again. Variance is based on farm weight minus supplier weight: a negative value means the arrival weight is lower.
 
@@ -301,6 +303,16 @@ Finance records money received/paid and other supported transaction classificati
 | Assets | Register fixed assets and relevant financial details. |
 | Finance administration | Maintain accounts, payment methods/accounts, settings and periods. |
 
+### Chart of accounts, period locks and reversals
+
+The chart of accounts (Finance administration → Accounts) holds the workbook's account codes, groups and row order, plus a few accounts the ERP entry screens use that the workbook never had. The original workbook spelling is shown under each account. Every financial transaction is linked to its chart account automatically when saved; the typed account text is kept unchanged. Names are matched ignoring capitalisation, underscores, "&"/"and" and "/"/"or"; genuinely different wording is mapped in `config/finance_entry.php` (`account_aliases`). `php artisan finance:link-accounts` links older entries and lists any names that still need an alias.
+
+A closed financial period is locked: no entry dated inside it can be created, changed or deleted by any module (Finance, Sales, Payroll, Receivables). Reopen the period in Finance administration to correct it.
+
+Posted entries are corrected by reversal, not editing. In the Finance register, a standalone entry made on the Finance entry screen shows **Reverse**; the reason is required. The reversal is a new entry for the negative amount (reference `REV-…`), the original stays in the register marked reversed, and the audit trail records both. Entries that also changed a receivable, supplier bill, salary balance, prepayment or stock receipt cannot be reversed here; correct them in their own module.
+
+The Trial Balance expands each entry into balanced debit and credit lines against the chart of accounts and states whether the period balances. Monthly straight-line depreciation is posted by `php artisan finance:post-depreciation` (scheduled on the 1st at 01:00 for the month just ended) for active fixed assets that have a useful life; land is not depreciated.
+
 Customer prepayments and revenue are treated differently in several report calculations to avoid treating every receipt as earned sales revenue. Financial classification therefore matters; a correct amount in the wrong category can produce misleading reports.
 
 ### Budgets and purchases
@@ -315,7 +327,7 @@ The source contains financial overview/KPIs, statements, three-statement reporti
 
 Report totals depend on date ranges, transaction classification and the status rules of each report. Dashboard cash movement, recognised revenue, outstanding balances and accounting profit are not interchangeable figures.
 
-The repository also contains a historical finance-workbook analysis document and extraction scripts. Those files describe a workbook review, including reconciliation issues. Their existence does not mean workbook figures have been imported into the current operational database or resolved by this reset.
+The repository also contains a finance-workbook analysis document and extraction scripts. `php artisan finance:stage-workbook` loads the extract into a review staging table (duplicates, QA status and unmatched accounts flagged; revenue reconciled to the workbook) and shows the result under Finance administration → Import. Staging posts nothing to the books: posting still requires opening balances at 30 June 2025 and review of the flagged rows.
 
 ## 11. Approvals and executive work
 
@@ -362,13 +374,13 @@ The daily management report assembles departmental information for a selected da
 
 Global search offers permitted records across modules. Other reports provide their own date, unit, staff, batch or category filters. Filter choices are specific to each report rather than universal across the application.
 
-Print actions are available on several screens. The branded export service streams an HTML table using an **.xls** filename for spreadsheet compatibility; it is not a native .xlsx workbook. Available exports depend on the module.
+Every screen with figures or tables has an **Export to Excel** button at the right of the tab bar. It downloads a native **.xlsx** workbook in the standard report format: company name, report title, period or filters, who prepared it and when, maroon table headers, gold section rows, subtotal and total rows, real numbers with UGX formatting, frozen headers and filters, and landscape printing fitted to the page width. Reports with their own detailed export (all records, not just the rows on screen) use that export through the same button. Print actions remain available on several screens.
 
 Communications are stored in the application and can be addressed to a user, role or audience. The service also attempts email delivery when the recipient has email and the mail driver is not the log driver. SMTP/mail configuration is required for real email delivery; requiring email during account creation does not by itself configure delivery. SMS and WhatsApp delivery are not established by this implementation.
 
 ## 14. Requested changes and final behaviour
 
-This table records the final state of the requests covered in this conversation, rather than every intermediate design that was replaced.
+This table records the final state of the requests made during development, rather than every intermediate design that was replaced.
 
 | Request | Implemented result |
 | --- | --- |
@@ -393,6 +405,25 @@ This table records the final state of the requests covered in this conversation,
 | Director login BAF 020 | Login changed explicitly; password preserved at that rename. |
 | Director password reset | Completed separately at the user's request; value excluded from documentation. |
 | Email required for accounts | New login creation requires a valid unique email and shows a required field. |
+
+### Version 1.1 improvements (26 September 2026)
+
+| Area | Change |
+| --- | --- |
+| Screens on phones | Every data table scrolls sideways on narrow screens instead of breaking the page. |
+| Safer actions | Delete, reject, close, end, revoke and checkout actions ask for confirmation once. |
+| Consistent styling | One set of brand colour tokens; page-specific styles load in the page head; shared money, stat-card and colour-coded status components. |
+| Finance period lock | Entries dated in a closed period are rejected in every module. |
+| Payment methods | Finance and receivables forms use the Finance administration list; "Agent" was offered on receivables but rejected on save, and now works. |
+| Chart of accounts | Workbook codes and hierarchy loaded; transactions linked automatically. |
+| Reversals | Standalone entries are corrected by reversal with a reason; originals are kept. |
+| Trial balance | Built from balanced debit/credit lines per chart account; transfers now post from the source to the destination account. |
+| Depreciation | Monthly straight-line depreciation command and schedule. |
+| Workbook import | Review staging of the workbook with duplicates, QA status and reconciliation. |
+| Farm rules | Feed estimate, delivery weekday and brooder age moved to `config/farm.php`, same defaults. |
+| Fixes | Daily Management Report no longer fails when a department has no manager account; Feed Types screens open (their templates were misnamed); customer analysis query works on PostgreSQL and SQLite; front-end build fixed. |
+
+A database backup taken before the 1.1 migrations is stored under `storage/app/private/backups/pre-improvements-20260926-003317/`.
 
 ## 15. Fresh-start reset and onboarding
 
@@ -455,8 +486,8 @@ The historic reset counts are not a promise that today's database remains empty.
 | resources/css and resources/js | Frontend source assets. |
 | public/css, public/js, public/images | Directly served application assets and branding. |
 | routes/web.php | Browser routes and middleware assignments. |
-| routes/console.php | Scheduled reminders and weekly budget-draft command. |
-| config | App, database, session, mail and finance-entry configuration. |
+| routes/console.php | Scheduled reminders, weekly budget drafts and monthly depreciation. |
+| config | App, database, session, mail, finance-entry, farm rules (farm.php) and sidebar highlighting (navigation.php). |
 | database/migrations | Versioned database structure and several data/setup changes. |
 | database/seeders | Foundation/reference and sample/setup population. Not a safe reset shortcut. |
 | storage/app | Uploaded files, extracts and private backup material. |
@@ -492,6 +523,9 @@ Important actions → Audit records and, where defined, communications
 | WeeklyBudgetDraftService | Repeatable weekly draft initialisation. |
 | UgandaPayrollCalculator | Implemented payroll tax/contribution calculations. |
 | UnitEconomicsService | Unit revenue, expenditure and profitability calculations. |
+| ChartOfAccounts | Chart of accounts loading and account-name matching. |
+| LedgerPosting | Debit/credit lines and trial balance from financial transactions. |
+| WorkbookImportStager | Workbook extract staging and reconciliation summary. |
 | PoultryPerformanceService / WorkerPerformanceService | Production and workforce performance calculations. |
 | BrandedReportExport | Branded spreadsheet-compatible table downloads. |
 
@@ -547,10 +581,7 @@ Use maintenance mode and a verified backup for planned disruptive database chang
 
 ### Deployment definitions that still need verification
 
-Docker and Render files are present, but their presence is not proof of a working deployment. Two concrete issues found during this review are:
-
-- Dockerfile expects package-lock.json and runs npm ci, but package-lock.json was absent from the reviewed workspace. The dependency lock/build path needs resolving before relying on that build.
-- render.yaml names a DATABASE_URL secret, while config/database.php reads DB_URL for connection URLs. Configure matching variables or reconcile the files before deployment.
+Docker and Render files are present, but their presence is not proof of a working deployment. The two issues found in the earlier review are resolved: package-lock.json is present and `npm ci` / `npm run build` succeed, and config/database.php accepts either DB_URL or Render's DATABASE_URL. A full container build and hosted run have not been verified.
 
 The container startup script runs migrations automatically. Review pending migrations, persistent database/upload storage, mail settings, APP_URL, scheduler processes and backups before putting a hosted instance into use.
 
@@ -558,7 +589,7 @@ The container startup script runs migrations automatically. Review pending migra
 
 ### Existing automated checks
 
-The repository includes focused tests for account email creation, custom mortality causes and vet names, production batch finance-field exclusion, batch vaccination isolation/filters, feed stock balances, global search, budget funding, welfare budgets, branded exports and payroll calculations.
+The repository includes a smoke test that opens every simple screen with seeded data, and focused tests for finance period locks, chart-of-accounts linking, reversals, ledger posting, depreciation, workbook staging, account email creation, custom mortality causes and vet names, production batch finance-field exclusion, batch vaccination isolation/filters, feed stock balances, global search, budget funding, welfare budgets, branded exports and payroll calculations.
 
 During the work recorded here, focused tests for the recently changed workflows passed, and Blade templates were compiled after form changes. This documentation task did not rerun the entire test suite or perform a new browser audit of every module. Tests are evidence for the behaviours they cover, not blanket certification of the system.
 
@@ -569,9 +600,8 @@ During the work recorded here, focused tests for the recently changed workflows 
 - Mandatory vet names were added to mortality assessment; other health/vaccination forms have their own fields and validation.
 - The cause control records a user's assessment. Custom wording does not receive automatic medical classification or diagnosis.
 - Vaccination date filters apply to administration history, not to every calculated future due date.
-- Staff number changes do not automatically rename login accounts. The account table in this guide explains the requested exceptions already applied.
 - The staff number generator checks numbers currently present, including soft-deleted rows. It does not maintain a separate permanent registry of numbers that were manually renamed away.
-- The production dashboard's feed estimate is fixed at 125 g per bird per day and includes unapproved recorded statuses as described above.
+- The production dashboard's feed estimate defaults to 125 g per bird per day (configurable) and includes unapproved recorded statuses as described above.
 - Email delivery needs a working mail configuration. Required email entry alone does not establish outbound email or password-recovery delivery.
 - The historical reset retained reference/setup data. It was not a reusable factory-reset feature.
 - Older files contain some visibly misencoded text. This document uses clean text, but it does not imply all older UI wording has been corrected.
@@ -581,14 +611,16 @@ During the work recorded here, focused tests for the recently changed workflows 
 | Problem | What to check |
 | --- | --- |
 | Username/password rejected | Use the exact current login username, including spaces; check lockout and whether an authorised password reset is needed. |
-| Staff number changed but login did not | This is expected; edit the account username separately. |
+| Staff number changed | The login username changes with it; sign in with the new staff number. |
 | Cannot create a login without email | Enter a valid email in the required account field. |
 | Cannot edit a batch | Check access and whether the Director has granted a current edit window. |
 | Cannot save contagious mortality cause | Enter the action taken. |
 | Cannot save after ticking vet called | Enter the vet's name. |
 | House says Not recorded | The mortality entry has no linked house; do not interpret the batch total as a house total. |
 | Feed issue rejected | Confirm received stock, item/feed name, unit and available quantity. |
-| Delivery date rejected | The implemented supplier feed-delivery form currently accepts Tuesdays only. |
+| Delivery date rejected | The supplier feed-delivery form accepts the configured delivery weekday only (Tuesday by default). |
+| Finance entry rejected: period closed | The date falls in a closed financial period; use an open date or ask Finance to reopen the period. |
+| No Reverse button on an entry | Only standalone Finance-screen entries can be reversed; entries from Sales, Payroll, receivables, bills or stock are corrected in those modules. |
 | No vaccination filter results | Check the administration dates, selected batch/vaccine and schedule status; use Reset. |
 | Stock receipt absent from balance | Check whether it is still pending confirmation. |
 | Another device cannot connect | Check host IP, port, server process, same-network reachability and firewall rules. |

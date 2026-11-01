@@ -25,7 +25,14 @@ class WelfareBudgetController extends Controller
         ['Other approved staff welfare requirement', 'item'],
     ];
 
-    public function index(Request $request): View
+    /** HR now uses the same weekly budget draft page as every department. */
+    public function index(Request $request): \Illuminate\Http\RedirectResponse
+    {
+        return redirect()->route('department-budget.index', array_filter(['week' => $request->query('week')]));
+    }
+
+    /** Previous welfare-only budget page; kept for reference, no longer routed. */
+    public function welfarePage(Request $request): View
     {
         abort_unless($request->user()->canAccess('budget'), 403);
         $start = $request->date('week')?->startOfWeek() ?? now()->startOfWeek();

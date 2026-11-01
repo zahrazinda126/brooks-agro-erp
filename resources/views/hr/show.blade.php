@@ -13,7 +13,7 @@
         @endphp
         <div class="credentials">
             <p class="card-label">Give these to {{ $employee->first_name }} now</p>
-            <p class="muted" style="margin:0 0 14px;">
+            <p class="muted u-m0-b14">
                 This password is shown once and cannot be recovered. If it is lost, reset it.
             </p>
 
@@ -81,6 +81,7 @@
                     <dt>Left</dt><dd>{{ $employee->end_date->format('j M Y') }}</dd>
                 @endif
                 <dt>National ID</dt><dd class="mono">{{ $employee->national_id ?: '—' }}</dd>
+                <dt>ID picture</dt><dd>@if($employee->national_id_photo)<a href="{{ route('employees.national-id-photo', $employee) }}" target="_blank" rel="noopener">View ID picture</a>@else Not uploaded @endif</dd>
             </dl>
         </div>
 
@@ -150,7 +151,7 @@
                     </div>
                 @endif
             @else
-                <p class="muted" style="margin:0 0 14px;">
+                <p class="muted u-m0-b14">
                     No login. {{ $employee->first_name }} cannot sign in — which is normal for
                     staff who never use the system.
                 </p>
@@ -171,11 +172,11 @@
     @if ($employee->notes)
         <div class="card">
             <p class="card-label">Notes</p>
-            <p style="margin:0;white-space:pre-wrap;">{{ $employee->notes }}</p>
+            <p class="u-m0 u-pre-wrap">{{ $employee->notes }}</p>
         </div>
     @endif
 
-    <p style="margin-top:18px;">
+    <p class="u-mt-18">
         <a class="btn btn--quiet btn--inline" href="{{ route('employees.index') }}">Back to register</a>
     </p>
 

@@ -14,7 +14,7 @@
         <div class="field @error('staff_no') field--error @enderror">
             <label for="staff_no">Staff number</label>
             <input id="staff_no" name="staff_no" type="text"
-                   value="{{ old('staff_no', $employee->staff_no ?? $nextStaffNo ?? '') }}">
+                   value="{{ old('staff_no', $employee->staff_no ?? $nextStaffNo ?? '') }}" @if(isset($employee)) required @endif>
             @error('staff_no')<p class="field-error">{{ $message }}</p>@enderror
             @if (! isset($employee))
                 <p class="field-hint">
@@ -64,9 +64,21 @@
 
         <div class="field @error('national_id') field--error @enderror">
             <label for="national_id">National ID</label>
-            <input id="national_id" name="national_id" type="text"
+            <input id="national_id" name="national_id" type="text" maxlength="20" autocapitalize="characters" pattern="\s*([A-Za-z0-9]\s*){14}" title="14 letters and numbers"
                    value="{{ old('national_id', $employee->national_id ?? '') }}">
+            <small class="field-hint">NIN: 14 letters and numbers.</small>
             @error('national_id')<p class="field-error">{{ $message }}</p>@enderror
+        </div>
+
+        <div class="field @error('national_id_photo') field--error @enderror">
+            <label for="national_id_photo">ID picture <small>(optional)</small></label>
+            <input id="national_id_photo" name="national_id_photo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf">
+            @if (isset($employee) && $employee->national_id_photo)
+                <small class="field-hint"><a href="{{ route('employees.national-id-photo', $employee) }}" target="_blank" rel="noopener">View current ID picture</a> · choosing a new file replaces it.</small>
+            @else
+                <small class="field-hint">Photo or PDF scan of the ID, up to 5 MB.</small>
+            @endif
+            @error('national_id_photo')<p class="field-error">{{ $message }}</p>@enderror
         </div>
     </div>
 </div>
@@ -245,6 +257,12 @@
                     </option>
                 @endforeach
             </select>
+        </div>
+
+        <div class="field">
+            <input type="hidden" name="on_payroll" value="0">
+            <label class="check-label"><input type="checkbox" name="on_payroll" value="1" @checked(old('on_payroll', isset($employee) ? (int) $employee->on_payroll : 1))> Paid through payroll</label>
+            <small class="field-hint">Untick for builders and others paid directly by Finance.</small>
         </div>
 
         <div class="field">

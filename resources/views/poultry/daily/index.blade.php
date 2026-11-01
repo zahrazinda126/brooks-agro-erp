@@ -1,4 +1,4 @@
-﻿@extends('layouts.app')
+@extends('layouts.app')
 
 @section('title', 'My Work')
 
@@ -51,15 +51,32 @@ $workerName = $user->firstName();
     <div class="worker-welcome__mark" aria-hidden="true">{{ strtoupper(substr($workerName, 0, 1)) }}</div>
 </section>
 
+{{-- Paid tasks the Production Manager has given this worker (shown only while they last). --}}
+@php
+    $myTasks = \App\Http\Controllers\Operations\FarmTaskController::activeFor(auth()->user());
+    $myTaskToday = $myTasks->isEmpty() ? collect() : DB::table('farm_task_entries')->whereIn('farm_task_assignment_id', $myTasks->pluck('id'))->whereDate('done_on', today())->pluck('farm_task_assignment_id');
+@endphp
+@if($myTasks->isNotEmpty())
+<section class="flock"><div class="flock-head"><h3>My tasks</h3><p>Paid tasks given to you. Record the work when you do it.</p></div><div class="jobs">
+@foreach($myTasks as $task)
+<a class="job {{ $myTaskToday->contains($task->id) ? 'job--done' : '' }}" href="{{ route('my-tasks.record', $task->id) }}"><svg class="job-icon" aria-hidden="true"><use href="#i-clipboard"></use></svg><span class="job-label">{{ $task->task_name }}</span><span class="job-state">{{ $myTaskToday->contains($task->id) ? 'Recorded today - add another' : ($task->measure ? 'Tap to record what you collected' : 'Tap to record what you did') }}</span></a>
+@endforeach
+</div></section>
+@endif
+
 @if($showProductionPlanning)<section class="exec-panel">
-    <div class="page-head page-head--split" style="margin:0">
-        <div><p class="eyebrow">&#x1F4B0; This week's Finance draft</p><h3>UGX {{ number_format($productionDraftTotal) }}</h3><p>Only Poultry, Goats, Rabbits, Dogs, and Garden requirements.</p></div>
-        <a class="btn" href="{{ route('production.finance-draft.index') }}">Open & edit unit budgets</a>
+    <div class="page-head page-head--split u-m0">
+        <div><p class="eyebrow">&#x1F4B0; This week's Finance draft</p><h3>@money($productionDraftTotal)</h3><p>Only Poultry, Goats, Rabbits, Dogs, and Garden requirements.</p></div>
+        <a class="btn" href="{{ route('department-budget.index') }}">Open & edit unit budgets</a>
     </div>
 </section>@endif
 
-<div class="unit-tabs" style="margin-bottom:1.5rem">@if($visibleFarmUnits->contains('poultry'))<a href="#poultry">&#x1F414; Poultry</a>@endif @if($visibleFarmUnits->contains('goats'))<a href="#goats">&#x1F410; Goats</a>@endif @if($visibleFarmUnits->contains('rabbits'))<a href="#rabbits">&#x1F407; Rabbits</a>@endif @if($visibleFarmUnits->contains('dogs'))<a href="#dogs">&#x1F415; Dogs</a>@endif @if($visibleFarmUnits->contains('garden'))<a href="#garden">&#x1F331; Kituntu Garden</a>@endif</div>
-@if($feedBalances->isNotEmpty())<section class="exec-panel"><div class="page-head page-head--split" style="margin:0"><div><p class="eyebrow">Feed available</p><h3>Feed received for your units</h3></div><a class="btn btn--quiet" href="{{ route('operations.feed-stock.index') }}">View feed register</a></div><div class="production-unit-grid">@foreach($feedBalances as $feed)<article class="production-unit-card"><span>&#x1F33E;</span><div><small>{{ ucfirst($feed->unit_code) }} &middot; {{ $feed->feed_name }}</small><strong>{{ number_format($feed->balance_kg,2) }}</strong><em>kg available</em></div></article>@endforeach</div></section>@endif
+{{-- Unit jump links only when there is more than one unit to jump between. --}}
+@if($visibleFarmUnits->count() > 1)<div class="unit-tabs" style="margin-bottom:1.5rem">@if($visibleFarmUnits->contains('poultry'))<a href="#poultry">&#x1F414; Poultry</a>@endif @if($visibleFarmUnits->contains('goats'))<a href="#goats">&#x1F410; Goats</a>@endif @if($visibleFarmUnits->contains('rabbits'))<a href="#rabbits">&#x1F407; Rabbits</a>@endif @if($visibleFarmUnits->contains('dogs'))<a href="#dogs">&#x1F415; Dogs</a>@endif @if($visibleFarmUnits->contains('garden'))<a href="#garden">&#x1F331; Kituntu Garden</a>@endif</div>@endif
+@php
+    // Farm workers see each button in English and Luganda.
+    $say = fn (string $en, string $lg) => $user->isDataEntryOnly() ? $en.' / '.$lg : $en;
+@endphp
 @if($visibleFarmUnits->contains('poultry'))
 <div id="poultry" class="page-head"><h2>&#x1F414; Poultry</h2><p>Eggs, feed, mortality and scheduled flock work.</p></div>
 
@@ -90,7 +107,7 @@ $workerName = $user->firstName();
          */
         if ($user->canDo('egg-entry', 'create')) {
             $jobs[] = [
-                'label' => '🥚 Eggs',
+                'label' => $say('🥚 Eggs', 'Amagi'),
                 'icon'  => 'egg',
                 'url'   => route('daily.eggs', $batch),
                 'done'  => false, // collections can be recorded any number of times
@@ -100,8 +117,8 @@ $workerName = $user->firstName();
 
         if ($user->canDo('mortality-entry', 'create')) {
             $jobs[] = [
-                'label' => '⚠️ Deaths',
-                'icon'  => 'vet',
+                'label' => $say('Deaths', 'Ezifudde'),
+                'icon'  => 'dead-hen',
                 'url'   => route('daily.deaths', $batch),
                 'done'  => false,   // deaths can happen more than once a day
                 'flag'  => null,
@@ -110,8 +127,8 @@ $workerName = $user->firstName();
 
         if ($user->canDo('feed-consumption', 'create')) {
             $jobs[] = [
-                'label' => '🌾 Feed mixing',
-                'icon'  => 'grain',
+                'label' => $say('Feeds', 'Emmere'),
+                'icon'  => 'sack',
                 'url'   => route('daily.feed', $batch),
                 'done'  => $feedDone,
                 'flag'  => null,
@@ -121,7 +138,7 @@ $workerName = $user->firstName();
         // Monthly, so it appears only when it falls due.
         if ($needLitter && $user->canDo('litter-removal', 'create')) {
             $jobs[] = [
-                'label' => '🧹 Litter',
+                'label' => $say('🧹 Litter', 'Kasasiro'),
                 'icon'  => 'wrench',
                 'url'   => route('daily.litter', $batch),
                 'done'  => false,
@@ -135,11 +152,11 @@ $workerName = $user->firstName();
         <div class="flock-head">
             <h3>{{ $batch->name ?: $batch->code }}</h3>
             @php
-                $workerHouseNumbers = ($assignedHouses ?? collect())
-                    ->where('animal_group_id', $batch->id)
-                    ->pluck('house_number');
+                // The worker's own houses and the birds in them (not the whole batch).
+                $workerHouses = ($assignedHouses ?? collect())->where('animal_group_id', $batch->id);
+                $workerHouseNames = $workerHouses->pluck('house_number')->map(fn ($name) => str_starts_with(strtolower($name), 'house') ? ucfirst($name) : 'House '.$name);
             @endphp
-            <p>{{ $workerHouseNumbers->isNotEmpty() ? 'House '.$workerHouseNumbers->join(' & ') : ($batch->house ?: $batch->code) }} &middot; {{ number_format($batch->current_quantity) }} birds</p>
+            <p>{{ $workerHouseNames->isNotEmpty() ? $workerHouseNames->join(' & ') : ($batch->house ?: $batch->code) }} &middot; {{ number_format($workerHouses->isNotEmpty() ? $workerHouses->sum('bird_quantity') : $batch->current_quantity) }} birds</p>
         </div>
 
         @if (count($jobs))
@@ -156,7 +173,7 @@ $workerName = $user->firstName();
                             <use href="#i-{{ $job['icon'] }}"></use>
                         </svg>
 
-                        <span class="job-label">{{ $job['label'] }}</span>
+                        <span class="job-label">@if(in_array($job['icon'], ['sack', 'dead-hen'], true))<svg class="job-emoji" aria-hidden="true"><use href="#i-{{ $job['icon'] }}-color"></use></svg> @endif{{ $job['label'] }}</span>
 
                         @if ($job['done'])
                             <span class="job-state">
@@ -173,7 +190,7 @@ $workerName = $user->firstName();
                 @endforeach
             </div>
         @else
-            <p class="muted" style="margin:0;">
+            <p class="muted u-m0">
                 Nothing to record for this flock today.
             </p>
         @endif
@@ -182,12 +199,26 @@ $workerName = $user->firstName();
 
 @empty
 
-    <div class="card">
-        <p class="card-label">Nothing to record</p>
-        <p class="muted" style="margin:0;">
-            There are no flocks in your section yet. Speak to your supervisor.
-        </p>
-    </div>
+    {{-- The buttons stay on the page; they open once a flock is placed in the worker's house. --}}
+    @php
+        $waitingJobs = array_filter([
+            $user->canDo('egg-entry', 'create') ? [$say('🥚 Eggs', 'Amagi'), 'egg'] : null,
+            $user->canDo('mortality-entry', 'create') ? [$say('Deaths', 'Ezifudde'), 'dead-hen'] : null,
+            $user->canDo('feed-consumption', 'create') ? [$say('Feeds', 'Emmere'), 'sack'] : null,
+        ]);
+    @endphp
+    <section class="flock">
+        <div class="jobs">
+            @foreach ($waitingJobs as [$label, $icon])
+                <button type="button" class="job" onclick="this.closest('.flock').querySelector('.flock-wait').hidden = false">
+                    <svg class="job-icon" aria-hidden="true"><use href="#i-{{ $icon }}"></use></svg>
+                    <span class="job-label">@if(in_array($icon, ['sack', 'dead-hen'], true))<svg class="job-emoji" aria-hidden="true"><use href="#i-{{ $icon }}-color"></use></svg> @endif{{ $label }}</span>
+                    <span class="job-state">Tap to enter</span>
+                </button>
+            @endforeach
+        </div>
+        <div class="notice flock-wait u-mt-12" role="status" hidden>There is no flock in your house yet. Ask your supervisor to put a flock in your house, then record here.</div>
+    </section>
 
 @endforelse
 @endif
@@ -199,11 +230,11 @@ $workerName = $user->firstName();
         'dogs' => ['name'=>'Dogs','icon'=>"\u{1F415}"],
     ];
     $livestockActions = [
-        ['section'=>'feed','label'=>'🌾 Daily Feed','icon'=>'grain'],
-        ['section'=>'vaccination','label'=>'💉 Vaccination','icon'=>'vet'],
-        ['section'=>'treatment','label'=>'🩺 Daily Health & Treatment','icon'=>'vet'],
-        ['section'=>'mortality','label'=>'⚠️ Daily Mortality','icon'=>'vet'],
-        ['section'=>'production','label'=>'🐣 Daily Production & Births','icon'=>'egg'],
+        ['section'=>'feed','label'=>$say('🌾 Daily Feed', 'Emmere'),'icon'=>'grain'],
+        ['section'=>'vaccination','label'=>$say('💉 Vaccination', 'Okugema'),'icon'=>'vet'],
+        ['section'=>'treatment','label'=>$say('🩺 Daily Health & Treatment', 'Obujjanjabi'),'icon'=>'vet'],
+        ['section'=>'mortality','label'=>$say('⚠️ Daily Mortality', 'Ezifudde'),'icon'=>'vet'],
+        ['section'=>'production','label'=>$say('🐣 Daily Production & Births', 'Okuzaala'),'icon'=>'egg'],
     ];
 @endphp
 
@@ -225,7 +256,7 @@ $workerName = $user->firstName();
 @endforelse
 @endforeach
 
-@if($visibleFarmUnits->contains('garden'))<div id="garden" class="page-head" style="margin-top:2rem"><h2>&#x1F331; Kituntu Garden</h2><p>Record inputs, field activity, harvests and crop losses.</p></div>
+@if($visibleFarmUnits->contains('garden'))<div id="garden" class="page-head u-mt-32"><h2>&#x1F331; Kituntu Garden</h2><p>Record inputs, field activity, harvests and crop losses.</p></div>
 <section class="flock"><div class="flock-head"><h3>Garden work</h3><p>{{ $gardenActivity }} record{{ $gardenActivity===1?'':'s' }} entered today</p></div><div class="jobs">
 @foreach([['view'=>'inputs','label'=>'Inputs & Irrigation','icon'=>'grain'],['view'=>'activity','label'=>'Field Activity','icon'=>'wrench'],['view'=>'production','label'=>'Harvest','icon'=>'egg'],['type'=>'loss','label'=>'Crop Loss','icon'=>'vet']] as $action)
 <a class="job" href="{{ route('operations.units.index',array_filter(['unit'=>'garden','view'=>$action['view']??null,'type'=>$action['type']??null])) }}"><svg class="job-icon" aria-hidden="true"><use href="#i-{{ $action['icon'] }}"></use></svg><span class="job-label">{{ $action['label'] }}</span><span class="job-state">Tap to enter</span></a>

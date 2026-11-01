@@ -20,24 +20,14 @@
     pick from a list.
 --}}
 
-<div class="entry-head">
-    <a class="back" href="{{ route('daily.index') }}" aria-label="Go back">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M15 5 8 12l7 7" fill="none" stroke="currentColor"
-                  stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-    </a>
-    <div>
-        <h2>Deaths</h2>
-        <p>{{ $batch->name ?: $batch->code }} · {{ number_format($batch->current_quantity) }} birds</p>
-    </div>
-</div>
+{{-- Just a Back button: the screen name and batch line were removed at the user's request. --}}
+<div class="entry-head entry-head--back"><a class="btn btn--quiet btn--inline entry-back" href="{{ request('from') === 'monitor' ? route('monitor.health', 'deaths') : route('daily.index') }}">&larr; Back</a></div>
 
 @if ($errors->any())
     <div class="notice notice--alarm">{{ $errors->first() }}</div>
 @endif
 
-<form method="POST" action="{{ route('daily.deaths.store', $batch) }}">
+<form method="POST" action="{{ route('daily.deaths.store', $batch) }}">@if(request('from') === 'monitor' || old('from') === 'monitor')<input type="hidden" name="from" value="monitor">@endif
     @csrf
 
     @include('poultry.daily._house_select', ['houseChoices' => $houseChoices, 'selectedHouse' => $selectedHouse, 'entryRoute' => 'daily.deaths'])
@@ -57,7 +47,7 @@
     <details class="fold">
         <summary>Did you kill any sick or weak birds?</summary>
 
-        <p class="ask-hint" style="margin-top:12px;">
+        <p class="ask-hint u-mt-12">
             Only birds you removed on purpose. Birds found dead go above.
         </p>
 

@@ -14,6 +14,16 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable, SoftDeletes;
 
+    /** Every login linked to a staff record signs in with that staff number (the admin account has none). */
+    protected static function booted(): void
+    {
+        static::saving(function (User $user) {
+            if (! $user->employee_id) return;
+            $staffNo = Employee::withTrashed()->whereKey($user->employee_id)->value('staff_no');
+            if ($staffNo) $user->username = $staffNo;
+        });
+    }
+
     protected $fillable = [
         'username', 'name', 'email', 'password',
         'employee_id', 'role_id', 'department_id',
@@ -218,12 +228,38 @@ class User extends Authenticatable
     }
 
     /** Personal Assistants may read every report needed for Director briefings. */
+    /** The PA: the role is "pa" (original) or "personal-assistant". */
+    public const PA_ROLES = ['pa', 'personal-assistant'];
+
+    /** Farm workers who only record their own work (My Work): casual workers and poultry attendants. */
+    public const DATA_ENTRY_ROLES = ['casual-worker', 'poultry-attendant'];
+
+    public function isPersonalAssistant(): bool
+    {
+        return $this->roles->pluck('code')->push($this->role?->code)->intersect(self::PA_ROLES)->isNotEmpty();
+    }
+
     public function canViewAllReports(): bool
     {
         $codes = $this->roles->pluck('code')->push($this->role?->code)->filter();
 
         return $this->canAccess('reports')
             || $codes->intersect(['personal-assistant', 'pa'])->isNotEmpty();
+    }
+
+    /**
+     * The Production Manager sees only what relates to production: no financial, HR or
+     * sales reports, even though the role holds the general "reports" permission.
+     * Anyone who also holds a management, finance, HR or sales role is not limited.
+     */
+    public function seesOnlyProductionReports(): bool
+    {
+        $codes = $this->roles->pluck('code')->push($this->role?->code)->filter();
+
+        return $codes->contains('production-manager')
+            && ! $this->isSuperuser()
+            && $codes->intersect(['system-admin', 'ceo', 'director', 'personal-assistant', 'pa',
+                'finance-manager', 'hr-manager', 'sales-manager'])->isEmpty();
     }
 
     public function canDo(string $moduleKey, string $action): bool
@@ -274,6 +310,12 @@ class User extends Authenticatable
             // Containers are legacy finance headings. Every role now sees
             // one consistent business-area menu instead.
             ->filter(fn (Module $module) => $module->key !== 'dashboard' && ! $module->is_container)
+            // Seeded modules with no screen yet stay out of the menu until they are built.
+            ->filter(fn (Module $module) => $module->isBuilt())
+            // Several seeded modules open the same screen; list each screen once, under its first menu entry.
+            ->sortBy(fn (Module $module) => sprintf('%03d-%05d',
+                Module::navigationGroupOrder($module->navigationGroup()), $module->sort_order))
+            ->unique(fn (Module $module) => $module->url())
             ->sortBy(fn (Module $module) => sprintf('%03d-%05d',
                 Module::navigationGroupOrder($module->navigationGroup()), $module->sort_order))
             ->groupBy(fn (Module $module) => $module->navigationGroup());
@@ -306,7 +348,7 @@ class User extends Authenticatable
         $codes = array_unique($codes);
 
         // Only if EVERY role they hold is a data-entry role.
-        return $codes !== [] && empty(array_diff($codes, ['casual-worker']));
+        return $codes !== [] && empty(array_diff($codes, self::DATA_ENTRY_ROLES));
     }
 
     /** The route name this person should be sent to on sign-in. */

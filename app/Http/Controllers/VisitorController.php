@@ -30,6 +30,13 @@ class VisitorController extends Controller
         ]);
     }
 
+    /** Check in a visitor: its own page (the PA records visitors; the CEO and Director only view the list). */
+    public function create(Request $request): View
+    {
+        abort_unless($request->user()->canDo('visitors','create'), 403);
+        return view('visitors.create');
+    }
+
     public function store(Request $request): RedirectResponse
     {
         abort_unless($request->user()->canDo('visitors','create'), 403);
@@ -43,7 +50,7 @@ class VisitorController extends Controller
         ]);
         $visitor = Visitor::create($data + ['recorded_by'=>$request->user()->id]);
         AuditLog::record('visitor_checked_in', $visitor, $visitor->visitor_name.' checked in to visit '.$visitor->person_to_visit, null, $visitor->toArray(), 'visitors');
-        return back()->with('status', 'Visitor checked in successfully.');
+        return redirect()->route('visitors.index')->with('status', $visitor->visitor_name.' checked in.');
     }
 
     public function checkout(Request $request, Visitor $visitor): RedirectResponse

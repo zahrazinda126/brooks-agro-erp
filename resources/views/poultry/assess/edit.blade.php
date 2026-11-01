@@ -81,7 +81,7 @@
 @if ($context->isNotEmpty())
     <div class="card">
         <p class="card-label">Same flock, last 14 days</p>
-        <p class="muted" style="margin:0 0 12px;">
+        <p class="muted u-m0-b12">
             {{ $recent14 }} birds lost in total, including this record.
         </p>
 
@@ -168,9 +168,9 @@
     <button type="submit" class="btn btn--inline btn--small">Save assessment</button>
 </form>
 
-<style>
-.cause-picker{position:relative}.cause-picker__control{position:relative}.cause-picker__control input{width:100%;padding-right:42px}.cause-picker__toggle{position:absolute;right:2px;top:2px;bottom:2px;width:38px;border:0;background:transparent;color:inherit;cursor:pointer}.cause-picker__list{position:absolute;top:52px;left:0;right:0;z-index:30;max-height:320px;overflow-y:auto;background:#fff;color:#171717;border:1px solid #c9beb4;border-radius:8px;box-shadow:0 8px 24px #0002;padding:8px 0}.cause-picker__heading{padding:6px 16px 3px;font-weight:700;color:#921f2b}.cause-picker__option{padding:7px 24px;cursor:pointer}.cause-picker__option:hover,.cause-picker__option[aria-selected="true"]{background:#195fc3;color:#fff}.cause-picker__empty{padding:8px 16px}
-</style>
+@pushOnce('styles')<style>
+.cause-picker{position:relative}.cause-picker__control{position:relative}.cause-picker__control input{width:100%;padding-right:42px}.cause-picker__toggle{position:absolute;right:2px;top:2px;bottom:2px;width:38px;border:0;background:transparent;color:inherit;cursor:pointer}.cause-picker__list{position:absolute;top:52px;left:0;right:0;z-index:30;max-height:320px;overflow-y:auto;background:#fff;color:#171717;border:1px solid #c9beb4;border-radius:8px;box-shadow:0 8px 24px #0002;padding:8px 0}.cause-picker__heading{padding:6px 16px 3px;font-weight:700;color:#921f2b}.cause-picker__option{padding:7px 24px;cursor:pointer}.cause-picker__option:hover,.cause-picker__option[aria-selected="true"]{background:var(--maroon-700);color:#fff}.cause-picker__empty{padding:8px 16px}
+</style>@endPushOnce
 <script>
 (function () {
     var vetCalled = document.getElementById('vet_called');

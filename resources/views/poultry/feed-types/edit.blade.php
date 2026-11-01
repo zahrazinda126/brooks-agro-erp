@@ -26,7 +26,7 @@
 
 <div class="card" style="margin-top:16px;">
     <p class="card-label">{{ $feed->is_active ? 'Stop using this feed' : 'Use this feed again' }}</p>
-    <p class="muted" style="margin:0 0 12px;">
+    <p class="muted u-m0-b12">
         @if ($feed->is_active)
             Hiding it removes it from the worker's screen. Records already
             entered keep it — a feed is never deleted, or months of history

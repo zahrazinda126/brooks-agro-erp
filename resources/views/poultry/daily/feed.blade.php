@@ -1,4 +1,4 @@
-﻿@extends('layouts.app')
+@extends('layouts.app')
 
 @section('title', 'Feed Mixing')
 
@@ -21,6 +21,42 @@
 @php
     $weeks = $batch->ageInWeeks();
 @endphp
+
+@if(auth()->user()->isDataEntryOnly())
+{{-- Poultry attendant: the feed arrives already mixed, so there is one thing to say, like Deaths: how much was given. --}}
+{{-- Just a Back button: the screen name and batch line were removed at the user's request. --}}
+<div class="entry-head entry-head--back"><a class="btn btn--quiet btn--inline entry-back" href="{{ route('daily.index') }}">&larr; Back</a></div>
+@if ($errors->any())<div class="notice notice--alarm">{{ $errors->first() }}</div>@endif
+<form method="POST" action="{{ route('daily.feed-given.store', $batch) }}">
+    @csrf
+    @include('poultry.daily._house_select', ['houseChoices' => $houseChoices, 'selectedHouse' => $selectedHouse, 'entryRoute' => 'daily.feed'])
+    <div class="ask">
+        <p class="ask-q">How many kilograms of feed did you give today?</p>
+        @if($selectedHouse->feed_store_id)<p class="house-fixed" style="margin-bottom:8px">From <strong>{{ \Illuminate\Support\Facades\DB::table('inventory_stores')->where('id', $selectedHouse->feed_store_id)->value('name') }}</strong> · {{ \App\Support\MixedFeedStock::kg(\App\Support\MixedFeedStock::balance($selectedHouse->feed_store_id, 'feed-given:house-'.$selectedHouse->id.':'.now()->toDateString())) }} kg available</p>@endif
+        <p class="ask-hint">All the mixed feed you gave this house today.@if($mixedToday) You already saved {{ rtrim(rtrim(number_format($mixedToday, 1), '0'), '.') }} kg today; saving again replaces it.@endif</p>
+        <div class="big-counter">
+            <button type="button" class="big-step" data-target="feedKg" data-step="-5" aria-label="Five kg less">&minus;</button>
+            <input type="number" id="feedKg" name="quantity_kg" class="big-val" value="{{ old('quantity_kg', $mixedToday ?: 0) }}" min="0" max="20000" step="0.1" inputmode="decimal">
+            <button type="button" class="big-step" data-target="feedKg" data-step="5" aria-label="Five kg more">+</button>
+        </div>
+        <p class="ask-hint" style="text-align:center">kg</p>
+    </div>
+    <div class="ask">
+        <p class="ask-q">Anything to add?</p>
+        <p class="ask-hint">You can leave this empty.</p>
+        <textarea name="worker_note" rows="2" placeholder="e.g. birds did not finish the evening feed">{{ old('worker_note') }}</textarea>
+    </div>
+    <button type="submit" class="btn-big">Save</button>
+</form>
+<script>
+document.querySelectorAll('.big-step').forEach(function (b) {
+    b.addEventListener('click', function () {
+        var input = document.getElementById(b.dataset.target);
+        input.value = Math.max(0, Math.round(((parseFloat(input.value) || 0) + parseFloat(b.dataset.step)) * 10) / 10);
+    });
+});
+</script>
+@else
 
 <div class="entry-head">
     <a class="back" href="{{ route('daily.index') }}" aria-label="Go back">
@@ -57,7 +93,7 @@
     @php
         $givenToday = $servings->sum('quantity_kg');
     @endphp
-    <p class="field-hint">Expected daily total: {{ number_format($selectedHouse->bird_quantity * 0.125, 2) }} kg for {{ number_format($selectedHouse->bird_quantity) }} birds. Record every feeding separately.</p>
+    <p class="field-hint">Expected daily total: {{ number_format($selectedHouse->bird_quantity * config('farm.feed_kg_per_bird_per_day'), 2) }} kg for {{ number_format($selectedHouse->bird_quantity) }} birds. Record every feeding separately.</p>
     <div class="total-bar"><span class="total-num">{{ number_format($givenToday, 2) }}</span><span class="total-lbl">kg given so far today</span></div>
     <form method="POST" action="{{ route('daily.feed-serving.store', $batch) }}">@csrf
         <input type="hidden" name="poultry_house_id" value="{{ $selectedHouse->id }}">
@@ -86,7 +122,7 @@
         <span class="total-lbl">kg of ingredients taken for mixing</span>
     </div>
 
-    <p class="ask-q" style="margin-top:22px;">Which ingredients were taken for mixing?</p>
+    <p class="ask-q u-mt-22">Which ingredients were taken for mixing?</p>
     <p class="ask-hint">Tap each ingredient taken from stock and enter its quantity.</p>
 
     @foreach ($groups as $category => $feeds)
@@ -306,4 +342,5 @@
 })();
 </script>
 
+@endif
 @endsection

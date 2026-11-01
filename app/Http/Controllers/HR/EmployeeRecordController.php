@@ -87,11 +87,12 @@ class EmployeeRecordController extends Controller
 
         if ($module === 'contracts' && $request->hasFile('document')) {
             $file = $request->file('document');
-            $path = $file->store('contracts', 'local');
+            $disk = \App\Support\Uploads::disk('local');
+            $path = $file->store('contracts', $disk);
 
             $record->attachments()->create([
                 'collection' => 'signed-contract',
-                'disk' => 'local',
+                'disk' => $disk,
                 'path' => $path,
                 'original_name' => $file->getClientOriginalName(),
                 'mime_type' => $file->getMimeType(),
@@ -103,6 +104,11 @@ class EmployeeRecordController extends Controller
 
         AuditLog::record('created', $record,
             "Created {$screen['singular']} for {$record->employee_id}.", null, null, $module);
+        if ($isPenalty) {
+            app(\App\Services\CommunicationService::class)->toApprovers($module, 'Penalty awaiting your approval',
+                'A payroll penalty of UGX '.number_format((float) $record->amount).' was recorded by '.$request->user()->displayName().' and needs approval.',
+                $request->user()->id, route('hr.records.index', $module, false));
+        }
 
         return redirect()->route('hr.records.index', $module)
             ->with('status', ucfirst($screen['singular']).' saved.');

@@ -16,7 +16,7 @@ class FinanceAdministrationController extends Controller
         abort_unless(isset(self::TITLES[$screen]),404);
         abort_unless($request->user()->canAccess($screen)||($screen==='audit'&&$request->user()->canAccess('audit')),403);
         $items=match($screen){
-            'chart-of-accounts'=>DB::table('finance_accounts')->orderBy('code')->get(),
+            'chart-of-accounts'=>DB::table('finance_accounts')->orderByRaw('sort_order is null')->orderBy('sort_order')->orderBy('code')->get(),
             'finance-periods'=>DB::table('finance_periods')->orderByDesc('starts_on')->get(),
             'finance-accounts'=>DB::table('finance_payment_accounts')->orderBy('kind')->orderBy('name')->get(),
             'payment-methods'=>DB::table('finance_payment_methods')->orderBy('name')->get(),
@@ -24,9 +24,35 @@ class FinanceAdministrationController extends Controller
             'tax-settings'=>DB::table('finance_settings')->where('group','tax')->orderBy('label')->get(),
             'budget-settings'=>DB::table('finance_settings')->where('group','budget')->orderBy('label')->get(),
             'finance-imports'=>DB::table('finance_import_batches')->latest()->get(),
-            'audit'=>AuditLog::whereIn('module_key',['finance','transactions','budget','assets','purchases','approvals'])->latest('created_at')->paginate(50),
+            'audit'=>$this->auditTrail($request),
         };
-        return view('finance.administration.index',['screen'=>$screen,'title'=>self::TITLES[$screen],'items'=>$items]);
+        return view('finance.administration.index',['screen'=>$screen,'title'=>self::TITLES[$screen],'items'=>$items]+($screen==='audit'?$this->auditFilterOptions():[]));
+    }
+
+    private const AUDIT_MODULES = ['finance', 'transactions', 'budget', 'assets', 'purchases', 'approvals', 'payables'];
+
+    /** Finance audit trail, narrowed by dates, person, area, action and a search of the details. */
+    private function auditTrail(Request $request)
+    {
+        $f = $request->validate(['from' => ['nullable', 'date'], 'to' => ['nullable', 'date'], 'user' => ['nullable', 'integer'], 'module' => ['nullable', 'string', 'max:40'], 'event' => ['nullable', 'string', 'max:80'], 'q' => ['nullable', 'string', 'max:120']]);
+        return AuditLog::with('user:id,name,username')->whereIn('module_key', self::AUDIT_MODULES)
+            ->when($f['from'] ?? null, fn ($q, $d) => $q->whereDate('created_at', '>=', $d))
+            ->when($f['to'] ?? null, fn ($q, $d) => $q->whereDate('created_at', '<=', $d))
+            ->when($f['user'] ?? null, fn ($q, $id) => $q->where('user_id', $id))
+            ->when($f['module'] ?? null, fn ($q, $m) => $q->where('module_key', $m))
+            ->when($f['event'] ?? null, fn ($q, $e) => $q->where('event', $e))
+            ->when($f['q'] ?? null, fn ($q, $term) => $q->whereRaw('lower(description) like ?', ['%'.mb_strtolower($term).'%']))
+            ->latest('created_at')->paginate(50)->withQueryString();
+    }
+
+    private function auditFilterOptions(): array
+    {
+        $base = AuditLog::whereIn('module_key', self::AUDIT_MODULES);
+        return [
+            'auditUsers' => \App\Models\User::whereIn('id', (clone $base)->whereNotNull('user_id')->distinct()->select('user_id'))->orderBy('name')->get(['id', 'name', 'username']),
+            'auditModules' => (clone $base)->distinct()->orderBy('module_key')->pluck('module_key'),
+            'auditEvents' => (clone $base)->distinct()->orderBy('event')->pluck('event'),
+        ];
     }
 
     public function store(Request $request,string $screen):RedirectResponse

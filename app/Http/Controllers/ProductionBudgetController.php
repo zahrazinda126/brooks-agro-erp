@@ -32,40 +32,10 @@ class ProductionBudgetController extends Controller
         'kituntu-passion' => 'Kituntu Passion Fruits',
     ];
 
-    public function financeDraft(Request $request): View
+    /** Production now uses the same weekly budget draft page as every department. */
+    public function financeDraft(Request $request): \Illuminate\Http\RedirectResponse
     {
-        abort_unless($request->user()->canAccess('budget'), 403);
-
-        $unit = $request->string('unit')->toString() ?: 'poultry';
-        abort_unless(isset(self::UNITS[$unit]), 404);
-        $start = $request->date('week')?->startOfWeek() ?? now()->startOfWeek();
-        if ($start->isSameDay(now()->startOfWeek())) {
-            $departmentId = Department::where('code', 'production')->value('id');
-            if ($departmentId) app(WeeklyBudgetDraftService::class)->ensureForWeek($start, $request->user()->id, $departmentId);
-        }
-        $availablePeriods = $this->productionBudgetQuery()
-            ->select('period_start', 'period_end', 'status')
-            ->selectRaw('count(*) as line_count, sum(planned_amount) as planned_total')
-            ->groupBy('period_start', 'period_end', 'status')
-            ->orderByDesc('period_start')
-            ->get();
-        $lines = $this->unitBudgetQuery($unit)
-            ->whereDate('period_start', $start->toDateString())
-            ->orderBy('category')
-            ->orderBy('id')
-            ->get();
-
-        return view('production.budgets.finance-draft', [
-            'lines' => $lines,
-            'start' => $start,
-            'end' => $start->copy()->endOfWeek(),
-            'locked' => Budget::whereDate('period_start', $start->toDateString())->where('status', '!=', 'draft')->exists(),
-            'isCurrentWeek' => $start->isSameDay(now()->startOfWeek()),
-            'units' => self::UNITS,
-            'unit' => $unit,
-            'category' => self::UNITS[$unit],
-            'availablePeriods' => $availablePeriods,
-        ]);
+        return redirect()->route('department-budget.index', array_filter(['week' => $request->query('week')]));
     }
 
     public function addFinanceDraftLine(Request $request): RedirectResponse

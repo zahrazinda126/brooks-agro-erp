@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Auth;
@@ -18,9 +19,15 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Page links in the farm's own style (Laravel's default needs Tailwind, which the system does not load).
+        \Illuminate\Pagination\Paginator::defaultView('vendor.pagination.farm');
+        \Illuminate\Pagination\Paginator::defaultSimpleView('vendor.pagination.farm');
         if ($this->app->environment('production')) {
             URL::forceScheme('https');
         }
+
+        // @money($amount) → "UGX 1,250"; @money($amount, 2) → "UGX 1,250.00".
+        Blade::directive('money', fn (string $expression) => "<?php echo e(\\App\\Support\\Money::format({$expression})); ?>");
 
         /*
          | Every view gets $user — the signed-in person, or null when

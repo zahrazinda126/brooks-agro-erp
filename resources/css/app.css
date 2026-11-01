@@ -1,4 +1,11 @@
 /* ==========================================================================
+   NOTE FOR MAINTAINERS
+   The application pages do NOT load this file. layouts/app.blade.php links
+   public/css/app.css directly (no Vite step), so edit that file to change
+   how screens look. This file is only compiled by `npm run build` for the
+   Docker image and is kept as the original prototype stylesheet.
+   ========================================================================== */
+/* ==========================================================================
    Brooks Agro ERP
 
    Brand carried over from the prototype: maroon, gold, charcoal.
@@ -561,7 +568,6 @@ body {
 .egg-production-report td {
     white-space: nowrap;
 }
-+
 /* Sales analysis spreadsheet templates */
 .sales-report > .table-wrap{border:1px solid #d8c7b8;box-shadow:0 8px 22px rgba(73,38,24,.08)}
 .sales-report > .table-wrap .section-heading{margin:-1px -1px 0;padding:16px 18px;background:linear-gradient(100deg,#981f2b,#c44731);color:#fff}

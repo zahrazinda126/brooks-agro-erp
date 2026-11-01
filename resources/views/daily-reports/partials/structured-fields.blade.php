@@ -18,5 +18,5 @@ $definitions = match($departmentCode.'.'.$unitCode) {
  </div></div>
  @endfor
 </fieldset>
-<style>.report-detail-fields{margin:1rem 0;padding:1rem;border:1px solid #e5c9aa;border-radius:14px}.report-detail-fields legend{font-weight:800;padding:0 .5rem}.report-detail-row{padding:1rem 0;border-top:1px solid #eee}.report-detail-row:first-of-type{border-top:0}</style>
+@pushOnce('styles')<style>.report-detail-fields{margin:1rem 0;padding:1rem;border:1px solid #e5c9aa;border-radius:14px}.report-detail-fields legend{font-weight:800;padding:0 .5rem}.report-detail-row{padding:1rem 0;border-top:1px solid #eee}.report-detail-row:first-of-type{border-top:0}</style>@endPushOnce
 @endif

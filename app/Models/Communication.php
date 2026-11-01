@@ -31,7 +31,7 @@ class Communication extends Model
         $roles = $user->roles->pluck('code')->push($user->role?->code)->filter()->unique();
         $departments = $user->departments->pluck('code')->push($user->department?->code)->filter()->unique();
         $audiences = collect(['all_staff']);
-        if ($roles->intersect(['director', 'ceo', 'personal-assistant', 'production-manager', 'finance-manager', 'hr-manager', 'sales-manager', 'department-manager'])->isNotEmpty()) {
+        if ($roles->intersect(['director', 'ceo', 'personal-assistant', 'pa', 'production-manager', 'finance-manager', 'hr-manager', 'sales-manager', 'department-manager'])->isNotEmpty()) {
             $audiences->push('management');
         }
         if ($departments->intersect(['finance', 'div-finance', 'sales'])->isNotEmpty() || $roles->contains('finance-manager')) $audiences->push('finance');

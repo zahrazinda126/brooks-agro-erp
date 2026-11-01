@@ -58,9 +58,9 @@
     @endif
 @endforeach
 
-<div class="card" style="margin-top:18px;">
+<div class="card u-mt-18">
     <p class="card-label">Why this list matters</p>
-    <p class="muted" style="margin:0;">
+    <p class="muted u-m0">
         Workers can only record what is here. If the store buys something new
         and it is not on this list, they will record the nearest wrong option
         instead — and the feed conversion figures will be wrong from that day

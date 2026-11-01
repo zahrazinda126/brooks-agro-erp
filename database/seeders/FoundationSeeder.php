@@ -67,6 +67,7 @@ class FoundationSeeder extends Seeder
             ['code' => 'department-manager', 'name' => 'Department Manager', 'is_superuser' => false, 'rank' => 30],
             ['code' => 'daily-supervisor',   'name' => 'Daily Supervisor',   'is_superuser' => false, 'rank' => 40],
             ['code' => 'casual-worker',      'name' => 'Casual Worker',      'is_superuser' => false, 'rank' => 90],
+            ['code' => 'poultry-attendant',  'name' => 'Poultry Attendant',  'is_superuser' => false, 'rank' => 90],
         ];
 
         foreach ($rows as $r) {
@@ -108,7 +109,7 @@ class FoundationSeeder extends Seeder
             ['key' => 'analytics', 'name' => 'Analytics', 'group' => 'Insight', 'icon' => 'fa-chart-pie', 'sort_order' => 260, 'is_worker_module' => false],
             ['key' => 'ai', 'name' => 'AI Centre', 'group' => 'Insight', 'icon' => 'fa-brain', 'sort_order' => 270, 'is_worker_module' => false],
             ['key' => 'settings', 'name' => 'Settings', 'group' => 'System', 'icon' => 'fa-gear', 'sort_order' => 280, 'is_worker_module' => false],
-            ['key' => 'assign-supervisors', 'name' => 'Daily Supervisors', 'group' => 'Workflow', 'icon' => 'fa-user-tie', 'sort_order' => 290, 'is_worker_module' => false],
+            ['key' => 'assign-supervisors', 'name' => 'Daily Collection Approvals', 'group' => 'Workflow', 'icon' => 'fa-user-tie', 'sort_order' => 290, 'is_worker_module' => false],
             ['key' => 'assign-tasks', 'name' => 'Task Assignment', 'group' => 'Workflow', 'icon' => 'fa-clipboard-list', 'sort_order' => 300, 'is_worker_module' => false],
             ['key' => 'approvals', 'name' => 'Approvals', 'group' => 'Workflow', 'icon' => 'fa-check-double', 'sort_order' => 310, 'is_worker_module' => false],
             ['key' => 'messages', 'name' => 'Messages', 'group' => 'Workflow', 'icon' => 'fa-comments', 'sort_order' => 320, 'is_worker_module' => true],
@@ -184,6 +185,13 @@ class FoundationSeeder extends Seeder
                 'pen-cleaning', 'litter-removal', 'vaccination-due',
                 'milk-record', 'kindling-record', 'dog-care',
             ],
+            // Poultry attendants: the same worker screens as casual workers.
+            'poultry-attendant' => [
+                'my-work', 'my-performance', 'notifications', 'messages',
+                'egg-entry', 'mortality-entry', 'feed-received',
+                'pen-cleaning', 'litter-removal', 'vaccination-due',
+                'milk-record', 'kindling-record', 'dog-care',
+            ],
         ];
 
         // Roles allowed to approve what workers submit.
@@ -206,7 +214,7 @@ class FoundationSeeder extends Seeder
                     [
                         'can_view'    => true,
                         'can_create'  => true,
-                        'can_edit'    => $roleCode !== 'casual-worker',
+                        'can_edit'    => ! in_array($roleCode, \App\Models\User::DATA_ENTRY_ROLES, true),
                         'can_delete'  => in_array($roleCode, ['production-manager', 'finance-manager', 'hr-manager'], true),
                         'can_approve' => in_array($roleCode, $approvers, true),
                         'updated_at'  => now(),

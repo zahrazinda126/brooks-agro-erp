@@ -27,7 +27,14 @@ use Illuminate\View\View;
  */
 class HealthController extends Controller
 {
-    public function index(Request $request): View
+    /** The old Flock health page now lives in Monitor → Health & Treatment → Treatments (all animal units). */
+    public function index(Request $request): \Illuminate\Http\RedirectResponse
+    {
+        return redirect()->route('monitor.health', 'treatments');
+    }
+
+    /** Previous Flock health overview; kept for reference, no longer routed. */
+    public function flockOverview(Request $request): View
     {
         $user = $request->user();
 
@@ -110,7 +117,12 @@ class HealthController extends Controller
         $data = $request->validate([
             'animal_group_id'   => ['required', 'exists:animal_groups,id'],
             'event_type'        => ['required', 'in:vaccination,treatment,deworming,inspection,vet_visit'],
-            'medication_id'     => ['nullable', 'exists:medications,id'],
+            'medication_id'     => ['nullable', function ($attribute, $value, $fail) {
+                if ($value !== 'new' && ! Medication::whereKey($value)->exists()) $fail('Choose a medicine from the list.');
+            }],
+            'new_medication_name' => ['nullable', 'required_if:medication_id,new', 'string', 'max:160'],
+            'new_medication_type' => ['nullable', 'required_if:medication_id,new', 'in:vaccine,antibiotic,dewormer,coccidiostat,vitamin,other'],
+            'new_withdrawal_days' => ['nullable', 'required_if:medication_id,new', 'integer', 'min:0', 'max:365'],
             'occurred_on'       => ['required', 'date', 'before_or_equal:today'],
             'birds_treated'     => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'dose_given'        => ['nullable', 'string', 'max:160'],
@@ -134,6 +146,24 @@ class HealthController extends Controller
                 'medication_id' => 'Say what was given.',
             ]);
         }
+
+        // A medicine typed in on the form joins the list (or reuses one with the same name).
+        if (($data['medication_id'] ?? null) === 'new') {
+            $name = trim($data['new_medication_name']);
+            $med = Medication::whereRaw('lower(name) = ?', [mb_strtolower($name)])->first();
+            if (! $med) {
+                $med = Medication::create([
+                    'code' => 'custom-'.\Illuminate\Support\Str::slug($name).'-'.\Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(4)),
+                    'name' => $name, 'type' => $data['new_medication_type'],
+                    'withdrawal_days_eggs' => (int) $data['new_withdrawal_days'], 'withdrawal_days_meat' => 0,
+                    'banned_in_lay' => false, 'sort_order' => 999, 'is_active' => true,
+                    'note' => 'Added from a health record by '.$request->user()->displayName().'.',
+                ]);
+                \App\Models\AuditLog::record('medication_added', $med, "Medicine '{$name}' added to the list from a health record.", null, $med->only(['name', 'type', 'withdrawal_days_eggs']), 'health');
+            }
+            $data['medication_id'] = $med->id;
+        }
+        unset($data['new_medication_name'], $data['new_medication_type'], $data['new_withdrawal_days']);
 
         $med   = $data['medication_id'] ? Medication::find($data['medication_id']) : null;
         $start = Carbon::parse($data['occurred_on']);

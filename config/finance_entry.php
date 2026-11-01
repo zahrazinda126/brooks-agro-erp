@@ -1,10 +1,10 @@
 <?php
 
 /* Cascading lists transcribed from the workbook's Mapping Sheet. */
-$moneyAccounts = ['Cash', 'Centenary Bank - Sales', 'Centenary Bank - Operations', 'Centenary Bank - Garden', 'I&M UGX', 'MTN Mobile Money', 'Airtel Mobile Money'];
+$moneyAccounts = ['Cash', 'Centenary Bank - Sales', 'Centenary Bank - Operations', 'Centenary Bank - Poultry','Centenary Bank - Goats','Centenary Bank - Rabbits','Centenary Bank - Dogs', 'Centenary Bank - Garden', 'I&M UGX', 'MTN Mobile Money', 'Airtel Mobile Money'];
 $settlement = static fn (string $payable, ?string $prepaid = null): array => array_values(array_filter([$payable, ...$moneyAccounts, $prepaid]));
 
-return ['reporting_departments' => [
+return ['money_accounts' => $moneyAccounts, 'reporting_departments' => [
     'production' => 'Production',
     'finance' => 'Finance & Accounting',
     'hr' => 'HR & Admin',
@@ -103,7 +103,7 @@ return ['reporting_departments' => [
         'Current Receivables' => ['Kisseka Denis', 'Nkwanga Eriab', 'Ssenabulya Vincent', 'Lukwago Vincent', 'Ssekanjako Shadrak', 'Kyagaba Ibrahim', 'Walakira Gerald', 'Lule Steven', 'Jumba Paul', 'Wansaso Godfrey', 'Kasujja Muzamir', 'Nsubunga Abdnul', 'Kiggundu Twaha', 'Birigwa Charles', 'One-time Customer', 'Ggolooba Emma', 'Nyanzi', 'Counsel Dennis', 'Mbazira Charles', 'Luyombya Kelvin', 'Robina', 'Ben'],
     ]],
     'banking' => ['label' => 'Banking / Transfer', 'ledger_type' => 'transfer', 'party' => 'Offset Account Name', 'groups' => [
-        'Bank Accounts' => ['Fixed Deposit Account', 'Centenary Bank - Sales', 'Centenary Bank - Operations', 'Centenary Bank - Garden', 'I&M UGX', 'Credit', 'MTN Mobile Money', 'Airtel Mobile Money', 'Reconciliation'],
+        'Bank Accounts' => ['Fixed Deposit Account', 'Centenary Bank - Sales', 'Centenary Bank - Operations', 'Centenary Bank - Poultry','Centenary Bank - Goats','Centenary Bank - Rabbits','Centenary Bank - Dogs', 'Centenary Bank - Garden', 'I&M UGX', 'Credit', 'MTN Mobile Money', 'Airtel Mobile Money', 'Reconciliation'],
         'Cash in Hand' => ['Cash on Hand', 'Petty Cash (UGX)', 'Petty Cash (USD)', 'Trade Receivables', 'Poultry Products Debtors', 'Other Debtors'],
     ]],
     'liabilities' => ['label' => 'Liabilities', 'ledger_type' => 'journal', 'party' => 'Offset Account Name', 'groups' => [
@@ -150,4 +150,25 @@ return ['reporting_departments' => [
         '6025000'=>'Bank Charges', '6111000'=>'Fuel', '6011004A'=>'Fringe Benefits',
         '6024000'=>'Finance Expenses',
     ],
+],
+/* ERP account names whose wording differs from the chart of accounts → chart code.
+   Used by App\Services\ChartOfAccounts to link transactions (entry_account) to finance_accounts.
+   Names already matching a chart account (ignoring case, "_", "&"/"and", "/"/"or") need no alias. */
+'account_aliases' => [
+    'Cash on Hand' => '1022001', 'Petty Cash (UGX)' => '1022004',
+    'Centenary Bank - Sales' => '1021002', 'Centenary Bank - Operations' => '1021003', 'Centenary Bank - Garden' => '1025007', 'Centenary Bank - Poultry' => '1021008', 'Centenary Bank - Goats' => '1021009', 'Centenary Bank - Rabbits' => '1021010', 'Centenary Bank - Dogs' => '1021011',
+    'MTN Mobile Money' => '1021004', 'Airtel Mobile Money' => '1021005',
+    'Sales Revenue' => '4011000', 'Poultry Manure' => '4011002',
+    'Day-old Chick Inventory' => '1026000', 'Breeder Rabbit Inventory' => '1026001', 'Breeder Goat Inventory' => '1026002',
+    'Starter Egg Inventory' => '1026003', 'Large Egg Inventory' => '1026004', 'Damaged Egg Inventory' => '1026005',
+    'Kitchen Equipment Cost' => '1015001', 'Supplier Advances' => '1024000', 'Other Debtors' => '1023002',
+    'Unearned Contribution' => '2021003', 'Accruals and Other Payables' => '2032001', 'Loans & Advances' => '2032003',
+    'Miscellaneous Expenses - Asset' => '2032008', 'Suspense Receipts' => '2032011',
+    'Capital Introduced' => '3000000', 'Owner Drawings' => '3000001', 'Reserve Transfer' => '3000002',
+    'Shareholder Contribution' => '3000003', 'Dividend Paid' => '6016001',
+    'Mbazira Charles' => '1030019', 'Medium Egg Inventory' => '1026006',
+    'Revenue in kind' => '4012002', 'Farm Products Used Internally' => '6022003',
+    'Salary Withdrawal' => '2032012', 'Casual Wages' => '6015003', 'Staff Advance' => '2032003',
+    'Staff Reimbursement' => '6015000', 'Staff Medication' => '6015000', 'Condolence Support' => '6015000',
+    'Medical Support' => '6015000', 'Emergency Support' => '6015000', 'Other Staff Welfare' => '6015000',
 ]];

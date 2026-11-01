@@ -3,6 +3,10 @@
 @section('title', 'Eggs')
 
 @section('content')
+@php
+    // Farm workers see pictures of a tray and of single eggs next to the counters.
+    $eggPictures = auth()->user()->isDataEntryOnly();
+@endphp
 
 {{--
     Egg entry.
@@ -21,18 +25,8 @@
     the worker's statement, the second is the system's.
 --}}
 
-<div class="entry-head">
-    <a class="back" href="{{ route('daily.index') }}" aria-label="Go back">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M15 5 8 12l7 7" fill="none" stroke="currentColor"
-                  stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-    </a>
-    <div>
-        <h2>Eggs</h2>
-        <p>{{ $batch->name ?: $batch->code }} · {{ number_format($batch->current_quantity) }} birds</p>
-    </div>
-</div>
+{{-- Just a Back button: the screen name and batch line were removed at the user's request. --}}
+<div class="entry-head entry-head--back"><a class="btn btn--quiet btn--inline entry-back" href="{{ route('daily.index') }}">&larr; Back</a></div>
 
 @if ($errors->any())
     <div class="notice notice--alarm">{{ $errors->first() }}</div>
@@ -43,19 +37,7 @@
 
     @include('poultry.daily._house_select', ['houseChoices' => $houseChoices, 'selectedHouse' => $selectedHouse, 'entryRoute' => 'daily.eggs'])
 
-    {{-- Which round --}}
-    <div class="ask">
-        <p class="ask-q">Collection period</p>
-        <p class="ask-hint">Detected automatically from the current time.</p>
-        <div class="choice-row">
-            @foreach (['morning' => 'Morning', 'afternoon' => 'Afternoon', 'evening' => 'Evening'] as $v => $label)
-                <label class="choice">
-                    <input type="radio" value="{{ $v }}" @checked($session === $v) disabled>
-                    <span>{{ $label }}</span>
-                </label>
-            @endforeach
-        </div>
-    </div>
+    {{-- The collection period (morning, afternoon, evening) is recorded automatically from the time of saving. --}}
 
     {{-- Running total, always visible --}}
     <div class="total-bar" id="totalBar">
@@ -63,7 +45,7 @@
         <span class="total-lbl">eggs so far</span>
     </div>
 
-    <p class="ask-q" style="margin-top:22px;">How many did you collect?</p>
+    <p class="ask-q u-mt-22">How many did you collect?</p>
     <p class="ask-hint">Count full trays first, then the loose eggs left over.</p>
 
     @foreach ($likely as $grade)
@@ -76,7 +58,7 @@
             </div>
 
             <div class="counter-row">
-                <span class="counter-what">Trays</span>
+                <span class="counter-what">@if($eggPictures)@include('partials.egg-picture', ['kind' => 'tray'])@endif Trays</span>
                 <div class="stepper">
                     <button type="button" class="step" data-step="-1" aria-label="One less tray">−</button>
                     <input type="number" name="trays[{{ $grade->id }}]" class="step-val"
@@ -87,7 +69,7 @@
             </div>
 
             <div class="counter-row counter-row--minor">
-                <span class="counter-what">Loose eggs</span>
+                <span class="counter-what">@if($eggPictures)@include('partials.egg-picture', ['kind' => 'loose'])@endif Loose eggs</span>
                 <div class="stepper">
                     <button type="button" class="step" data-step="-1" aria-label="One less egg">−</button>
                     <input type="number" name="loose[{{ $grade->id }}]" class="step-val"
@@ -108,7 +90,7 @@
                 <div class="counter-head"><strong>{{ $grade->name }}</strong></div>
 
                 <div class="counter-row">
-                    <span class="counter-what">Trays</span>
+                    <span class="counter-what">@if($eggPictures)@include('partials.egg-picture', ['kind' => 'tray'])@endif Trays</span>
                     <div class="stepper">
                         <button type="button" class="step" data-step="-1" aria-label="One less">−</button>
                         <input type="number" name="trays[{{ $grade->id }}]" class="step-val"
@@ -119,7 +101,7 @@
                 </div>
 
                 <div class="counter-row counter-row--minor">
-                    <span class="counter-what">Loose eggs</span>
+                    <span class="counter-what">@if($eggPictures)@include('partials.egg-picture', ['kind' => 'loose'])@endif Loose eggs</span>
                     <div class="stepper">
                         <button type="button" class="step" data-step="-1" aria-label="One less">−</button>
                         <input type="number" name="loose[{{ $grade->id }}]" class="step-val"

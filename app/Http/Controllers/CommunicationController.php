@@ -15,8 +15,14 @@ class CommunicationController extends Controller
         $messages = Communication::with(['sender', 'recipient'])
             ->visibleTo($request->user())->latest()->paginate(30);
 
+        // Opening the list counts as reading: everything addressed to you is marked read, so the banner goes away.
+        // The ones that were new stay highlighted on this visit.
+        $newIds = Communication::where('recipient_id', $request->user()->id)->whereNull('read_at')->pluck('id')->all();
+        if ($newIds) Communication::whereIn('id', $newIds)->update(['read_at' => now()]);
+
         return view('communications.index', [
             'messages' => $messages,
+            'newIds' => $newIds,
             'canCompose' => $request->user()->canDo('messages', 'create'),
             'recipients' => User::where('is_active', true)->orderBy('name')->get(['id', 'name']),
         ]);

@@ -49,19 +49,7 @@
     </form>
 
     @if ($batches->isEmpty())
-        <div class="card">
-            <p class="card-label">No batches</p>
-            <p class="muted" style="margin:0 0 14px;">
-                @if ($filters['q'] || $filters['department'])
-                    Nothing matches those filters.
-                @else
-                    No batches have been opened yet. Start one when your next delivery of birds arrives.
-                @endif
-            </p>
-            @if ($user->canDo('batches', 'create'))
-                <a class="btn btn--inline" href="{{ route('batches.create') }}">New batch</a>
-            @endif
-        </div>
+        @if ($filters['q'] || $filters['department'])<p class="muted">Nothing matches those filters.</p>@endif
     @else
         <div class="batch-list">
             @foreach ($batches as $batch)

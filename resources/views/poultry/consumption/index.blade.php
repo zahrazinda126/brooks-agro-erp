@@ -42,15 +42,15 @@
 </div>
 
 @if ($records->isEmpty())
-    <div class="card" style="margin-top:12px;">
+    <div class="card u-mt-12">
         <p class="card-label">Nothing recorded</p>
-        <p class="muted" style="margin:0;">
+        <p class="muted u-m0">
             When birds are taken for staff meals or the household, record them
             here. Unrecorded, they look like an unexplained fall in the count.
         </p>
     </div>
 @else
-    <div class="data-list" style="margin-top:12px;">
+    <div class="data-list u-mt-12">
         @foreach ($records as $r)
             <div class="consume-row {{ $r->isConfirmed() ? '' : 'consume-row--pending' }}">
 
@@ -94,9 +94,9 @@
     <div class="pager">{{ $records->links() }}</div>
 @endif
 
-<div class="card" style="margin-top:18px;">
+<div class="card u-mt-18">
     <p class="card-label">Why this is separate from deaths</p>
-    <p class="muted" style="margin:0;">
+    <p class="muted u-m0">
         Mortality is a health figure that managers act on. If twenty birds
         eaten at a staff function showed as a mortality spike, somebody would
         start investigating a disease that never existed — and the next real

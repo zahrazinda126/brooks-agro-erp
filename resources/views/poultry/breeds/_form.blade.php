@@ -33,7 +33,7 @@
 {{-- Laying figures. Hidden for broilers, which never lay. --}}
 <div class="card" data-block="laying">
     <p class="card-label">Laying</p>
-    <p class="muted" style="margin:0 0 14px;">
+    <p class="muted u-m0-b14">
         These come off the delivery note or breed sheet. They are what tells the
         system when eggs are due, what size to expect, and when a flock is behind.
     </p>

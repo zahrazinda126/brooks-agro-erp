@@ -16,7 +16,7 @@
     @if ($records->isEmpty())
         <div class="card empty">
             <p class="card-label">Nothing recorded</p>
-            <p class="muted" style="margin:0;">Create the first {{ $screen['singular'] }} when it is needed.</p>
+            <p class="muted u-m0">Create the first {{ $screen['singular'] }} when it is needed.</p>
         </div>
     @else
         <div class="data-list">

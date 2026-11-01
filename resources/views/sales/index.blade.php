@@ -13,22 +13,9 @@
 @endif
 
 @if($screen === 'inventory')
-@if(!$inventoryUnit)
-<div class="summary-grid" aria-label="Farm unit inventories">
-    @foreach(['poultry'=>'Poultry','goats'=>'Goats','rabbits'=>'Rabbits','dogs'=>'Dogs','garden'=>'Garden'] as $unitCode=>$unitName)
-        <a class="summary-card{{ $inventoryUnit === $unitCode ? ' active' : '' }}" style="color:inherit;text-decoration:none" href="{{ route('sales.index', ['screen'=>'inventory', 'unit'=>$unitCode]) }}" @if($inventoryUnit === $unitCode) aria-current="page" @endif>
-            <span>Farm unit inventory</span>
-            <strong>{{ $unitName }}</strong>
-            <small>{{ collect($farmStock[$unitCode] ?? [])->count() }} product group(s) in stock</small>
-        </a>
-    @endforeach
-</div>
-@else
-<div class="form-actions">
-    <a class="btn btn--quiet" href="{{ route('sales.index', ['screen'=>'inventory']) }}">&larr; Back to farm units</a>
-</div>
-@endif
-@elseif(!in_array($screen, ['analysis', 'sale'], true))
+{{-- The stock table and its filters are further down. --}}
+@elseif(!in_array($screen, ['analysis', 'sale'], true) && $user->roles->pluck('code')->push($user->role?->code)->intersect(['ceo', 'director', 'pa', 'personal-assistant'])->isEmpty())
+{{-- CEO / Director / PA reach these screens from their own menu tabs, so the inner sales tabs are not repeated. --}}
 <nav class="unit-tabs" aria-label="Sales workspace">
     @if($screen !== 'setup')
         <a class="{{ $screen === 'sale' ? 'active' : '' }}" href="{{ route('sales.index', ['screen' => 'sale']) }}">Record Daily Sale</a>
@@ -42,16 +29,7 @@
 
 @if($screen === 'sale')
 <dialog id="add-customer-dialog" class="card"><form method="POST" action="{{ route('sales.customers.store') }}" class="form-grid">@csrf<h3 class="field--wide">Add customer</h3><div class="field"><label>Name</label><input name="name" required></div><div class="field"><label>Phone</label><input name="phone"></div><div class="field"><label>Email</label><input type="email" name="email"></div><div class="field"><label>Address</label><input name="address"></div><div class="field"><label>Credit limit</label><input type="number" min="0" step="0.01" name="credit_limit" value="0"></div><div class="form-actions field--wide"><button class="btn">Save customer</button><button class="btn btn--quiet" type="button" onclick="document.getElementById('add-customer-dialog').close()">Cancel</button></div></form></dialog>
-<section class="exec-panel">
-    <div class="section-heading"><div><p class="card-label">Live egg availability</p><h3>Eggs ready for sale</h3><p>Approved collections minus completed sales and plus recorded returns.</p></div><strong>{{ number_format($eggStock->sum('eggs')) }} eggs</strong></div>
-    <div class="summary-grid">
-        @forelse($eggStock as $stock)
-            <article class="summary-card"><span>{{ $stock['name'] }}</span><strong>{{ number_format($stock['trays']) }} trays</strong><small>{{ number_format($stock['loose']) }} loose eggs · {{ number_format($stock['eggs']) }} eggs total</small></article>
-        @empty
-            <div class="notice">No egg products are linked to egg grades yet.</div>
-        @endforelse
-    </div>
-</section>
+<div class="screen-actions"><a class="btn btn--small btn--quiet" href="{{ route('sales.index', ['screen' => 'inventory']) }}" data-keep-link>View inventory</a></div>
 <section class="exec-panel">
     <form method="POST" action="{{ route('sales.store') }}" id="saleForm" enctype="multipart/form-data">
         @csrf
@@ -60,9 +38,9 @@
         <input type="hidden" name="discount" value="0">
         <div class="form-grid">
             <div class="field"><label>Date</label><input type="date" name="sale_date" value="{{ old('sale_date', now()->toDateString()) }}" required></div>
-            <div class="field" id="sale-payment-field"><label>Payment method</label><select name="payment_method" id="sale-payment-method"><option value="cash">Cash</option><option value="bank">Bank</option><option value="agent">Agent</option><option value="mobile_money">Mobile money</option><option value="prepayment">Customer prepayment credit</option><option value="in_kind">In kind / barter</option><option value="farm_consumption">Farm consumption (no payment)</option></select><span class="field-hint">Choose Farm consumption when a product is taken for farm or staff use without payment.</span></div>
-            <div class="field" id="sale-customer-field"><label>Customer name</label><div style="display:flex;align-items:stretch;gap:.5rem"><input style="min-width:0;flex:1" name="walk_in_customer" value="{{ old('walk_in_customer') }}" list="sales-customer-list" placeholder="Type or choose a customer"><button class="btn btn--quiet" style="flex:0 0 auto;padding-inline:1rem;font-size:1.25rem" type="button" title="Add a customer who is not on the list" aria-label="Add new customer" onclick="document.getElementById('add-customer-dialog').showModal()">+</button></div><datalist id="sales-customer-list">@foreach($customers as $customer)<option value="{{ $customer->name }}"></option>@endforeach</datalist><span class="field-hint">Choose an existing customer, or use + to add one who is not on the list. Leave blank for a one-time customer.</span></div>
-            <div class="field" id="sale-merchant-field" hidden><label>Transaction ID</label><input name="merchant_code" id="sale-merchant-code" value="{{ old('merchant_code') }}" placeholder="Enter the mobile-money Transaction ID"><span class="field-hint">Required for Mobile Money.</span></div>
+            <div class="field" id="sale-payment-field"><label>Payment method</label><select name="payment_method" id="sale-payment-method"><option value="cash">Cash</option><option value="bank">Bank</option><option value="agent">Agent</option><option value="mtn_merchant">MTN Merchant</option><option value="airtel_merchant">Airtel Merchant</option><option value="prepayment">Customer prepayment credit</option><option value="in_kind">In kind / barter</option><option value="farm_consumption">Farm consumption (no payment)</option></select><span class="field-hint">Choose Farm consumption when a product is taken for farm or staff use without payment.</span></div>
+            <div class="field" id="sale-customer-field"><label>Customer</label><div style="display:flex;align-items:stretch;gap:.5rem"><input style="min-width:0;flex:1" name="walk_in_customer" value="{{ old('walk_in_customer') }}" list="sales-customer-list" placeholder="Type or choose a customer" required><button class="btn btn--quiet" style="flex:0 0 auto;padding-inline:1rem;font-size:1.25rem" type="button" title="Add a customer who is not on the list" aria-label="Add new customer" onclick="document.getElementById('add-customer-dialog').showModal()">+</button></div><datalist id="sales-customer-list">@foreach($customers as $customer)<option value="{{ $customer->name }}"></option>@endforeach</datalist>@error('walk_in_customer')<p class="field-error">{{ $message }}</p>@enderror</div>
+            <div class="field" id="sale-merchant-field" hidden><label>Transaction ID</label><input name="merchant_code" id="sale-merchant-code" value="{{ old('merchant_code') }}" placeholder="Enter the merchant Transaction ID"><span class="field-hint">Required for MTN and Airtel merchant payments.</span></div>
             <div class="field" id="sale-receipt-field" hidden><label>Payment receipt</label><input type="file" name="payment_receipt" id="sale-payment-receipt" accept=".jpg,.jpeg,.png,.pdf"><span class="field-hint">Required for Bank or Agent payments. Maximum 5 MB.</span></div>
             <div class="field" id="sale-credit-field" hidden><label>Customer account credit</label><div class="field-readonly">Applied automatically from the selected customer’s available prepayment balance.</div><span class="field-hint">No prepayment ID is required.</span></div>
             <div class="field" id="sale-account-field"><label>Receiving account</label><select name="farm_account">@foreach($accounts as $account)<option value="{{ $account }}">{{ $account }}</option>@endforeach</select></div>
@@ -74,7 +52,7 @@
             <article class="entry-line">
                 <div class="entry-line__title"><strong data-line-number>Item</strong><strong data-line-total>UGX 0</strong></div>
                 <div class="entry-line__grid">
-                    <div class="field field--wide"><label>Product</label><select data-product required><option value="">Choose product</option>@foreach($products as $product)<option value="{{ $product->id }}" data-price="{{ (float)$product->unit_price > 0 ? $product->unit_price : '' }}" data-loose-price="{{ $product->loose_unit_price }}" data-unit="{{ $product->unit }}" data-category="{{ $product->category }}" data-off-layer="{{ $product->unit==='bird' && Str::contains(Str::lower($product->name),'layer') ? '1' : '0' }}" data-eggs-per-tray="{{ $product->egg_grade_id && $product->eggGrade?->is_defect ? ($product->eggGrade?->eggs_per_tray ?? 30) : '' }}">{{ ucfirst($product->category) }} &middot; {{ $product->name }} ({{ $product->egg_grade_id && $product->eggGrade?->is_defect ? 'tray or individual egg' : $product->unit }})</option>@endforeach<option value="__unlisted__">+ Unlisted / type a product</option></select></div>
+                    <div class="field field--wide"><label>Product</label><select data-product required><option value="">Choose product</option>@foreach($products as $product)<option value="{{ $product->id }}" data-price="{{ (float)$product->unit_price > 0 ? $product->unit_price : '' }}" data-loose-price="{{ $product->loose_unit_price }}" data-unit="{{ $product->unit }}" data-category="{{ $product->category }}" data-stock="{{ array_key_exists($product->id, $productStock) ? ($productStock[$product->id] ?? '') : '' }}" data-off-layer="{{ $product->unit==='bird' && Str::contains(Str::lower($product->name),'layer') ? '1' : '0' }}" data-eggs-per-tray="{{ $product->egg_grade_id && $product->eggGrade?->is_defect ? ($product->eggGrade?->eggs_per_tray ?? 30) : '' }}">{{ ucfirst($product->category) }} &middot; {{ $product->name }} ({{ $product->egg_grade_id && $product->eggGrade?->is_defect ? 'tray or individual egg' : $product->unit }})</option>@endforeach<option value="__unlisted__">+ Unlisted / type a product</option></select><small class="field-hint" data-stock-hint></small></div>
                     <div class="field field--wide" data-custom-product hidden><label>Unlisted product name</label><input data-description placeholder="Type the product"></div>
                     <div class="field" data-custom-category-field hidden><label>Category</label><select data-custom-category>@foreach($categories as $category)<option value="{{ $category }}">{{ ucfirst($category) }}</option>@endforeach</select></div>
                     <div class="field"><label>Unit</label><input data-unit readonly><select data-unit-choice hidden><option value="">Choose unit</option>@foreach(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'] as $unit)<option value="{{ $unit }}">{{ ucfirst($unit) }}</option>@endforeach</select><select data-egg-unit-choice hidden><option value="tray">Whole trays</option><option value="egg">Loose individual eggs</option></select></div>
@@ -87,14 +65,14 @@
         </template>
         <div class="field"><label>Note</label><textarea name="notes" placeholder="Optional"></textarea></div>
         <div class="field" id="consumed-by-field" hidden><label>Used by / purpose</label><input name="consumed_by" id="consumed-by" placeholder="e.g. Staff kitchen or poultry unit"></div>
-        <div class="form-actions"><button type="button" class="btn btn--quiet" id="addSaleLine">Add item</button><button class="btn" id="sale-submit">Record &amp; Send for Approval</button></div>
+        <div class="form-actions"><button type="button" class="btn btn--quiet" id="addSaleLine">Add item</button><button class="btn" id="sale-submit">Record Sale</button></div>
     </form>
 </section>
 <script>
 (() => {
     const paymentMethod=document.getElementById('sale-payment-method'),merchantField=document.getElementById('sale-merchant-field'),merchantCode=document.getElementById('sale-merchant-code'),receiptField=document.getElementById('sale-receipt-field'),paymentReceipt=document.getElementById('sale-payment-receipt');
     const consumedField=document.getElementById('consumed-by-field'),consumedBy=document.getElementById('consumed-by'),creditField=document.getElementById('sale-credit-field'),internalOnly=['sale-customer-field','sale-account-field'];
-    const syncPaymentEvidence=()=>{const internal=paymentMethod.value==='farm_consumption',prepayment=!internal&&paymentMethod.value==='prepayment',mobile=!internal&&paymentMethod.value==='mobile_money',evidence=!internal&&['bank','agent'].includes(paymentMethod.value);merchantField.hidden=!mobile;merchantCode.required=mobile;receiptField.hidden=!evidence;paymentReceipt.required=evidence;creditField.hidden=!prepayment;consumedField.hidden=!internal;consumedBy.required=internal;internalOnly.forEach(id=>{const field=document.getElementById(id);field.hidden=internal;field.querySelectorAll('input,select,button').forEach(control=>control.disabled=internal);});document.getElementById('sale-money-total').style.display=internal?'none':'';document.getElementById('sale-submit').textContent=internal?'Record Farm Consumption & Send for Approval':'Record & Send for Approval';document.querySelectorAll('[data-price]').forEach(input=>{input.closest('.field').hidden=internal;if(internal&&!input.value)input.value=0;});document.querySelectorAll('[data-line-total]').forEach(total=>total.style.display=internal?'none':'');};paymentMethod.addEventListener('change',syncPaymentEvidence);
+    const syncPaymentEvidence=()=>{const internal=paymentMethod.value==='farm_consumption',prepayment=!internal&&paymentMethod.value==='prepayment',mobile=!internal&&['mtn_merchant','airtel_merchant'].includes(paymentMethod.value),evidence=!internal&&['bank','agent'].includes(paymentMethod.value);merchantField.hidden=!mobile;merchantCode.required=mobile;receiptField.hidden=!evidence;paymentReceipt.required=evidence;creditField.hidden=!prepayment;consumedField.hidden=!internal;consumedBy.required=internal;internalOnly.forEach(id=>{const field=document.getElementById(id);field.hidden=internal;field.querySelectorAll('input,select,button').forEach(control=>control.disabled=internal);});document.getElementById('sale-money-total').style.display=internal?'none':'';document.getElementById('sale-submit').textContent=internal?'Record Farm Consumption & Send for Approval':'Record Sale';document.querySelectorAll('[data-price]').forEach(input=>{input.closest('.field').hidden=internal;if(internal&&!input.value)input.value=0;});document.querySelectorAll('[data-line-total]').forEach(total=>total.style.display=internal?'none':'');};paymentMethod.addEventListener('change',syncPaymentEvidence);
     const body = document.getElementById('saleLines'), template = document.getElementById('saleLineTemplate'); let index = 0;
     const total = () => { let sum = 0; body.querySelectorAll('.entry-line').forEach(row => { const value = (parseFloat(row.querySelector('input[data-quantity]').value) || 0) * (parseFloat(row.querySelector('input[data-price]').value) || 0); row.querySelector('[data-line-total]').textContent = 'UGX ' + Math.round(value).toLocaleString(); sum += value; }); document.getElementById('invoiceTotal').textContent = 'UGX ' + Math.round(sum).toLocaleString(); };
     const add = () => {
@@ -107,6 +85,7 @@
             unit.hidden = custom || eggProduct; unit.disabled = custom || eggProduct; unit.name = !custom && !eggProduct ? `lines[${i}][unit]` : ''; unitChoice.hidden = !custom; unitChoice.disabled = !custom; unitChoice.required = custom; if(custom) unitChoice.name = `lines[${i}][unit]`; else unitChoice.name = '';
             eggUnitChoice.hidden = !eggProduct; eggUnitChoice.disabled = !eggProduct; eggUnitChoice.required = eggProduct; eggUnitChoice.name = eggProduct ? `lines[${i}][unit]` : '';
             unit.value = custom ? '' : (option?.dataset.unit || ''); category.value = custom ? customCategory.value : (option?.dataset.category || '');
+            const stockHint=row.querySelector('[data-stock-hint]'); stockHint.textContent = !product.value || custom ? '' : (option?.dataset.stock ? (option.dataset.stock.startsWith('Nothing') ? option.dataset.stock : 'In stock: ' + option.dataset.stock) : 'Stock not tracked for this product');
             const offLayer=option?.dataset.offLayer==='1'; houseField.hidden=!offLayer; house.disabled=!offLayer; house.required=offLayer; quantity.step=offLayer?'1':quantity.step; quantity.min=offLayer?'1':quantity.min;
             const looseEggs = eggProduct && eggUnitChoice.value === 'egg'; price.value = custom ? '' : (looseEggs ? loosePrice : savedPrice); price.readOnly = !custom && price.value !== ''; quantity.step = (looseEggs||offLayer) ? '1' : '0.01'; quantity.min = (looseEggs||offLayer) ? '1' : '0.01'; priceHint.textContent = looseEggs ? 'Saved individual-egg selling price applied automatically.' : (price.readOnly ? 'Saved selling price applied automatically.' : 'No selling price is set; enter the price used for this sale.');
             if(paymentMethod.value==='farm_consumption'&&!price.value)price.value=0;price.closest('.field').hidden=paymentMethod.value==='farm_consumption';row.querySelector('[data-line-total]').hidden=paymentMethod.value==='farm_consumption';total();
@@ -117,34 +96,22 @@
 })();
 </script>
 @elseif($screen === 'inventory')
-@foreach(['poultry'=>'Poultry','goats'=>'Goats','rabbits'=>'Rabbits','dogs'=>'Dogs','garden'=>'Garden harvest'] as $unitCode=>$unitName)
-@continue($inventoryUnit !== $unitCode)
-<section class="exec-panel table-wrap" id="inventory-{{ $unitCode }}">
-    <div class="section-heading"><div><p class="card-label">{{ $unitName }}</p><h3>Available stock</h3></div><strong>{{ collect($farmStock[$unitCode] ?? [])->count() }} item(s)</strong></div>
-    <table class="exec-table"><thead><tr><th>Product / group</th><th>Details</th><th>Available quantity</th></tr></thead><tbody>
-    @forelse($farmStock[$unitCode] ?? [] as $item)
-        <tr><td><strong>{{ $item['item'] }}</strong></td><td>{{ $item['detail'] }}</td><td><strong>{{ number_format($item['quantity'], 2) }}</strong> {{ $item['unit'] }}</td></tr>
-    @empty
-        <tr><td colspan="3">No available stock has been recorded for {{ Str::lower($unitName) }}.</td></tr>
-    @endforelse
-    </tbody></table>
-</section>
-@endforeach
+@include('sales.partials.stock')
 @elseif($screen === 'setup')
 <form method="GET" class="card filters selling-price-filter"><input type="hidden" name="screen" value="setup"><div class="field"><label>Farm unit</label><select name="price_unit"><option value="">All units</option>@foreach(['poultry'=>'Poultry','goats'=>'Goats','rabbits'=>'Rabbits','dogs'=>'Dogs','garden'=>'Garden','other'=>'Other'] as $code=>$label)<option value="{{ $code }}" @selected($priceUnit===$code)>{{ $label }}</option>@endforeach</select></div><button class="btn">Filter prices</button>@if($priceUnit)<a class="btn btn--quiet" href="{{ route('sales.index',['screen'=>'setup']) }}">Clear</a>@endif</form>
 @if($priceHistory->isNotEmpty())
-<section class="price-change-notice"><div><p class="eyebrow">Latest price update</p><strong>{{ $priceHistory->first()->description }}</strong><span>{{ $priceHistory->first()->created_at->format('d M Y, H:i') }} &middot; Previous UGX {{ number_format((float) data_get($priceHistory->first()->old_values,'unit_price')) }} &rarr; New UGX {{ number_format((float) data_get($priceHistory->first()->new_values,'unit_price')) }}</span></div><span>Price history is retained</span></section>
+<section class="price-change-notice"><div><p class="eyebrow">Latest price update</p><strong>{{ $priceHistory->first()->description }}</strong><span>{{ $priceHistory->first()->created_at->format('d M Y, H:i') }} &middot; Previous @money(data_get($priceHistory->first()->old_values,'unit_price')) &rarr; New @money(data_get($priceHistory->first()->new_values,'unit_price'))</span></div><span>Price history is retained</span></section>
 @endif
 <section class="exec-panel table-wrap">
     <div class="section-head"><div><p class="eyebrow">Market pricing</p><h3>Current selling prices</h3></div><p>Submit a proposed price. The current price remains active until the Director approves it.</p></div>
     <table class="exec-table"><thead><tr><th>Category</th><th>Product</th><th>Unit</th><th>Current price</th><th>New market price</th></tr></thead><tbody>
     @forelse($products as $product)
-        <tr><td>{{ ucfirst($product->category) }}</td><td><strong>{{ $product->name }}</strong>@php $lastChange = $priceHistory->firstWhere('auditable_id', $product->id); @endphp @if($lastChange)<small class="data-sub">Last set by {{ $lastChange->user?->displayName() ?? $lastChange->username ?? 'System' }}<br>{{ $lastChange->created_at->format('d M Y, H:i') }}</small>@endif</td><td>{{ $product->unit }}@if($product->loose_unit_price)<small>Individual: UGX {{ number_format($product->loose_unit_price) }}</small>@endif</td><td>UGX {{ number_format((float) $product->unit_price, 2) }}</td><td><form method="POST" action="{{ route('sales.products.price', $product) }}" class="form-actions price-update-form" data-product="{{ $product->name }}" data-current-price="{{ (float) $product->unit_price }}">@csrf @method('PUT')<input type="hidden" name="expected_updated_at" value="{{ $product->updated_at->format('Y-m-d H:i:s') }}"><input type="hidden" name="confirm_price_change" value="0" data-confirm-price><input aria-label="New standard price" type="number" min="0" step="0.01" name="unit_price" value="{{ $product->unit_price }}" required>@if($product->egg_grade_id && $product->eggGrade?->is_defect)<input aria-label="Individual egg price" title="Individual egg price" type="number" min="0" step="0.01" name="loose_unit_price" value="{{ $product->loose_unit_price ?: 250 }}" required>@endif<input aria-label="Effective date" type="date" name="effective_from" value="{{ now()->toDateString() }}" required><button class="btn btn--small">Update price</button></form></td></tr>
+        <tr><td>{{ ucfirst($product->category) }}</td><td><strong>{{ $product->name }}</strong>@php $lastChange = $priceHistory->firstWhere('auditable_id', $product->id); @endphp @if($lastChange)<small class="data-sub">Last set by {{ $lastChange->user?->displayName() ?? $lastChange->username ?? 'System' }}<br>{{ $lastChange->created_at->format('d M Y, H:i') }}</small>@endif</td><td>{{ $product->unit }}@if($product->loose_unit_price)<small>Individual: @money($product->loose_unit_price)</small>@endif</td><td>@money($product->unit_price, 2)</td><td><form method="POST" action="{{ route('sales.products.price', $product) }}" class="form-actions price-update-form" data-product="{{ $product->name }}" data-current-price="{{ (float) $product->unit_price }}">@csrf @method('PUT')<input type="hidden" name="expected_updated_at" value="{{ $product->updated_at->format('Y-m-d H:i:s') }}"><input type="hidden" name="confirm_price_change" value="0" data-confirm-price><input aria-label="New standard price" type="number" min="0" step="0.01" name="unit_price" value="{{ $product->unit_price }}" required>@if($product->egg_grade_id && $product->eggGrade?->is_defect)<input aria-label="Individual egg price" title="Individual egg price" type="number" min="0" step="0.01" name="loose_unit_price" value="{{ $product->loose_unit_price ?: 250 }}" required>@endif<input aria-label="Effective date" type="date" name="effective_from" value="{{ now()->toDateString() }}" required><button class="btn btn--small">Update price</button></form></td></tr>
     @empty<tr><td colspan="5">No products have been configured by stock control.</td></tr>@endforelse
     </tbody></table>
 </section>
 @include('sales.partials.product-catalogue-entry')
-<section class="exec-panel"><div class="section-heading"><div><p class="card-label">Accountability</p><h3>Recent price changes</h3></div></div><div class="price-history">@forelse($priceHistory as $change)<article><div><strong>{{ $change->description }}</strong><small>{{ $change->created_at->format('d M Y, H:i') }} &middot; {{ $change->user?->displayName() ?? $change->username ?? 'System' }}</small></div><span>UGX {{ number_format((float)data_get($change->old_values,'unit_price')) }} &rarr; <b>UGX {{ number_format((float)data_get($change->new_values,'unit_price')) }}</b></span></article>@empty<p class="muted">No price changes have been recorded yet.</p>@endforelse</div></section>
+<section class="exec-panel"><div class="section-heading"><div><p class="card-label">Accountability</p><h3>Recent price changes</h3></div></div><div class="price-history">@forelse($priceHistory as $change)<article><div><strong>{{ $change->description }}</strong><small>{{ $change->created_at->format('d M Y, H:i') }} &middot; {{ $change->user?->displayName() ?? $change->username ?? 'System' }}</small></div><span>@money(data_get($change->old_values,'unit_price')) &rarr; <b>@money(data_get($change->new_values,'unit_price'))</b></span></article>@empty<p class="muted">No price changes have been recorded yet.</p>@endforelse</div></section>
 <script>document.querySelectorAll('.price-update-form').forEach(form=>{form.querySelector('button').textContent='Request Director approval';form.addEventListener('submit',event=>{const input=form.querySelector('[name="unit_price"]'),current=Number(form.dataset.currentPrice),next=Number(input.value);if(next===current)return;const message=`${form.dataset.product} is currently UGX ${current.toLocaleString()}. Send the proposed price of UGX ${next.toLocaleString()} to the Director for approval?`;if(!window.confirm(message)){event.preventDefault();return;}form.querySelector('[data-confirm-price]').value='1';});});</script>
 @elseif($screen === 'receipt_archive')
 <section class="sales-report">
@@ -304,25 +271,31 @@
     $topProduct = $productReport->first();
 @endphp
 <section class="sales-report">
-    <form class="sales-report__filter" method="GET" action="{{ route('sales.index') }}">
-        <input type="hidden" name="screen" value="reports">
-        <div class="field"><label>From</label><input type="date" name="from" value="{{ $from }}"></div>
-        <div class="field"><label>To</label><input type="date" name="to" value="{{ $to }}"></div>
-        <button class="btn">Apply dates</button>
-        <button class="btn btn--quiet" type="button" onclick="window.print()">Print report</button>
+    @php
+        // One report per page: recorded sales, products sold, or customers.
+        $reportPart = in_array(request('part'), ['products', 'customers'], true) ? request('part') : 'sales';
+    @endphp
+    <form class="card filter-row-card" method="GET" action="{{ route('sales.index') }}">
+        <input type="hidden" name="screen" value="reports"><input type="hidden" name="part" value="{{ $reportPart }}">
+        <div class="filter-row">
+            <div class="field"><label for="sr-from">From</label><input id="sr-from" type="date" name="from" value="{{ $from }}"></div>
+            <div class="field"><label for="sr-to">To</label><input id="sr-to" type="date" name="to" value="{{ $to }}"></div>
+            <div class="filter-row__actions"><button class="btn btn--small">Apply</button></div>
+        </div>
     </form>
-    <div class="sales-report__kpis">
-        <article><small>Sales value</small><strong>UGX {{ number_format($reportTotal) }}</strong><span>{{ $reportSales->count() }} receipt{{ $reportSales->count() === 1 ? '' : 's' }}</span></article>
-        <article><small>Average receipt</small><strong>UGX {{ number_format($reportSales->count() ? $reportTotal / $reportSales->count() : 0) }}</strong><span>For the selected period</span></article>
-        <article><small>Top customer</small><strong>{{ $topCustomer['name'] ?? 'No sales yet' }}</strong><span>{{ $topCustomer ? 'UGX '.number_format($topCustomer['amount']) : 'No customer activity' }}</span></article>
-        <article><small>Best-selling product</small><strong>{{ $topProduct['name'] ?? 'No sales yet' }}</strong><span>{{ $topProduct ? number_format($topProduct['quantity'], 2).' units' : 'No product activity' }}</span></article>
-        <article><small>Awaiting approval</small><strong>{{ number_format($pendingApprovalCount) }}</strong><span>Finance then CEO must approve</span></article>
-    </div>
-    <div class="sales-report__grid">
-        <section class="exec-panel"><div class="section-heading"><div><p class="card-label">Customer analysis</p><h3>Frequent customers</h3></div></div><div class="sales-ranking">@forelse($customerReport->take(8) as $row)<div><b>{{ $row['rank'] }}</b><span><strong>{{ $row['name'] }}</strong><small>{{ $row['sales'] }} purchase{{ $row['sales'] === 1 ? '' : 's' }} &middot; {{ number_format($row['share'],1) }}%</small></span><em>UGX {{ number_format($row['amount']) }}</em></div>@empty<p class="muted">No customer sales in this period.</p>@endforelse</div></section>
-    </div>
-    <section class="exec-panel table-wrap"><div class="section-heading"><div><p class="card-label">Entry audit</p><h3>Recorded sales</h3></div></div><table><thead><tr><th>Business date</th><th>Recorded at</th><th>Recorded by</th><th>Receipt</th><th>Customer</th><th>Products sold</th><th>Total</th></tr></thead><tbody>@forelse($reportSales->sortByDesc('created_at') as $sale)<tr><td>{{ $sale->sale_date->format('d M Y') }}</td><td>{{ $sale->created_at->format('d M Y, H:i') }}@if($sale->updated_at->gt($sale->created_at->copy()->addSecond()))<small class="data-sub">Updated {{ $sale->updated_at->format('d M Y, H:i') }}</small>@endif</td><td>{{ $sale->seller?->displayName() ?? 'System' }}</td><td>{{ $sale->invoice_number }}</td><td>{{ $sale->customer_name }}</td><td>@foreach($sale->lines as $line)<div><strong>{{ $line->description }}</strong> &middot; {{ number_format($line->quantity,2) }} {{ Str::plural($line->unit,$line->quantity) }}</div>@endforeach</td><td><strong>UGX {{ number_format($sale->total) }}</strong></td></tr>@empty<tr><td colspan="7">No sales found for these dates.</td></tr>@endforelse</tbody></table></section>
-    <section class="exec-panel table-wrap"><div class="section-heading"><div><p class="card-label">Product performance</p><h3>What was sold</h3></div></div><table><thead><tr><th>Product</th><th>Quantity</th><th>Sales value</th></tr></thead><tbody>@forelse($productReport as $row)<tr><td><strong>{{ $row['name'] }}</strong></td><td>{{ number_format($row['quantity'],2) }} {{ Str::plural($row['unit'], $row['quantity']) }}</td><td>UGX {{ number_format($row['amount']) }}</td></tr>@empty<tr><td colspan="3">No sales found for these dates.</td></tr>@endforelse</tbody></table></section>
+    <nav class="view-switch" aria-label="Sales report" data-keep-link>
+        @foreach(['sales' => 'Sales recorded', 'products' => 'Products sold', 'customers' => 'Customers'] as $key => $label)
+            <a href="{{ route('sales.index', ['screen' => 'reports', 'part' => $key, 'from' => $from, 'to' => $to]) }}" @if($reportPart === $key) aria-current="page" @endif>{{ $label }}</a>
+        @endforeach
+    </nav>
+    @if($reportPart === 'sales')
+    <section class="exec-panel table-wrap"><table><thead><tr><th>Business date</th><th>Recorded at</th><th>Recorded by</th><th>Receipt</th><th>Customer</th><th>Products sold</th><th>Total</th></tr></thead><tbody>@forelse($reportSales->sortByDesc('created_at') as $sale)<tr><td>{{ $sale->sale_date->format('d M Y') }}</td><td>{{ $sale->created_at->format('d M Y, H:i') }}@if($sale->updated_at->gt($sale->created_at->copy()->addSecond()))<small class="data-sub">Updated {{ $sale->updated_at->format('d M Y, H:i') }}</small>@endif</td><td>{{ $sale->seller?->displayName() ?? 'System' }}</td><td>{{ $sale->invoice_number }}</td><td>{{ $sale->customer_name }}</td><td>@foreach($sale->lines as $line)<div><strong>{{ $line->description }}</strong> &middot; {{ number_format($line->quantity,2) }} {{ Str::plural($line->unit,$line->quantity) }}</div>@endforeach</td><td><strong>UGX {{ number_format($sale->total) }}</strong></td></tr>@empty<tr><td colspan="7">No sales found for these dates.</td></tr>@endforelse</tbody></table></section>
+    @elseif($reportPart === 'products')
+    <section class="exec-panel table-wrap"><table><thead><tr><th>Date</th><th>Product</th><th>Quantity</th><th>Sales value</th></tr></thead><tbody>@forelse($productDailyReport as $row)<tr><td>{{ \Carbon\Carbon::parse($row['date'])->format('d M Y') }}</td><td><strong>{{ $row['name'] }}</strong></td><td>{{ number_format($row['quantity'],2) }} {{ Str::plural($row['unit'], $row['quantity']) }}</td><td>UGX {{ number_format($row['amount']) }}</td></tr>@empty<tr><td colspan="4">No sales found for these dates.</td></tr>@endforelse</tbody>@if($productDailyReport->isNotEmpty())<tfoot><tr><th colspan="3">Total</th><th>UGX {{ number_format($productDailyReport->sum('amount')) }}</th></tr></tfoot>@endif</table></section>
+    @else
+    {{-- Customers ranked by what they bought in the period, in the same table layout as the other tabs. --}}
+    <section class="exec-panel table-wrap"><table><thead><tr><th>#</th><th>Customer</th><th>Purchases</th><th>Share of sales</th><th>Amount (UGX)</th></tr></thead><tbody>@forelse($customerReport as $row)<tr><td>{{ $row['rank'] }}</td><td><strong>{{ $row['name'] }}</strong></td><td>{{ number_format($row['sales']) }}</td><td>{{ number_format($row['share'], 1) }}%</td><td>{{ number_format($row['amount']) }}</td></tr>@empty<tr><td colspan="5">No customer sales found for these dates.</td></tr>@endforelse</tbody></table></section>
+    @endif
 </section>
 @endif
 @endsection

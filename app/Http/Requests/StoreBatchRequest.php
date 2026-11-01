@@ -74,13 +74,13 @@ class StoreBatchRequest extends FormRequest
                     'Allocate all '.number_format($expected).' birds across the houses. The current allocation is '.number_format($allocated).'.');
             }
 
-            if ((int) $this->input('age_days_on_arrival') <= 42 && $allocated > 0) {
+            if ((int) $this->input('age_days_on_arrival') <= config('farm.brooder_max_age_days') && $allocated > 0) {
                 $selectedIds = collect($this->input('house_allocations', []))->filter(fn ($quantity) => (int) $quantity > 0)->keys();
                 $hasStandardHouse = \App\Models\PoultryHouse::whereIn('id', $selectedIds)->where('house_type', '!=', 'brooder')->exists();
                 $hasStandardNewHouse = collect($this->input('new_houses', []))->contains(fn ($house) =>
                     (int) ($house['bird_quantity'] ?? 0) > 0 && ($house['house_type'] ?? 'standard') !== 'brooder');
                 if ($hasStandardHouse || $hasStandardNewHouse) {
-                    $validator->errors()->add('house_allocations', 'Birds aged 42 days or less must first be allocated to houses marked as brooders.');
+                    $validator->errors()->add('house_allocations', 'Birds aged '.config('farm.brooder_max_age_days').' days or less must first be allocated to houses marked as brooders.');
                 }
             }
         });

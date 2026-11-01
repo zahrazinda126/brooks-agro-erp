@@ -24,6 +24,7 @@ class ExecutiveController extends Controller
         'messages' => 'Messages & Announcements',
         'notifications' => 'Executive Notifications',
         'security' => 'Users & Permissions',
+        'permissions' => 'Role Permissions',
         'settings' => 'Company & System Settings',
     ];
 
@@ -60,12 +61,14 @@ class ExecutiveController extends Controller
                 'communications' => DB::table('executive_communications')->latest()->limit(10)->get(),
             ],
             'security' => User::with(['role', 'department'])->orderBy('name')->get(),
+            'permissions' => [],
             'settings' => DB::table('settings')->orderBy('key')->get(),
             default => [],
         };
 
         $permissionData = null;
-        if ($screen === 'security' && $this->isDirector($request)) {
+        abort_if($screen === 'permissions' && ! $this->isDirector($request), 403, 'Only the Director manages role permissions.');
+        if ($screen === 'permissions') {
             $roles = Role::where('is_active', true)->where('rank', '>', $request->user()->effectiveRank())
                 ->where('is_superuser', false)->orderBy('rank')->orderBy('name')->get();
             $selectedRole = $roles->firstWhere('id', (int) $request->query('role')) ?: $roles->first();
@@ -112,7 +115,7 @@ class ExecutiveController extends Controller
             ->mapWithKeys(fn ($row) => [$row->module_id => ['view'=>(bool)$row->can_view,'create'=>(bool)$row->can_create,'edit'=>(bool)$row->can_edit,'delete'=>(bool)$row->can_delete,'approve'=>(bool)$row->can_approve]])->all();
         AuditLog::record('role_permissions_updated', $role, "Updated access permissions for {$role->name}.", $before, $after, 'security');
 
-        return redirect()->route('executive.index', ['screen'=>'security', 'role'=>$role->id])->with('status', "{$role->name} permissions updated.");
+        return redirect()->route('executive.index', ['screen'=>'permissions', 'role'=>$role->id])->with('status', "{$role->name} permissions updated.");
     }
 
     /** Reset an account even when it has no linked employee record. */
@@ -162,7 +165,7 @@ class ExecutiveController extends Controller
         $codes = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter();
         $isExecutive = $codes->contains(fn ($code) => in_array($code, ['ceo', 'director'], true));
         $isSystemAdministrator = $codes->contains('system-admin');
-        $isAssistant = $codes->contains('personal-assistant');
+        $isAssistant = $codes->intersect(\App\Models\User::PA_ROLES)->isNotEmpty();
         $assistantScreen = $screen === null || in_array($screen, ['reports', 'messages', 'notifications'], true);
         $administratorScreen = in_array($screen, ['security', 'settings'], true);
         abort_unless($isExecutive || ($isAssistant && $assistantScreen) || ($isSystemAdministrator && $administratorScreen), 403);

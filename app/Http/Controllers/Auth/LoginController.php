@@ -31,7 +31,10 @@ class LoginController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $user = User::where('username', $credentials['username'])->first();
+        // Forgiving match: "baf 003", "BAF003" and "BAF 003" all find the same login.
+        $typed = strtolower(preg_replace('/\s+/', '', $credentials['username']));
+        $user = User::where('username', trim($credentials['username']))->first()
+            ?? User::whereRaw("lower(replace(username, ' ', '')) = ?", [$typed])->first();
 
         // Locked out after repeated failures.
         if ($user && $user->isLocked()) {

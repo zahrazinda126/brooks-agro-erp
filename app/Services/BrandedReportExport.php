@@ -2,10 +2,18 @@
 
 namespace App\Services;
 
+use App\Support\Xlsx\XlsxWorkbook;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
+/**
+ * The standard report export: a native Excel (.xlsx) workbook in the brand format
+ * (company line, title, period, prepared by/at, maroon table headers, gold section rows,
+ * subtotal and total rows, real numbers with UGX formatting, frozen header, filters,
+ * landscape print fitted to the page width).
+ */
 class BrandedReportExport
 {
+    /** One table. Rows may be plain lists or ['cells' => [...], 'style' => detail|heading|subtotal|total|percent]. */
     public function download(
         string $title,
         string $subtitle,
@@ -14,32 +22,35 @@ class BrandedReportExport
         string $filename,
         ?string $generatedBy = null,
     ): StreamedResponse {
-        $normalisedRows = collect($rows)->map(function ($row) {
-            if (is_array($row) && array_key_exists('cells', $row)) {
-                return ['cells' => array_values($row['cells']), 'style' => $row['style'] ?? 'detail'];
-            }
+        return $this->downloadSections($title, $subtitle, [['headers' => $headers, 'rows' => $rows]], $filename, $generatedBy);
+    }
 
-            return ['cells' => array_values((array) $row), 'style' => 'detail'];
-        })->all();
+    /**
+     * Several tables in one report, each with an optional heading, on one sheet; or pass
+     * ['sheet' => 'Name'] on a section to start a new worksheet for it.
+     */
+    public function downloadSections(string $title, string $subtitle, array $sections, string $filename, ?string $generatedBy = null): StreamedResponse
+    {
+        $workbook = new XlsxWorkbook();
+        $meta = ['Prepared '.now()->format('d M Y, H:i').($generatedBy ? ' by '.$generatedBy : '')];
+        $sheets = [];
+        foreach ($sections as $section) {
+            $sheetName = $section['sheet'] ?? ($sheets ? array_key_last($sheets) : $title);
+            $sheets[$sheetName][] = [
+                'heading' => $section['heading'] ?? null,
+                'headers' => array_values($section['headers'] ?? []),
+                'rows' => collect($section['rows'] ?? [])->all(),
+            ];
+        }
+        foreach ($sheets as $name => $sheetSections) {
+            $workbook->addSheet(['name' => $name, 'title' => $title, 'subtitle' => $subtitle, 'meta' => $meta, 'sections' => $sheetSections]);
+        }
 
-        $logoPath = public_path('images/logo.png');
-        $logo = is_file($logoPath)
-            ? 'data:image/png;base64,'.base64_encode((string) file_get_contents($logoPath))
-            : null;
-        $name = str($filename)->beforeLast('.')->slug().'.xls';
+        $name = str($filename)->beforeLast('.')->slug().'.xlsx';
+        $content = $workbook->toString();
 
-        return response()->streamDownload(function () use ($title, $subtitle, $headers, $normalisedRows, $generatedBy, $logo) {
-            echo view('exports.branded-table', [
-                'title' => $title,
-                'subtitle' => $subtitle,
-                'headers' => $headers,
-                'rows' => $normalisedRows,
-                'generatedBy' => $generatedBy,
-                'generatedAt' => now(),
-                'logo' => $logo,
-            ])->render();
-        }, $name, [
-            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+        return response()->streamDownload(fn () => print($content), $name, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Cache-Control' => 'max-age=0, no-cache, must-revalidate',
         ]);
     }

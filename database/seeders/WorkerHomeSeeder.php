@@ -38,7 +38,7 @@ class WorkerHomeSeeder extends Seeder
 
         // Roles whose whole job is data entry.
         $workerRoles = DB::table('roles')
-            ->whereIn('code', ['casual-worker'])
+            ->whereIn('code', \App\Models\User::DATA_ENTRY_ROLES)
             ->pluck('id');
 
         DB::table('module_role')
@@ -61,31 +61,27 @@ class WorkerHomeSeeder extends Seeder
     /** Make sure a worker actually has somewhere to land. */
     private function ensureWorkModules(): void
     {
-        $roleId = DB::table('roles')->where('code', 'casual-worker')->value('id');
+        foreach (DB::table('roles')->whereIn('code', \App\Models\User::DATA_ENTRY_ROLES)->pluck('id') as $roleId) {
+            foreach (['my-work', 'notifications', 'messages'] as $key) {
+                $moduleId = DB::table('modules')->where('key', $key)->value('id');
 
-        if (! $roleId) {
-            return;
-        }
+                if (! $moduleId) {
+                    continue;
+                }
 
-        foreach (['my-work', 'notifications', 'messages'] as $key) {
-            $moduleId = DB::table('modules')->where('key', $key)->value('id');
-
-            if (! $moduleId) {
-                continue;
+                DB::table('module_role')->updateOrInsert(
+                    ['role_id' => $roleId, 'module_id' => $moduleId],
+                    [
+                        'can_view'   => true,
+                        'can_create' => true,
+                        'can_edit'   => false,
+                        'can_delete' => false,
+                        'can_approve'=> false,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]
+                );
             }
-
-            DB::table('module_role')->updateOrInsert(
-                ['role_id' => $roleId, 'module_id' => $moduleId],
-                [
-                    'can_view'   => true,
-                    'can_create' => true,
-                    'can_edit'   => false,
-                    'can_delete' => false,
-                    'can_approve'=> false,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]
-            );
         }
 
         // My Work is their home, so it sorts first in their menu.

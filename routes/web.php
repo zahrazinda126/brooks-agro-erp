@@ -94,6 +94,31 @@ Route::middleware('auth')->group(function () {
     Route::middleware('password.settled')->group(function () {
 
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::post('/export/page', [\App\Http\Controllers\PageExportController::class, 'store'])->name('page.export');
+        // Landing page for grouped Monitor tabs (Health & Treatment, Feeds Management).
+        // Health & Treatment across every animal unit on one page.
+        // Sick bays (Production Manager and vet).
+        Route::get('/monitor/sick-bay', [\App\Http\Controllers\SickBayController::class, 'index'])->name('sick-bay.index');
+        Route::post('/monitor/sick-bay/bays', [\App\Http\Controllers\SickBayController::class, 'storeBay'])->name('sick-bay.bays.store');
+        Route::post('/monitor/sick-bay/admit', [\App\Http\Controllers\SickBayController::class, 'admit'])->name('sick-bay.admit');
+        Route::post('/monitor/sick-bay/{admission}/check', [\App\Http\Controllers\SickBayController::class, 'check'])->name('sick-bay.check');
+        Route::get('/monitor/health/poultry-deaths', [\App\Http\Controllers\Poultry\HealthMonitorController::class, 'recordPoultryDeaths'])->name('monitor.health.poultry-deaths');
+        Route::get('/monitor/health/{task}', [\App\Http\Controllers\Poultry\HealthMonitorController::class, 'index'])->whereIn('task', ['treatments', 'deaths'])->name('monitor.health');
+        Route::get('/monitor/{group}', fn (string $group) => view('monitor-group', ['group' => $group, 'title' => ['production' => 'Production', 'health' => 'Health & Treatment', 'feeds' => 'Feeds Management'][$group]]))->whereIn('group', ['production', 'health', 'feeds'])->name('monitor.group');
+        Route::get('/report-centre', [\App\Http\Controllers\ReportCentreController::class, 'index'])->name('reports.centre');
+        // Farm registers (Farm Hub survey): house preparation, incidents & near misses, faults & maintenance.
+        Route::get('/farm-registers', [\App\Http\Controllers\Operations\FarmRegisterController::class, 'index'])->name('farm-registers.index');
+        Route::post('/farm-registers', [\App\Http\Controllers\Operations\FarmRegisterController::class, 'store'])->name('farm-registers.store');
+        Route::post('/farm-registers/{entry}/close', [\App\Http\Controllers\Operations\FarmRegisterController::class, 'close'])->whereNumber('entry')->name('farm-registers.close');
+        // Farm Units › a unit: open the unit's first page; its other pages follow as tabs (layouts.app, partials.farm-unit-tabs).
+        Route::get('/farm-units/{unit}', function (string $unit) {
+            $pages = \App\Support\MonitorTasks::unitPages(request()->user(), $unit);
+            abort_if($pages === [], 403, 'You have no pages in this unit.');
+            [, $route, $params] = $pages[0];
+
+            return redirect()->route($route, $params + ['farmunit' => $unit]);
+        })->whereIn('unit', array_keys(\App\Support\MonitorTasks::UNITS))->name('farm-units.show');
+        Route::get('/overview/{section}', [\App\Http\Controllers\SectionOverviewController::class, 'show'])->where('section', '[a-z0-9-]+')->name('section.overview');
         Route::get('/daily-management-report', [DailyManagementReportController::class, 'index'])->name('daily-reports.index');
         Route::post('/daily-management-report', [DailyManagementReportController::class, 'save'])->name('daily-reports.save');
         Route::post('/daily-management-report/hr-observations', [DailyManagementReportController::class, 'saveHrObservations'])->name('daily-reports.hr-observations');
@@ -121,8 +146,17 @@ Route::middleware('auth')->group(function () {
         Route::post('/inventory/items', [InventoryController::class, 'storeItem'])->middleware('module:inventory,create')->name('inventory.items.store');
         Route::post('/inventory/movements', [InventoryController::class, 'storeMovement'])->middleware('module:inventory,create')->name('inventory.movements.store');
         Route::post('/inventory/receipts/{movement}/confirm', [InventoryController::class, 'confirmReceipt'])->middleware('module:inventory,create')->name('inventory.receipts.confirm');
+        // Adjustments and losses: the Finance Manager approves or rejects (checked in the controller).
+        Route::post('/inventory/adjustments/{movement}/decide', [InventoryController::class, 'decideAdjustment'])->name('inventory.adjustments.decide');
+        // Stock requests: anyone with a menu may ask; each step checks whose turn it is.
+        Route::get('/stock-requests', [\App\Http\Controllers\InventoryRequestController::class, 'index'])->name('inventory.requests.index');
+        Route::post('/stock-requests', [\App\Http\Controllers\InventoryRequestController::class, 'store'])->name('inventory.requests.store');
+        Route::post('/stock-requests/{inventoryRequest}/{step}', [\App\Http\Controllers\InventoryRequestController::class, 'step'])
+            ->whereIn('step', ['approve', 'reject', 'prepare', 'dispatch', 'receive', 'acknowledge', 'cancel'])->name('inventory.requests.step');
         Route::put('/inventory/stores/{store}/roles/{role}', [InventoryController::class, 'updateStoreAccess'])->name('inventory.store-access.update');
+        Route::put('/inventory/store-access/people/{person}', [InventoryController::class, 'updateUserStoreAccess'])->name('inventory.store-access.person');
         Route::get('/visitors', [VisitorController::class, 'index'])->name('visitors.index');
+        Route::get('/visitors/check-in', [VisitorController::class, 'create'])->name('visitors.create');
         Route::get('/supervision', [SupervisorController::class, 'index'])->name('supervision.index');
         Route::post('/supervision/assignments', [SupervisorController::class, 'assign'])->name('supervision.assignments.store');
         Route::post('/supervision/assignments/{assignment}/end', [SupervisorController::class, 'end'])->name('supervision.assignments.end');
@@ -163,9 +197,21 @@ Route::middleware('auth')->group(function () {
         Route::get('/operations/feed-stock', [FeedStockController::class, 'index'])->name('operations.feed-stock.index');
         Route::post('/operations/feed-stock', [FeedStockController::class, 'store'])->name('operations.feed-stock.store');
         Route::post('/operations/feed-stock/{delivery}/receive', [FeedStockController::class, 'receive'])->name('operations.feed-stock.receive');
+        // Feed mixing: ingredients out of feed stock, mixed feed to the stores, houses fed from their store.
+        Route::get('/operations/feed-mixing', [\App\Http\Controllers\Operations\FeedMixingController::class, 'index'])->name('operations.feed-mixing.index');
+        Route::post('/operations/feed-mixing', [\App\Http\Controllers\Operations\FeedMixingController::class, 'store'])->name('operations.feed-mixing.store');
+        Route::post('/operations/feed-mixing/{dispatch}/receive', [\App\Http\Controllers\Operations\FeedMixingController::class, 'receive'])->whereNumber('dispatch')->name('operations.feed-mixing.receive');
+        Route::post('/operations/feed-mixing/stores', [\App\Http\Controllers\Operations\FeedMixingController::class, 'saveStore'])->name('operations.feed-mixing.stores');
+        Route::post('/operations/feed-mixing/houses', [\App\Http\Controllers\Operations\FeedMixingController::class, 'assignHouses'])->name('operations.feed-mixing.houses');
         Route::get('/hr/staff-welfare-budget', [WelfareBudgetController::class, 'index'])->name('hr.welfare-budget.index');
         Route::get('/hr/data-entry', [HrDataEntryController::class, 'index'])->name('hr.data-entry.index');
         Route::get('/hr/accommodation', [AccommodationController::class, 'index'])->name('hr.accommodation.index');
+        Route::get('/hr/on-the-farm', [AccommodationController::class, 'onFarm'])->name('hr.on-farm');
+        // Temporary workers: short registration, no login, not on payroll; HR assigns rooms.
+        Route::get('/hr/temporary-workers', [\App\Http\Controllers\HR\TemporaryWorkerController::class, 'index'])->name('hr.temporary.index');
+        Route::post('/hr/temporary-workers', [\App\Http\Controllers\HR\TemporaryWorkerController::class, 'store'])->name('hr.temporary.store');
+        Route::post('/hr/temporary-workers/{employee}/room', [\App\Http\Controllers\HR\TemporaryWorkerController::class, 'assignRoom'])->name('hr.temporary.room');
+        Route::post('/hr/temporary-workers/{employee}/checkout', [\App\Http\Controllers\HR\TemporaryWorkerController::class, 'checkout'])->name('hr.temporary.checkout');
         Route::post('/hr/accommodation/hostels', [AccommodationController::class, 'storeHostel'])->name('hr.accommodation.hostels.store');
         Route::post('/hr/accommodation/rooms', [AccommodationController::class, 'storeRoom'])->name('hr.accommodation.rooms.store');
         Route::post('/hr/accommodation/assignments', [AccommodationController::class, 'assign'])->name('hr.accommodation.assignments.store');
@@ -183,6 +229,7 @@ Route::middleware('auth')->group(function () {
         Route::delete('/production/finance-draft-budget/{budget}', [ProductionBudgetController::class, 'deleteFinanceDraftLine'])->name('production.finance-draft.delete');
         Route::get('/department/weekly-budget', [DepartmentBudgetController::class, 'index'])->name('department-budget.index');
         Route::post('/department/weekly-budget', [DepartmentBudgetController::class, 'store'])->name('department-budget.store');
+        Route::post('/department/weekly-budget/submit', [DepartmentBudgetController::class, 'submit'])->name('department-budget.submit');
         Route::put('/department/weekly-budget/{budget}', [DepartmentBudgetController::class, 'update'])->name('department-budget.update');
         Route::delete('/department/weekly-budget/{budget}', [DepartmentBudgetController::class, 'destroy'])->name('department-budget.destroy');
         Route::get('/operations/units/{unit}', [FarmUnitController::class, 'index'])->name('operations.units.index');
@@ -190,6 +237,46 @@ Route::middleware('auth')->group(function () {
         Route::get('/operations/units/{unit}/export', [FarmUnitController::class, 'export'])->name('operations.units.export');
         Route::post('/operations/units/{unit}', [FarmUnitController::class, 'store'])->name('operations.units.store');
         Route::post('/operations/units/{unit}/animals', [FarmUnitController::class, 'storeAnimal'])->name('operations.units.animals.store');
+        // Director Follow-up (PA): the Director's meetings and approved money follow-up, each on its own page.
+        $paBoard = function (\Illuminate\Http\Request $request, string $view) {
+            abort_unless($request->user()->isPersonalAssistant() || $request->user()->isSuperuser(), 403);
+            return view($view, ['board' => app(\App\Services\DirectorFollowUp::class)->data()]);
+        };
+        Route::get('/director-follow-up', fn () => redirect()->route('pa.meetings'))->name('pa.follow-up');
+        Route::get('/director-follow-up/meetings', fn (\Illuminate\Http\Request $r) => $paBoard($r, 'pa.meetings'))->name('pa.meetings');
+        Route::get('/director-follow-up/approved-money', fn (\Illuminate\Http\Request $r) => $paBoard($r, 'pa.approved-money'))->name('pa.approved-money');
+        // The PA's daily report to the Director.
+        Route::get('/daily-report', [\App\Http\Controllers\PaDailyReportController::class, 'write'])->name('pa.daily-report');
+        Route::post('/daily-report', [\App\Http\Controllers\PaDailyReportController::class, 'save'])->name('pa.daily-report.save');
+        Route::get('/daily-reports', [\App\Http\Controllers\PaDailyReportController::class, 'index'])->name('pa.reports.index');
+        Route::get('/daily-reports/{report}', [\App\Http\Controllers\PaDailyReportController::class, 'show'])->name('pa.reports.show');
+        Route::post('/daily-reports/{report}/comment', [\App\Http\Controllers\PaDailyReportController::class, 'comment'])->name('pa.reports.comment');
+        // The CEO's daily report to the Director.
+        Route::get('/ceo-daily-report', [\App\Http\Controllers\CeoDailyReportController::class, 'write'])->name('ceo.daily-report');
+        Route::post('/ceo-daily-report', [\App\Http\Controllers\CeoDailyReportController::class, 'save'])->name('ceo.daily-report.save');
+        Route::get('/ceo-daily-reports', [\App\Http\Controllers\CeoDailyReportController::class, 'index'])->name('ceo.reports.index');
+        Route::get('/ceo-daily-reports/{report}', [\App\Http\Controllers\CeoDailyReportController::class, 'show'])->name('ceo.reports.show');
+        Route::post('/ceo-daily-reports/{report}/comment', [\App\Http\Controllers\CeoDailyReportController::class, 'comment'])->name('ceo.reports.comment');
+        // Construction (PA): projects, builders, materials needed; store issues and Finance payments link to a project.
+        Route::get('/construction', [\App\Http\Controllers\ConstructionController::class, 'index'])->name('construction.index');
+        Route::post('/construction', [\App\Http\Controllers\ConstructionController::class, 'store'])->name('construction.store');
+        Route::get('/construction/{project}', [\App\Http\Controllers\ConstructionController::class, 'show'])->whereNumber('project')->name('construction.show');
+        Route::post('/construction/{project}/finish', [\App\Http\Controllers\ConstructionController::class, 'finish'])->whereNumber('project')->name('construction.finish');
+        Route::post('/construction/{project}/workers', [\App\Http\Controllers\ConstructionController::class, 'addWorker'])->whereNumber('project')->name('construction.workers.store');
+        Route::delete('/construction/{project}/workers/{worker}', [\App\Http\Controllers\ConstructionController::class, 'removeWorker'])->whereNumber(['project', 'worker'])->name('construction.workers.destroy');
+        Route::post('/construction/{project}/materials', [\App\Http\Controllers\ConstructionController::class, 'addMaterial'])->whereNumber('project')->name('construction.materials.store');
+        Route::delete('/construction/{project}/materials/{material}', [\App\Http\Controllers\ConstructionController::class, 'removeMaterial'])->whereNumber(['project', 'material'])->name('construction.materials.destroy');
+        // Paid farm tasks: the Production Manager assigns, the worker records, a supervisor confirms.
+        Route::get('/farm-tasks', [\App\Http\Controllers\Operations\FarmTaskController::class, 'index'])->name('farm-tasks.index');
+        Route::post('/farm-tasks/assign', [\App\Http\Controllers\Operations\FarmTaskController::class, 'assign'])->name('farm-tasks.assign');
+        Route::post('/farm-tasks/types', [\App\Http\Controllers\Operations\FarmTaskController::class, 'storeType'])->name('farm-tasks.types.store');
+        Route::post('/farm-tasks/{assignment}/end', [\App\Http\Controllers\Operations\FarmTaskController::class, 'end'])->whereNumber('assignment')->name('farm-tasks.end');
+        Route::get('/my-tasks/{assignment}', [\App\Http\Controllers\Operations\FarmTaskController::class, 'record'])->whereNumber('assignment')->name('my-tasks.record');
+        Route::post('/my-tasks/{assignment}', [\App\Http\Controllers\Operations\FarmTaskController::class, 'storeEntry'])->whereNumber('assignment')->name('my-tasks.store');
+        Route::get('/operations/livestock/{unit}/examine-deaths', [\App\Http\Controllers\Operations\LivestockDeathExaminationController::class, 'index'])->name('operations.livestock.examine');
+        Route::put('/operations/livestock/{unit}/examine-deaths/{death}', [\App\Http\Controllers\Operations\LivestockDeathExaminationController::class, 'update'])->whereNumber('death')->name('operations.livestock.examine.update');
+        Route::post('/operations/livestock/{unit}/vaccination-plans', [\App\Http\Controllers\Operations\LivestockVaccinationPlanController::class, 'store'])->name('operations.livestock.plans.store');
+        Route::put('/operations/livestock/{unit}/vaccination-plans/{plan}', [\App\Http\Controllers\Operations\LivestockVaccinationPlanController::class, 'update'])->whereNumber('plan')->name('operations.livestock.plans.update');
         Route::get('/operations/livestock/{unit}/{section}', [FarmUnitController::class, 'livestock'])->name('operations.livestock.section');
         Route::post('/operations/livestock/{unit}/{section}', [FarmUnitController::class, 'storeLivestock'])->name('operations.livestock.store');
         Route::get('/executive/{screen}', [ExecutiveController::class, 'index'])->name('executive.index');
@@ -214,10 +301,12 @@ Route::middleware('auth')->group(function () {
         Route::post('/approvals/{approval}/decision', [ApprovalController::class, 'decide'])->name('approvals.decide');
         Route::post('/approvals/{approval}/budget-funding', [ApprovalController::class, 'updateBudgetFunding'])->name('approvals.budget-funding.update');
         Route::post('/approvals/{approval}/comments', [ApprovalController::class, 'comment'])->name('approvals.comments.store');
+        Route::get('/finance/posting', [\App\Http\Controllers\Finance\FinancePostingController::class, 'index'])->name('finance.posting.index');
         Route::get('/finance/transactions', [TransactionController::class, 'index'])->name('finance.transactions.index');
         Route::get('/finance/accounts', [TransactionController::class, 'accounts'])->name('finance.accounts.index');
         Route::get('/finance/transactions/create', [TransactionController::class, 'create'])->name('finance.transactions.create');
         Route::post('/finance/transactions', [TransactionController::class, 'store'])->name('finance.transactions.store');
+        Route::post('/finance/transactions/{transaction}/reverse', [TransactionController::class, 'reverse'])->name('finance.transactions.reverse');
         Route::get('/finance/general-ledger', [TransactionController::class, 'generalLedger'])->name('finance.general-ledger.index');
         Route::get('/finance/receivables', [ReceivableController::class, 'index'])->name('finance.receivables.index');
         Route::post('/finance/receivables', [ReceivableController::class, 'store'])->name('finance.receivables.store');
@@ -226,6 +315,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/finance/receivables/apply-prepayment', [ReceivableController::class, 'applyPrepayment'])->name('finance.receivables.apply-prepayment');
         Route::get('/finance/payables', [AccountingController::class, 'payables'])->name('finance.payables.index');
         Route::post('/finance/payables', [AccountingController::class, 'storePayable'])->name('finance.payables.store');
+        Route::post('/finance/payables/{payable}/approve-variance', [AccountingController::class, 'approveFeedVariance'])->name('finance.payables.approve-variance');
         Route::post('/finance/batch-orders', [AccountingController::class, 'storeBatchOrder'])->name('finance.batch-orders.store');
         Route::post('/finance/batch-orders/{batchOrder}/payments', [AccountingController::class, 'payBatchOrder'])->name('finance.batch-orders.payments.store');
         Route::get('/finance/budgets', [AccountingController::class, 'budgets'])->name('finance.budgets.index');
@@ -237,6 +327,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/finance/budgets/weekly-template', [AccountingController::class, 'seedWeeklyBudget'])->name('finance.budgets.weekly-template');
         Route::delete('/finance/budgets/{budget}', [AccountingController::class, 'destroyBudget'])->name('finance.budgets.destroy');
         Route::get('/finance/assets', [AccountingController::class, 'assets'])->name('finance.assets.index');
+        Route::get('/finance/assets/register', [AccountingController::class, 'createAsset'])->name('finance.assets.create');
         Route::post('/finance/assets', [AccountingController::class, 'storeAsset'])->name('finance.assets.store');
         Route::get('/finance/cash-book', [TransactionController::class, 'cashBook'])->name('finance.cash-book.index');
         Route::get('/finance/bank-book', [TransactionController::class, 'bankBook'])->name('finance.bank-book.index');
@@ -279,6 +370,8 @@ Route::middleware('auth')->group(function () {
             Route::post('/employees', [EmployeeController::class, 'store'])
                 ->middleware('module:hr,create')->name('employees.store');
 
+            Route::get('/employees/{employee}/national-id-photo', [EmployeeController::class, 'nationalIdPhoto'])
+                ->middleware('module:hr')->name('employees.national-id-photo');
             Route::get('/employees/{employee}', [EmployeeController::class, 'show'])
                 ->middleware('module:hr')->name('employees.show');
 
@@ -310,6 +403,8 @@ Route::middleware('auth')->group(function () {
             Route::post('/employees/{employee}/account/toggle', [EmployeeAccountController::class, 'toggle'])
                 ->middleware('module:hr,edit')->name('employees.account.toggle');
 
+            // Keep the former HR asset-register link working for bookmarks and open tabs.
+            Route::get('/records/assets', fn () => redirect()->route('finance.assets.index'));
             Route::get('/records/{module}', [EmployeeRecordController::class, 'index'])
                 ->name('hr.records.index');
             Route::get('/records/{module}/create', [EmployeeRecordController::class, 'create'])
@@ -386,8 +481,16 @@ Route::middleware('auth')->group(function () {
 
             Route::get('/today/{batch}/feed', [DailyEntryController::class, 'feedForm'])
                 ->middleware('module:feed-consumption')->name('daily.feed');
+            // Worker reports added after the Farm Hub survey: water, sick birds, problems (checked by the supervisor).
+            foreach (['water' => 'water', 'sick-birds' => 'sick_birds', 'problem' => 'problem'] as $path => $reportType) {
+                $name = ['water' => 'daily.water', 'sick_birds' => 'daily.sick', 'problem' => 'daily.problem'][$reportType];
+                Route::get('/today/{batch}/'.$path, [\App\Http\Controllers\Poultry\HouseReportController::class, 'form'])->defaults('type', $reportType)->name($name);
+                Route::post('/today/{batch}/'.$path, [\App\Http\Controllers\Poultry\HouseReportController::class, 'store'])->defaults('type', $reportType)->name($name.'.store');
+            }
               Route::post('/today/{batch}/feed', [DailyEntryController::class, 'feedStore'])
                   ->middleware('module:feed-consumption,create')->name('daily.feed.store');
+              Route::post('/today/{batch}/feed-given', [DailyEntryController::class, 'feedGivenStore'])
+                  ->middleware('module:feed-consumption,create')->name('daily.feed-given.store');
               Route::post('/today/{batch}/feed-serving', [DailyEntryController::class, 'feedServingStore'])
                   ->middleware('module:feed-consumption,create')->name('daily.feed-serving.store');
 

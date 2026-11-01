@@ -59,6 +59,39 @@
         <path d="M12 15c0-2.6 1.8-4.4 4-5 .4 2.6-1.4 5-4 5Z"/><path d="M12 15c0-2.6-1.8-4.4-4-5-.4 2.6 1.4 5 4 5Z"/>
     </symbol>
 
+    <!-- A tied feed sack (feeds given to a poultry house) -->
+    <symbol id="i-sack" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 3.5h6l-1.4 3h-3.2Z"/><path d="M10.4 6.5C6.6 8.2 5 11.6 5 15.2 5 18.7 7.6 21 12 21s7-2.3 7-5.8c0-3.6-1.6-7-5.4-8.7"/>
+        <path d="M9.5 13.5h5M9.5 16.5h5"/>
+    </symbol>
+
+    <!-- The same sack in colour, used like an emoji beside the word "Feeds" -->
+    <symbol id="i-sack-color" viewBox="0 0 24 24">
+        <path d="M9 3h6l-1.5 3.4h-3Z" fill="#b8874f" stroke="#6e4a22" stroke-width="1.2" stroke-linejoin="round"/>
+        <path d="M10.4 6.4C6.6 8.1 4.6 11.5 4.6 15.2c0 3.6 2.8 6.3 7.4 6.3s7.4-2.7 7.4-6.3c0-3.7-2-7.1-5.8-8.8Z" fill="#d9b27c" stroke="#6e4a22" stroke-width="1.2" stroke-linejoin="round"/>
+        <path d="M9 13.4h6M9 16.6h6" stroke="#8a5d2c" stroke-width="1.3" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- A dead hen: on its back, legs in the air, eye crossed out (deaths) -->
+    <symbol id="i-dead-hen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="13.5" cy="15" rx="7" ry="4.2"/>
+        <circle cx="5" cy="15.6" r="2.6"/>
+        <path d="M3.4 13.4c-.6-.9-.3-1.9.6-2.1.2.8.9 1 1.5.6.5.8 1.2.8 1.6.2"/>
+        <path d="M2.4 16.4 1 17.2l1.6.4"/>
+        <path d="M4.3 14.9l1.3 1.3M5.6 14.9l-1.3 1.3"/>
+        <path d="M11 11.2V6.6M11 6.6l-1.3-1M11 6.6l1.3-1M16 11.2V6.6M16 6.6l-1.3-1M16 6.6l1.3-1"/>
+    </symbol>
+
+    <!-- The same dead hen in colour, used like an emoji beside the word "Deaths" -->
+    <symbol id="i-dead-hen-color" viewBox="0 0 24 24">
+        <ellipse cx="13.5" cy="15" rx="7" ry="4.2" fill="#fff6ea" stroke="#6b4a2f" stroke-width="1.2"/>
+        <circle cx="5" cy="15.6" r="2.6" fill="#fff6ea" stroke="#6b4a2f" stroke-width="1.2"/>
+        <path d="M3.4 13.4c-.6-.9-.3-1.9.6-2.1.2.8.9 1 1.5.6.5.8 1.2.8 1.6.2Z" fill="#d23b2f" stroke="#a52a20" stroke-width=".8"/>
+        <path d="M2.4 16.4 1 17.2l1.6.4Z" fill="#e8a33b" stroke="#a8641d" stroke-width=".8"/>
+        <path d="M4.3 14.9l1.3 1.3M5.6 14.9l-1.3 1.3" stroke="#2b2b2b" stroke-width="1.1" stroke-linecap="round"/>
+        <path d="M11 11.2V6.6M11 6.6l-1.3-1M11 6.6l1.3-1M16 11.2V6.6M16 6.6l-1.3-1M16 6.6l1.3-1" stroke="#e8a33b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
     <symbol id="i-badge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.5 2.5L16 10"/>
     </symbol>
@@ -149,5 +182,17 @@
 
     <symbol id="i-dot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3.2"/>
+    </symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/><path d="M9.5 15a2.5 2.5 0 0 0 2.5 2.5"/>
+    </symbol>
+    <symbol id="i-thermo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 13.5V5a2 2 0 0 1 4 0v8.5a4 4 0 1 1-4 0z"/><path d="M12 9v7"/>
+    </symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3 2.5 20h19z"/><path d="M12 10v4.5"/><path d="M12 17.5h.01"/>
+    </symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 7h16M4 12h16M4 17h16"/>
     </symbol>
 </svg>

@@ -1,0 +1,56 @@
+# DigitalOcean App Platform: Brooks Agro ERP
+# Create the app from this file (Apps → Create App → "Import from app spec"), or:
+#   doctl apps create --spec .do/app.yaml
+# Secrets marked "type: SECRET" with value CHANGE_ME are filled in on the DigitalOcean dashboard.
+
+name: brooks-agro-erp
+region: fra   # Frankfurt: closest App Platform region to Uganda
+
+services:
+  - name: web
+    github:
+      repo: zahrazinda126/brooks-agro-erp
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    http_port: 10000
+    instance_size_slug: apps-s-1vcpu-1gb   # Shared 1 vCPU / 1 GiB ($12/month)
+    instance_count: 1                       # one copy: the built-in scheduler must run once
+    health_check:
+      http_path: /up
+      initial_delay_seconds: 60
+    envs:
+      - { key: APP_NAME, value: Brooks Agro Farm }
+      - { key: APP_ENV, value: production }
+      - { key: APP_DEBUG, value: "false" }
+      - { key: APP_URL, value: "${APP_URL}" }
+      - { key: APP_KEY, type: SECRET, value: CHANGE_ME }
+      - { key: APP_TIMEZONE, value: Africa/Kampala }
+      - { key: APP_LOCALE, value: en }
+      - { key: LOG_CHANNEL, value: stderr }
+      - { key: LOG_LEVEL, value: warning }
+      # Managed PostgreSQL (the "db" component below)
+      - { key: DB_CONNECTION, value: pgsql }
+      - { key: DATABASE_URL, value: "${db.DATABASE_URL}" }
+      - { key: DB_SSLMODE, value: require }
+      - { key: SESSION_DRIVER, value: database }
+      - { key: SESSION_SECURE_COOKIE, value: "true" }
+      - { key: CACHE_STORE, value: database }
+      - { key: QUEUE_CONNECTION, value: sync }
+      # Uploads (receipts, contracts) go to DigitalOcean Spaces
+      - { key: UPLOADS_DISK, value: spaces }
+      - { key: SPACES_KEY, type: SECRET, value: CHANGE_ME }
+      - { key: SPACES_SECRET, type: SECRET, value: CHANGE_ME }
+      - { key: SPACES_REGION, value: fra1 }
+      - { key: SPACES_BUCKET, value: CHANGE_ME }
+      - { key: SPACES_ENDPOINT, value: "https://fra1.digitaloceanspaces.com" }
+      # Email (password resets, notifications by email); fill in when you have a mail account
+      - { key: MAIL_MAILER, value: log }
+
+databases:
+  # Attach the managed PostgreSQL cluster created beforehand
+  # (Databases → PostgreSQL → Basic, Regular, 1 GiB / 1 vCPU / 10 GiB, Frankfurt, named brooks-db).
+  - name: db
+    engine: PG
+    production: true
+    cluster_name: brooks-db

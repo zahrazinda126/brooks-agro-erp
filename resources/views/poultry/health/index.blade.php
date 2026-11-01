@@ -90,7 +90,7 @@
 @if ($overdue->isEmpty() && $due->isEmpty() && $withdrawal->isEmpty())
     <div class="card">
         <p class="card-label">Nothing outstanding</p>
-        <p class="muted" style="margin:0;">
+        <p class="muted u-m0">
             No vaccinations due, nothing overdue, and no flock is under
             withdrawal.
         </p>

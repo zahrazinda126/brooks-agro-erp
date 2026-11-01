@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title','Daily Entry Details')
 @section('content')
-<div class="page-head page-head--split"><div><p class="eyebrow">Daily supervision</p><h1>{{ $label }}</h1><p>{{ ucfirst($unit) }} · {{ \Carbon\Carbon::parse($date)->format('d M Y') }}</p></div><a class="btn btn--ghost" href="{{ route('supervision.index') }}">Back to supervision</a></div>
+<div class="page-head page-head--split"><div><p class="eyebrow">Daily collection approvals</p><h1>{{ $label }}</h1><p>{{ ucfirst($unit) }} · {{ \Carbon\Carbon::parse($date)->format('d M Y') }}</p></div><a class="btn btn--ghost" href="{{ route('supervision.index') }}">Back to approvals</a></div>
 
 <div class="card">
     <h2>Submitted record</h2>

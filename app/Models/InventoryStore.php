@@ -4,7 +4,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 class InventoryStore extends Model
 {
-    protected $fillable=['code','name','section','description','is_active'];
-    protected function casts():array{return ['is_active'=>'boolean'];}
+    protected $fillable=['code','name','section','description','is_active','holds_mixed_feed'];
+    protected function casts():array{return ['is_active'=>'boolean','holds_mixed_feed'=>'boolean'];}
     public function items():HasMany{return $this->hasMany(InventoryItem::class);}
 }

@@ -19,7 +19,7 @@
 --}}
 
 <div class="entry-head">
-    <a class="back" href="{{ route('health.index') }}" aria-label="Go back">
+    <a class="back" href="{{ route('monitor.health', 'treatments') }}" aria-label="Back to treatments">
         <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M15 5 8 12l7 7" fill="none" stroke="currentColor"
                   stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -115,7 +115,15 @@
                         @endforeach
                     </optgroup>
                 @endforeach
+                <option value="new" @selected(old('medication_id') === 'new')>+ Add a new medicine…</option>
             </select>
+        </div>
+
+        {{-- Not on the list: add it here; it is saved to the list for everyone. --}}
+        <div class="form-grid" data-new-med @if(old('medication_id') !== 'new') hidden @endif>
+            <div class="field"><label for="new_medication_name">Medicine name</label><input id="new_medication_name" name="new_medication_name" value="{{ old('new_medication_name') }}" placeholder="e.g. Doxycycline">@error('new_medication_name')<p class="field-error">{{ $message }}</p>@enderror</div>
+            <div class="field"><label for="new_medication_type">Type</label><select id="new_medication_type" name="new_medication_type">@foreach(['vaccine' => 'Vaccine', 'antibiotic' => 'Antibiotic', 'dewormer' => 'Dewormer', 'coccidiostat' => 'For coccidiosis', 'vitamin' => 'Vitamin or supplement', 'other' => 'Other'] as $value => $label)<option value="{{ $value }}" @selected(old('new_medication_type', 'antibiotic') === $value)>{{ $label }}</option>@endforeach</select></div>
+            <div class="field"><label for="new_withdrawal_days">Egg withdrawal (days)</label><input id="new_withdrawal_days" type="number" min="0" max="365" name="new_withdrawal_days" value="{{ old('new_withdrawal_days', 0) }}"><small class="field-hint">Days eggs must be held after the last dose. Use 0 if none.</small>@error('new_withdrawal_days')<p class="field-error">{{ $message }}</p>@enderror</div>
         </div>
 
         {{-- Everything the cards used to carry, shown once one is picked. --}}
@@ -229,6 +237,9 @@
 
         var select = form.querySelector('[data-med]');
         var opt    = select.options[select.selectedIndex];
+        var addNew = form.querySelector('[data-new-med]');
+        if (addNew) addNew.hidden = !(needsMed && select.value === 'new');
+        if (select.value === 'new') { detail.hidden = true; warn.hidden = true; banned.hidden = true; return; }
 
         if (!needsMed || !opt || !opt.value) {
             detail.hidden = true;

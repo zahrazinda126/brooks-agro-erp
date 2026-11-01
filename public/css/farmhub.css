@@ -1,0 +1,1001 @@
+/* ==========================================================================
+   Farm Hub look — loaded after app.css by layouts/app.blade.php.
+
+   Layout, type and surfaces follow the Brooks Farm Hub design (soft gradient
+   canvas, see-through white cards, Space Grotesk headings, Inter text,
+   segmented tabs, bottom bar on phones) in our maroon and gold.
+   To go back to the old look, remove the <link> to this file.
+   ========================================================================== */
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("../fonts/inter-latin.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Space Grotesk";
+    font-style: normal;
+    font-weight: 500 700;
+    font-display: swap;
+    src: url("../fonts/space-grotesk-latin.woff2") format("woff2");
+}
+
+:root {
+    /* Brand */
+    --fh-primary: #9b292d;
+    --fh-primary-strong: #772226;
+    --fh-primary-soft: #f7e4e1;
+    --fh-gold: #cf873d;
+    --fh-gold-soft: #fcefd9;
+
+    /* Text and lines */
+    --fh-ink: #1b2433;
+    --fh-muted: #5b6577;
+    --fh-border: rgba(196, 180, 176, .55);
+
+    /* Surfaces */
+    --fh-glass: rgba(255, 255, 255, .58);
+    --fh-glass-strong: rgba(255, 255, 255, .82);
+    --fh-glass-border: rgba(255, 255, 255, .72);
+    --fh-glass-shadow: 0 1px 0 rgba(255, 255, 255, .4) inset, 0 6px 20px rgba(60, 30, 25, .05);
+
+    /* Status */
+    --fh-success: #2f7d4f;
+    --fh-success-soft: #e2f2e7;
+    --fh-warning: #a66a12;
+    --fh-warning-soft: #fbf0d8;
+    --fh-danger: #c0392b;
+    --fh-danger-soft: #fbe6e2;
+    --fh-info: #2f6c9a;
+    --fh-info-soft: #e2eef7;
+
+    --fh-radius: 12px;
+    --fh-radius-sm: 8px;
+    --fh-heading: "Space Grotesk", "Segoe UI", Arial, sans-serif;
+    --fh-text: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+
+    /* Older tokens used across app.css, pointed at the new palette */
+    --ink: var(--fh-ink);
+    --ink-soft: var(--fh-muted);
+    --line: #eadfdb;
+    --paper: #fbf6f3;
+    --font: var(--fh-text);
+}
+
+/* --------------------------------------------------------------------------
+   Canvas and type
+   -------------------------------------------------------------------------- */
+html { background: #fbf3ee; }
+
+body {
+    font-family: var(--fh-text) !important;
+    color: var(--fh-ink);
+    background:
+        radial-gradient(circle at 8% 5%, rgba(236, 170, 160, .42), transparent 28rem),
+        radial-gradient(circle at 93% 25%, rgba(242, 205, 140, .40), transparent 30rem),
+        linear-gradient(135deg, #fbf1ec, #fbf6ec 52%, #f4f0f6) fixed !important;
+    min-height: 100dvh;
+}
+
+.content { background: transparent !important; }
+
+h1, h2, h3, .figure, .total-num,
+.page-head h1, .page-head h2,
+.summary-card strong, .stat-card strong,
+.brand-name, .topbar h1 {
+    font-family: var(--fh-heading);
+    letter-spacing: -.01em;
+}
+
+/* Section label above a page title: small, uppercase, brand colour */
+.eyebrow, .card-label, .finance-panel-kicker {
+    font-family: var(--fh-text);
+    font-size: .75rem !important;
+    font-weight: 700 !important;
+    letter-spacing: .06em !important;
+    text-transform: uppercase;
+    color: var(--fh-primary) !important;
+}
+
+/* --------------------------------------------------------------------------
+   Page head: eyebrow, large title, one-line description
+   -------------------------------------------------------------------------- */
+.page-head { margin: 4px 0 20px !important; }
+.page-head h1, .page-head h2 {
+    margin: 2px 0 0;
+    font-size: clamp(1.6rem, 2.4vw, 2rem) !important;
+    font-weight: 700 !important;
+    line-height: 1.15;
+    color: var(--fh-ink) !important;
+    text-wrap: balance;
+}
+.page-head p { color: var(--fh-muted) !important; font-size: .95rem; }
+.page-head--auto { margin-top: 0 !important; }
+
+/* --------------------------------------------------------------------------
+   Surfaces: cards, panels and stat tiles become see-through white
+   -------------------------------------------------------------------------- */
+.card, .exec-panel, .summary-card, .report-card, .production-unit-card,
+.finance-workspace-card, .batch-card, .breed-card, .counter-card, .collection,
+.finance-simple-dashboard, .finance-simple-grid > section, .disclosure,
+.table-wrap, .data-row, .assess-card, .shortcut, .entry-lines, .status-banner,
+.budget-section-card, .three-statement-scroll,
+.ab-card, .ab-kpi, .account-form-card, .communication-card, .cr-card, .customer-kpi,
+.dash-card, .dash-kpi, .directive-board-card, .directive-card, .exec-kpi, .executive-brief,
+.fd-card, .fd-kpi, .ff-tile, .filter-row-card, .finance-chart-card, .finance-kpi, .finance-panel,
+.fp-kpi, .livestock-group-card, .overview-chart, .overview-empty, .owner-kpi, .owner-panel,
+.pr-card, .rc-card, .rc-tile, .report-tile, .stat-card, .table-card, .work-card, .group-choice,
+.account-security, .sales-report__filter {
+    background: var(--fh-glass) !important;
+    border: 1px solid var(--fh-glass-border) !important;
+    border-radius: var(--fh-radius) !important;
+    box-shadow: var(--fh-glass-shadow) !important;
+}
+
+/* The maroon edge strips on cards are replaced by the plain glass edge */
+.card::before, .finance-workspace-card::before { display: none !important; }
+
+.card:hover, .data-row:hover, .batch-card:hover, .finance-workspace-card:hover,
+.production-unit-card:hover, .shortcut:hover {
+    border-color: rgba(155, 41, 45, .22) !important;
+}
+
+/* Stat tiles: label, big figure, small note — no decorative circles or edge strips */
+.summary-card { padding: 18px 20px !important; }
+.summary-card span, .summary-card small,
+.exec-kpi span, .finance-kpi span, .owner-kpi span, .customer-kpi span, .dash-kpi span, .fd-kpi span, .fp-kpi span, .ab-kpi span {
+    color: var(--fh-muted) !important;
+    font-size: .82rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+.summary-card strong, .exec-kpi strong, .finance-kpi strong, .owner-kpi strong, .customer-kpi strong,
+.dash-kpi strong, .fd-kpi strong, .fp-kpi strong, .ab-kpi strong {
+    font-family: var(--fh-heading);
+    font-size: 1.6rem !important;
+    font-weight: 700 !important;
+    color: var(--fh-ink) !important;
+}
+.summary-card::before, .summary-card::after,
+.exec-kpi::before, .exec-kpi::after, .finance-kpi::before, .finance-kpi::after,
+.owner-kpi::before, .owner-kpi::after, .dash-kpi::before, .dash-kpi::after { display: none !important; }
+
+/* Labels on cards and stat tiles: quiet, like the Farm Hub tiles ("Database", "Employees") */
+.card .card-label, .summary-card .card-label, .exec-panel .card-label, .figure-unit {
+    color: var(--fh-muted) !important;
+    font-size: .8rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+.figure { font-weight: 700; }
+
+/* Dark dashboard banners become the light page intro used everywhere else */
+.hr-hero, .pa-hero, .sales-hero, .production-hero, .owner-hero, .account-hero {
+    background: var(--fh-glass) !important;
+    border: 1px solid var(--fh-glass-border) !important;
+    box-shadow: var(--fh-glass-shadow) !important;
+    color: var(--fh-ink) !important;
+}
+.hr-hero h3, .pa-hero h3, .sales-hero h3, .production-hero h3, .owner-hero h3, .account-hero h3,
+.hr-hero h2, .pa-hero h2, .sales-hero h2, .production-hero h2, .owner-hero h2, .account-hero h2 {
+    font-family: var(--fh-heading);
+    color: var(--fh-ink) !important;
+}
+.hr-hero p, .pa-hero p, .sales-hero p, .production-hero p, .owner-hero p, .account-hero p {
+    color: var(--fh-muted) !important;
+}
+.hr-hero .btn, .pa-hero .btn, .sales-hero .btn, .production-hero .btn, .owner-hero .btn {
+    background: var(--fh-primary) !important;
+    color: #fff !important;
+}
+.pa-dashboard, .finance-dashboard, .production-overview { background: transparent !important; }
+
+/* --------------------------------------------------------------------------
+   Buttons
+   -------------------------------------------------------------------------- */
+.btn, .btn-big, .work-btn {
+    min-height: 44px;
+    text-decoration: none !important;
+    border-radius: var(--fh-radius-sm) !important;
+    font-family: var(--fh-text);
+    font-weight: 600;
+    background: var(--fh-primary);
+    box-shadow: 0 6px 18px rgba(155, 41, 45, .22) !important;
+}
+.btn:hover { background: var(--fh-primary-strong) !important; }
+.btn--small { min-height: 36px; box-shadow: none !important; }
+.btn--gold { background: var(--fh-gold) !important; }
+.btn--quiet, .btn--ghost {
+    background: var(--fh-glass-strong) !important;
+    color: var(--fh-ink) !important;
+    border: 1px solid var(--fh-glass-border) !important;
+    box-shadow: none !important;
+}
+.btn--quiet:hover, .btn--ghost:hover { background: #fff !important; color: var(--fh-primary) !important; }
+
+/* --------------------------------------------------------------------------
+   Forms
+   -------------------------------------------------------------------------- */
+.field label {
+    color: var(--fh-ink) !important;
+    font-size: .82rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+.field label::before { display: none !important; }
+.field input, .field select, .field textarea,
+.filters input, .filters select, .period-picker select {
+    background: var(--fh-glass-strong) !important;
+    border: 1px solid var(--fh-border) !important;
+    border-radius: var(--fh-radius-sm) !important;
+    font-family: var(--fh-text);
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+    outline: none;
+    border-color: var(--fh-primary) !important;
+    box-shadow: 0 0 0 3px rgba(155, 41, 45, .14) !important;
+}
+.field-hint { border-left: 0 !important; padding-left: 0 !important; color: var(--fh-muted) !important; }
+:where(form.card, form.exec-panel, .card > form, .exec-panel > form) { background: transparent !important; }
+:where(form.card, form.exec-panel, .card > form, .exec-panel > form)::after { display: none !important; }
+.form-actions { border-top-color: var(--fh-border) !important; }
+.entry-lines, .entry-line { border-top-width: 1px !important; border-left-width: 1px !important; border-color: var(--fh-glass-border) !important; }
+.entry-line { background: var(--fh-glass-strong) !important; border-radius: var(--fh-radius) !important; box-shadow: none !important; }
+
+/* --------------------------------------------------------------------------
+   Tables: quiet header, hairline rows, bold first line with muted second line
+   -------------------------------------------------------------------------- */
+table thead th, .exec-table thead th, .data-head {
+    background: transparent !important;
+    color: var(--fh-ink) !important;
+    font-size: .8rem;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    border-color: var(--fh-border) !important;
+}
+table td, .exec-table td { border-color: rgba(196, 180, 176, .35) !important; }
+/* Frozen header rows and first columns need a solid background so rows do not show through */
+.three-statement-scroll thead th, .three-statement-scroll th:first-child, .three-statement-scroll td:first-child,
+.payroll-register th:first-child, .payroll-register td:first-child,
+table th[style*="sticky"], table td[style*="sticky"] { background: #fbf7f4 !important; }
+.three-statement-scroll .statement-section th { background: var(--charcoal-800) !important; }
+table tbody tr:hover td { background: rgba(255, 255, 255, .45); }
+td small, td .muted { color: var(--fh-muted) !important; }
+
+/* --------------------------------------------------------------------------
+   Notices and status pills
+   -------------------------------------------------------------------------- */
+.notice {
+    border: 1px solid var(--fh-glass-border) !important;
+    border-left: 1px solid var(--fh-glass-border) !important;
+    border-radius: var(--fh-radius) !important;
+    background: var(--fh-warning-soft) !important;
+}
+.notice--ok { background: var(--fh-success-soft) !important; }
+.notice--alarm { background: var(--fh-danger-soft) !important; }
+
+.pill, .status-pill, .stage, .flag {
+    border-radius: 999px !important;
+    font-weight: 600;
+}
+
+.directive-reminder, .login-notification {
+    background: var(--fh-glass) !important;
+    border: 1px solid var(--fh-glass-border) !important;
+    border-left: 3px solid var(--fh-gold) !important;
+    border-radius: var(--fh-radius) !important;
+    box-shadow: var(--fh-glass-shadow) !important;
+}
+.directive-reminder--overdue { border-left-color: var(--fh-danger) !important; }
+
+/* --------------------------------------------------------------------------
+   Top bar: logo and farm name on the left, user on the right
+   -------------------------------------------------------------------------- */
+.topbar {
+    background: rgba(255, 255, 255, .62) !important;
+    color: var(--fh-ink) !important;
+    border-bottom: 1px solid var(--fh-glass-border) !important;
+    box-shadow: none !important;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+.topbar h1, .topbar-sub { color: var(--fh-ink) !important; }
+.topbar .icon-btn { color: var(--fh-ink) !important; }
+.topbar .icon-btn:hover { background: rgba(155, 41, 45, .08) !important; }
+
+.topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    color: inherit;
+    text-decoration: none;
+}
+.topbar-brand img {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    padding: 3px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(60, 30, 25, .12);
+}
+.topbar-brand strong {
+    display: block;
+    font-family: var(--fh-heading);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: .01em;
+    white-space: nowrap;
+}
+.topbar-brand small { display: block; font-size: .72rem; color: var(--fh-muted); }
+
+.topbar-user > span {
+    background: var(--fh-primary-soft) !important;
+    color: var(--fh-primary) !important;
+}
+.topbar-search {
+    background: var(--fh-glass-strong) !important;
+    border: 1px solid var(--fh-glass-border) !important;
+}
+
+/* The attendant's name in the top bar, the same on every one of their screens */
+.attendant-topbar-user { display: inline-flex; align-items: center; gap: 8px; margin-left: 4px; color: var(--fh-ink) !important; text-decoration: none !important; }
+.attendant-topbar-user > span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--fh-primary-soft); color: var(--fh-primary); font-weight: 700; font-size: .85rem; }
+.attendant-topbar-user strong { font-size: .88rem; font-weight: 600; }
+.attendant-topbar-user i { display: none; }
+@media (max-width: 420px) { .attendant-topbar-user strong { display: none; } }
+
+/* Attendant home: the three job cards in the Farm Hub card style
+   (icon tile, English name, Luganda name, what it is for, full-width Record button). */
+html body .attendant-home .attendant-actions {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 14px !important;
+}
+html body .attendant-home .attendant-actions .attendant-action {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+    min-height: 0 !important;
+    padding: 20px !important;
+    text-align: left !important;
+    color: var(--fh-ink) !important;
+    background: var(--fh-glass) !important;
+    border: 1px solid var(--fh-glass-border) !important;
+    border-radius: 16px !important;
+    box-shadow: var(--fh-glass-shadow) !important;
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+html body .attendant-home .attendant-panel {
+    background: var(--fh-glass) !important;
+    border: 1px solid var(--fh-glass-border) !important;
+    border-radius: 16px !important;
+    box-shadow: var(--fh-glass-shadow) !important;
+}
+html body .attendant-home .attendant-actions .attendant-action:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(60, 30, 25, .1) !important; }
+html body .attendant-home .attendant-action .attendant-action__icon {
+    display: grid !important;
+    place-items: center;
+    width: 52px !important;
+    height: 52px !important;
+    border-radius: 14px !important;
+    background: #fbe4e2 !important;
+    color: var(--fh-primary) !important;
+}
+html body .attendant-home .attendant-action--deaths .attendant-action__icon { background: #fdeee3 !important; color: #b4541f !important; }
+html body .attendant-home .attendant-action--feed .attendant-action__icon { background: #e4f2e7 !important; color: #2f7d4f !important; }
+html body .attendant-home .attendant-action .attendant-action__icon svg { width: 28px !important; height: 28px !important; }
+html body .attendant-home .attendant-action .attendant-action__copy { display: flex; flex-direction: column; gap: 2px; }
+html body .attendant-home .attendant-action .attendant-action__copy strong { font: 700 1.35rem/1.15 var(--fh-heading) !important; color: var(--fh-ink) !important; }
+html body .attendant-home .attendant-action .attendant-action__copy em { font: 600 .95rem/1.2 var(--fh-text); font-style: normal; color: var(--fh-primary); }
+html body .attendant-home .attendant-action .attendant-action__copy small { margin-top: 6px !important; font-size: .88rem !important; line-height: 1.4; color: var(--fh-muted) !important; }
+html body .attendant-home .attendant-action .attendant-action__go {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 100% !important;
+    height: 46px !important;
+    margin-top: auto;
+    border-radius: 10px !important;
+    background: var(--fh-primary) !important;
+    color: #fff !important;
+    font: 600 .95rem var(--fh-text) !important;
+    box-shadow: 0 6px 16px rgba(155, 41, 45, .2);
+}
+html body .attendant-home .attendant-action--deaths .attendant-action__go { background: #b4541f !important; box-shadow: 0 6px 16px rgba(180, 84, 31, .2); }
+html body .attendant-home .attendant-action--feed .attendant-action__go { background: #2f7d4f !important; box-shadow: 0 6px 16px rgba(47, 125, 79, .2); }
+html body .attendant-home .attendant-action--water .attendant-action__icon { background: #e1eef8 !important; color: #2f6c9a !important; }
+html body .attendant-home .attendant-action--water .attendant-action__go { background: #2f6c9a !important; box-shadow: 0 6px 16px rgba(47, 108, 154, .2); }
+html body .attendant-home .attendant-action--sick .attendant-action__icon { background: #fbf0d8 !important; color: #a66a12 !important; }
+html body .attendant-home .attendant-action--sick .attendant-action__go { background: #a66a12 !important; box-shadow: 0 6px 16px rgba(166, 106, 18, .2); }
+html body .attendant-home .attendant-action--problem .attendant-action__icon { background: #ece9f1 !important; color: #4a4560 !important; }
+html body .attendant-home .attendant-action--problem .attendant-action__go { background: #4a4560 !important; box-shadow: 0 6px 16px rgba(74, 69, 96, .2); }
+html body .attendant-home .attendant-action[aria-disabled="true"] .attendant-action__go { background: var(--fh-muted) !important; box-shadow: none; }
+@media (max-width: 760px) {
+    html body .attendant-home .attendant-actions { grid-template-columns: 1fr !important; gap: 10px !important; }
+    html body .attendant-home .attendant-actions .attendant-action {
+        display: grid !important;
+        grid-template-columns: 52px minmax(0, 1fr);
+        column-gap: 14px !important;
+        row-gap: 12px !important;
+        padding: 16px !important;
+    }
+    html body .attendant-home .attendant-action .attendant-action__go { grid-column: 1 / -1; }
+}
+
+/* Egg, death and feed entry screens: a plain Back button where the title block was */
+.entry-head--back { display: block !important; margin: 0 0 14px !important; }
+.entry-back { min-height: 40px; }
+
+/* Farm workers' screen already carries the logo and farm name; keep it as it was agreed (simple, no sidebar). */
+.shell--plain .topbar-brand { display: none !important; }
+/* The three big job buttons (Eggs / Amaggi, Deaths / Ezifudde, Feeds / Emmere) stack until there is room for them */
+@media (max-width: 760px) { .attendant-actions { grid-template-columns: 1fr !important; } }
+
+/* The page title moves into the page; the bar carries the farm name. */
+.topbar-title { display: none !important; }
+
+@media (max-width: 899px) {
+    .topbar { background: rgba(255, 255, 255, .7) !important; }
+    .topbar-brand small { display: none; }
+}
+@media (max-width: 420px) {
+    .topbar-brand strong { font-size: .9rem; }
+}
+
+/* --------------------------------------------------------------------------
+   Sidebar: light glass, maroon highlight on the current item
+   -------------------------------------------------------------------------- */
+.drawer {
+    background: rgba(255, 255, 255, .72) !important;
+    color: var(--fh-ink) !important;
+    border-right: 1px solid var(--fh-glass-border) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+.drawer .brand {
+    background: transparent !important;
+    border-bottom: 1px solid var(--fh-border) !important;
+}
+/* Wide screens keep the sidebar open, so the farm name lives there, not twice */
+@media (min-width: 900px) {
+    .topbar-brand { display: none !important; }
+    .drawer .brand-name { font-size: .95rem !important; line-height: 1.2; }
+}
+.drawer .brand-mark {
+    border: 0 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 8px rgba(60, 30, 25, .12) !important;
+}
+.drawer .brand-name { color: var(--fh-ink) !important; font-family: var(--fh-heading); text-transform: uppercase; }
+
+.drawer .nav-link, .drawer summary, .drawer .nav-icon, .drawer .rail-icon,
+.sidebar-utility, .drawer .nav-sub > summary {
+    color: var(--fh-ink) !important;
+}
+.drawer .nav-icon, .drawer .rail-icon { color: var(--fh-muted) !important; }
+
+.hr-nav::before { color: var(--fh-muted) !important; }
+
+.hr-nav-section, .nav-group {
+    border: 0 !important;
+    background: transparent !important;
+}
+.hr-nav-section > summary, .nav-group > summary {
+    color: var(--fh-ink) !important;
+    font-family: var(--fh-text);
+    font-size: .9rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+    border-radius: var(--fh-radius-sm) !important;
+}
+.hr-nav-section > summary:hover, .nav-group > summary:hover,
+.drawer .nav-link:hover {
+    background: rgba(155, 41, 45, .06) !important;
+    color: var(--fh-ink) !important;
+}
+.hr-nav-section[open] > summary { border-bottom: 0 !important; }
+.hr-nav-section .nav-link::before { background: var(--fh-border) !important; box-shadow: none !important; }
+
+.drawer .nav-link[aria-current="page"],
+.hr-nav > .nav-link[aria-current="page"],
+.hr-nav-section .nav-link[aria-current="page"],
+.hr-nav-section[data-context-active="true"] > summary,
+.nav-group[data-context-active="true"] > summary {
+    background: var(--fh-primary-soft) !important;
+    color: var(--fh-primary) !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    font-weight: 600 !important;
+}
+.drawer .nav-link[aria-current="page"] .nav-icon,
+.hr-nav-section[data-context-active="true"] > summary .rail-icon,
+.nav-group[data-context-active="true"] > summary .rail-icon { color: var(--fh-primary) !important; }
+
+.drawer .nav-link, .hr-nav > .nav-link { border: 0 !important; }
+.nav-filter input {
+    background: var(--fh-glass-strong) !important;
+    border: 1px solid var(--fh-border) !important;
+    color: var(--fh-ink) !important;
+}
+.nav-filter input::placeholder { color: var(--fh-muted) !important; }
+.sidebar-utilities { background: transparent !important; border-top: 1px solid var(--fh-border) !important; }
+.sidebar-utility { background: var(--fh-glass-strong) !important; border: 1px solid var(--fh-border) !important; }
+
+.drawer-scrim { background: rgba(30, 22, 25, .4) !important; }
+
+/* Every role's menu (some carry their own dark-sidebar styles, e.g. Finance) uses the light sidebar colours */
+#drawer .hr-nav .hr-nav-section > summary, #drawer .hr-nav > .nav-link, #drawer .hr-nav-section .nav-link,
+#drawer #navGroups summary, #drawer #navGroups .nav-link {
+    color: var(--fh-ink) !important;
+    background: transparent !important;
+}
+#drawer .hr-nav .hr-nav-section > summary:hover, #drawer .hr-nav > .nav-link:hover, #drawer .hr-nav-section .nav-link:hover,
+#drawer #navGroups summary:hover, #drawer #navGroups .nav-link:hover {
+    background: rgba(155, 41, 45, .06) !important;
+    color: var(--fh-ink) !important;
+}
+#drawer .hr-nav .hr-nav-section[data-context-active="true"] > summary, #drawer .hr-nav > .nav-link[aria-current="page"],
+#drawer .hr-nav-section .nav-link[aria-current="page"], #drawer #navGroups .nav-group[data-context-active="true"] > summary,
+#drawer #navGroups .nav-link[aria-current="page"], #drawer > a.nav-link[aria-current="page"] {
+    background: var(--fh-primary-soft) !important;
+    color: var(--fh-primary) !important;
+    font-weight: 600 !important;
+}
+#drawer .rail-icon, #drawer .nav-icon { color: var(--fh-muted) !important; }
+#drawer [aria-current="page"] .rail-icon, #drawer [aria-current="page"] .nav-icon,
+#drawer [data-context-active="true"] > summary .rail-icon { color: var(--fh-primary) !important; }
+#drawer .hr-nav::before { color: var(--fh-muted) !important; }
+
+/* Farm Hub menu: plain list of places, no counts or arrows, small headings between groups */
+.drawer summary > em, .nav-group > summary > em, .nav-sub > summary > em { display: none !important; }
+.hr-nav-section > summary::after, .nav-group > summary::before, .hr-nav-section > summary::before { display: none !important; }
+.nav-heading {
+    margin: 14px 12px 4px;
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--fh-muted);
+}
+#navGroups { padding: 0 !important; margin: 0 !important; }
+#navGroups .nav-group { margin: 2px 8px !important; padding: 0 !important; }
+#navGroups .nav-heading { margin-left: 20px; }
+.drawer .nav-link--place { width: auto !important; margin: 2px 8px !important; }
+#navGroups .nav-group > summary, .drawer .nav-link--place {
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+    min-height: 42px !important;
+    padding: 9px 12px !important;
+    border-radius: var(--fh-radius-sm) !important;
+    font-size: .9rem !important;
+    font-weight: 500 !important;
+}
+.drawer .nav-link--place .nav-icon { width: 18px; height: 18px; flex: 0 0 18px; }
+/* Top-level places line up with the rest of the list */
+.drawer > a.nav-link:not(.nav-link--supplementary), #drawer > .hr-nav > a.nav-link,
+#drawer > a.nav-link[href$="/dashboard"], #drawer > a.nav-link[href$="/report-centre"] {
+    margin: 2px 8px !important;
+    padding: 9px 12px !important;
+    gap: 10px;
+    font-size: .9rem !important;
+    font-weight: 500 !important;
+}
+#drawer > a.nav-link .nav-icon, #drawer > .hr-nav > a.nav-link .nav-icon { margin-right: 0 !important; }
+/* Notifications are in the top bar and Settings is in the menu, so the old footer buttons go */
+.sidebar-utilities { display: none !important; }
+
+/* Person card at the top of the phone menu, as in Farm Hub */
+.drawer-person { display: none; }
+@media (max-width: 899px) {
+    .drawer-person {
+        display: block;
+        margin: 10px 12px 6px;
+        padding: 10px 12px;
+        border-radius: var(--fh-radius);
+        background: var(--fh-glass-strong);
+        border: 1px solid var(--fh-border);
+        color: var(--fh-ink);
+        text-decoration: none;
+    }
+    .drawer-person strong { display: block; font-size: .92rem; }
+    .drawer-person small { display: block; font-size: .78rem; color: var(--fh-muted); }
+}
+
+/* Bell in the top bar */
+.topbar-bell { position: relative; }
+.topbar-bell svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.topbar-bell b {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 99px;
+    background: var(--fh-primary);
+    color: #fff;
+    font: 700 .65rem/17px var(--fh-text);
+    text-align: center;
+}
+@media (min-width: 900px) { .topbar-bell { order: 3; margin-left: auto; } .topbar-bell ~ .topbar-user { margin-left: 0 !important; } }
+
+/* --------------------------------------------------------------------------
+   Section tabs: one rounded strip, the current tab filled in maroon
+   -------------------------------------------------------------------------- */
+.context-nav {
+    /* Stays frozen under the top bar while scrolling (agreed earlier: the bar and the page's
+       main action must stay visible), now sitting under the page title. */
+    position: sticky !important;
+    top: calc(var(--topbar-h, 66px) + 6px) !important;
+    z-index: 30 !important;
+    margin: 0 0 18px;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+}
+.context-nav > strong { display: none !important; }
+.page-back {
+    display: inline-flex !important;
+    align-items: center;
+    min-height: 32px !important;
+    margin: 0 0 6px;
+    padding: 4px 12px !important;
+    border: 1px solid var(--fh-glass-border) !important;
+    border-radius: 999px !important;
+    background: var(--fh-glass-strong) !important;
+    color: var(--fh-ink) !important;
+    font: 500 .82rem var(--fh-text) !important;
+    cursor: pointer;
+}
+.page-back:hover { color: var(--fh-primary) !important; }
+@media print { .page-back { display: none !important; } }
+/* One line of tabs, as in Farm Hub: when they do not fit, the strip scrolls sideways
+   (thin scroll bar underneath) and the current tab is scrolled into view by app-ui.js. */
+.context-nav {
+    display: flex !important;
+    align-items: flex-start !important;
+    flex-wrap: nowrap !important;
+    gap: 10px !important;
+}
+.context-nav > div {
+    display: flex !important;
+    flex: 0 1 auto;
+    flex-wrap: nowrap !important;
+    gap: 2px !important;
+    min-width: 0;
+    max-width: 100%;
+    padding: 4px 4px 2px;
+    background: rgba(255, 255, 255, .88);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--fh-glass-border);
+    border-radius: var(--fh-radius);
+    box-shadow: var(--fh-glass-shadow);
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(91, 101, 119, .45) transparent;
+}
+.context-nav > div::-webkit-scrollbar { height: 6px; }
+.context-nav > div::-webkit-scrollbar-thumb { background: rgba(91, 101, 119, .45); border-radius: 99px; }
+.context-nav > div::-webkit-scrollbar-track { background: transparent; }
+.context-nav .nav-link { flex: 0 0 auto !important; white-space: nowrap !important; }
+.context-nav__print, .context-nav__export, .context-nav__action { flex: 0 0 auto; white-space: nowrap; }
+.context-nav__print { margin-left: auto !important; }
+.context-nav:not(:has(.nav-link)) { display: none !important; }
+.context-nav .nav-link {
+    min-height: 40px !important;
+    padding: 8px 14px !important;
+    border: 0 !important;
+    border-radius: var(--fh-radius-sm) !important;
+    background: transparent !important;
+    color: var(--fh-ink) !important;
+    font-size: .9rem !important;
+    font-weight: 500;
+}
+.context-nav .nav-link:hover { background: rgba(255, 255, 255, .7) !important; color: var(--fh-primary) !important; }
+.context-nav .nav-link[aria-current="page"] {
+    background: var(--fh-primary) !important;
+    color: #fff !important;
+    font-weight: 600;
+}
+.context-nav__print, .context-nav__export {
+    min-height: 40px;
+    border-radius: var(--fh-radius-sm) !important;
+    background: var(--fh-glass-strong) !important;
+    border: 1px solid var(--fh-glass-border) !important;
+    color: var(--fh-ink) !important;
+}
+
+/* Feed weighing sheets (supplier dispatch and farm receipt): boxes sized to what goes in them, not the page width */
+.feed-entry-table { width: auto !important; min-width: 0 !important; }
+.feed-entry-table td { padding: 6px 8px !important; }
+.feed-entry-table input, .feed-entry-table select { width: 100% !important; min-width: 0 !important; padding: 7px 9px !important; }
+.feed-entry-table [data-feed], .feed-entry-table select { width: 220px !important; }
+.feed-entry-table input[type="number"] { width: 130px !important; text-align: right; }
+.feed-entry-table td:last-child { width: 1%; white-space: nowrap; }
+.feed-entry-table th { white-space: normal !important; max-width: 150px; line-height: 1.3; vertical-align: bottom; }
+@media (max-width: 560px) {
+    .feed-entry-table [data-feed], .feed-entry-table select { width: 160px !important; }
+    .feed-entry-table input[type="number"] { width: 105px !important; }
+}
+
+/* Farm Units › a unit: unit switcher above the unit's own tabs */
+.farm-unit-bar { display: grid; gap: 8px; margin: -6px 0 18px; }
+.farm-unit-bar__units { display: flex; flex-wrap: wrap; gap: 6px; }
+.farm-unit-bar__units a {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--fh-glass-border);
+    background: var(--fh-glass);
+    color: var(--fh-ink);
+    font-size: .85rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+.farm-unit-bar__units a[aria-current="page"] { background: var(--fh-ink); border-color: var(--fh-ink); color: #fff; }
+.farm-unit-bar__pages { flex-wrap: nowrap; }
+.farm-unit-bar__pages a { white-space: nowrap; }
+
+/* The same look for the in-page tab strips */
+.view-switch, .unit-tabs {
+    display: inline-flex;
+    gap: 2px;
+    max-width: 100%;
+    padding: 4px;
+    background: var(--fh-glass);
+    border: 1px solid var(--fh-glass-border);
+    border-radius: var(--fh-radius);
+    overflow-x: auto;
+}
+.view-switch a, .unit-tabs a {
+    border: 0 !important;
+    border-radius: var(--fh-radius-sm) !important;
+    background: transparent !important;
+    color: var(--fh-ink) !important;
+}
+.view-switch a[aria-current="page"], .unit-tabs a.active, .unit-tabs a[aria-current="page"] {
+    background: var(--fh-primary) !important;
+    color: #fff !important;
+}
+
+/* --------------------------------------------------------------------------
+   Bottom bar on phones (built from the sidebar by layouts/app.blade.php)
+   -------------------------------------------------------------------------- */
+.bottom-nav { display: none; }
+
+@media (max-width: 899px) {
+    .bottom-nav {
+        position: fixed;
+        inset: auto 0 0 0;
+        z-index: 45;
+        display: grid;
+        grid-template-columns: repeat(var(--bottom-nav-count, 5), minmax(0, 1fr));
+        padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+        background: rgba(255, 255, 255, .78);
+        border-top: 1px solid var(--fh-glass-border);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+    }
+    .bottom-nav a, .bottom-nav button {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        min-height: 52px;
+        padding: 4px 2px;
+        border: 0;
+        border-radius: var(--fh-radius-sm);
+        background: transparent;
+        color: var(--fh-muted);
+        font: 500 .7rem/1.15 var(--fh-text);
+        text-align: center;
+        text-decoration: none;
+        cursor: pointer;
+    }
+    .bottom-nav svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+    .bottom-nav span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bottom-nav [aria-current="page"] { color: var(--fh-primary); font-weight: 600; }
+    .bottom-nav a:focus-visible, .bottom-nav button:focus-visible { outline: 2px solid var(--fh-primary); outline-offset: -2px; }
+    body.has-bottom-nav .content { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
+}
+
+/* --------------------------------------------------------------------------
+   Sign in: a see-through card on the canvas
+   -------------------------------------------------------------------------- */
+.auth { background: transparent !important; }
+.auth-card {
+    background: var(--fh-glass-strong) !important;
+    border: 1px solid var(--fh-glass-border);
+    border-radius: 18px !important;
+    box-shadow: 0 18px 48px rgba(60, 30, 25, .1) !important;
+}
+.auth-logo {
+    border: 0 !important;
+    border-radius: 22px !important;
+    box-shadow: 0 6px 20px rgba(60, 30, 25, .12) !important;
+}
+.auth-mark h1 { font-family: var(--fh-heading); color: var(--fh-ink) !important; font-weight: 700 !important; }
+.auth-mark p { color: var(--fh-primary) !important; }
+.auth-mark::after { display: none !important; }
+.auth .btn { width: 100%; }
+
+/* --------------------------------------------------------------------------
+   Reports on paper — the Farm Hub report format.
+   A4 portrait; letterhead (logo, farm name, address, rule, title in capitals,
+   scope and period, who generated it); maroon section headings; tables with a
+   solid maroon header row; summary figures as label / value rows; the logo as a
+   faint watermark; footer and "Page X of Y" (set in layouts/app.blade.php).
+   -------------------------------------------------------------------------- */
+.print-letterhead, .print-strip, .print-watermark { display: none; }
+
+@media print {
+    @page { size: A4 portrait; margin: 16mm 13mm 20mm; }
+    @page wide { size: A3 landscape; margin: 10mm; }
+    /* Month-by-month statements and the payroll register need the wide sheet */
+    /* Wide sheet for the payroll register, month-by-month statements and any table of ten or more columns */
+    body:has(.payroll-register) .content, body:has(.three-statement-scroll) .content,
+    body:has(table th:nth-child(10)) .content { page: wide; }
+    body:has(table th:nth-child(16)) table { font-size: 7.5pt !important; }
+    body:has(table th:nth-child(16)) table th, body:has(table th:nth-child(16)) table td { padding: 1.2mm 1.4mm !important; }
+    .three-statement-scroll th, .three-statement-scroll td { min-width: 0 !important; white-space: nowrap; }
+    .three-statement-scroll table { width: 100% !important; }
+
+    /* Screen filters and hints are not part of the report */
+    html body form:not([method="post"]):not([method="POST"]), html body form.filters,
+    html body .card.filters, html body form.card.filters:has(> .form-grid), html body .card.filters:has(> .form-grid),
+    html body .model-scroll-hint, html body .field-hint {
+        display: none !important;
+    }
+
+    html, body {
+        background: #fff !important;
+        color: #111 !important;
+        font: 9.5pt/1.4 var(--fh-text) !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* No app chrome or controls on paper */
+    /* Only app chrome and controls are left out: every figure, table and note of the report prints.
+       (Notes inside a report print; only the "saved" messages at the top of the page are left out.) */
+    .bottom-nav, .topbar, .drawer, .drawer-scrim, .context-nav, .page-head,
+    .login-notification, .directive-reminder, main.content > .notice, .no-print, .btn, button,
+    form[method="GET"], form[method="get"], .filters, .period-picker, .pager, nav {
+        display: none !important;
+    }
+    .shell, .content { display: block !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+    /* A page's description still prints under the letterhead; its title is already in the letterhead. */
+    html body main.content > .page-head:not(.page-head--auto), html body main.content > div > .page-head:first-child {
+        display: block !important;
+        margin: -3mm 0 4mm !important;
+        text-align: center;
+    }
+    main.content .page-head h1, main.content .page-head h2, main.content .page-head .eyebrow,
+    main.content .page-head .btn, main.content .page-head form { display: none !important; }
+    main.content .page-head p { margin: 0 !important; font-size: 8.5pt !important; color: #444 !important; }
+
+    /* Letterhead */
+    .print-letterhead { display: block !important; margin: 0 0 6mm; text-align: center; }
+    .print-letterhead__brand { padding-bottom: 3mm; border-bottom: .6pt solid #cfcfcf; }
+    .print-letterhead__brand img { display: block; width: 17mm; height: 17mm; margin: 0 auto 1.5mm; object-fit: contain; }
+    .print-letterhead__brand strong { display: block; font: 700 15pt/1.2 var(--fh-text); letter-spacing: .02em; color: #111; }
+    .print-letterhead__brand small { display: block; margin-top: 1mm; font-size: 8pt; color: #444; }
+    .print-letterhead__title { margin: 5mm 0 2mm !important; font: 700 15pt/1.2 var(--fh-text) !important; letter-spacing: .02em; text-transform: uppercase; color: #111 !important; }
+    .print-letterhead__scope { margin: .6mm 0 !important; font-size: 8.5pt; color: #333 !important; }
+
+    /* A report's own heading replaces the generic one */
+    body:has(.print-letterhead--report) .print-letterhead--page,
+    body:has(.report-letterhead) .print-letterhead--page,
+    body:has(.daily-report-print) .print-letterhead--page,
+    body:has(.receipt) .print-letterhead--page { display: none !important; }
+    .standard-report-head {
+        display: block !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        background: none !important;
+        box-shadow: none !important;
+    }
+    .standard-report-head__status { margin: 0 0 4mm; text-align: center; }
+
+    /* Logo watermark, repeated on every page */
+    .print-watermark {
+        display: block !important;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        z-index: -1;
+        width: 125mm;
+        transform: translate(-50%, -50%);
+        opacity: .06;
+    }
+
+    /* Surfaces become plain paper */
+    .card, .exec-panel, .summary-card, .report-card, .table-wrap, .disclosure, .data-row,
+    .finance-simple-dashboard, .finance-simple-grid > section, .overview-chart, .status-banner,
+    [class*="-card"], [class*="-panel"], [class*="-kpi"] {
+        background: none !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 0 4mm !important;
+    }
+    .card::before, .card::after { display: none !important; }
+
+    /* Section headings: maroon capitals */
+    .content h2, .content h3, .section-heading h2, .section-heading h3,
+    .disclosure > summary, .card > .card-label:first-child {
+        margin: 5mm 0 2mm !important;
+        font: 700 10.5pt/1.3 var(--fh-text) !important;
+        letter-spacing: .03em !important;
+        text-transform: uppercase !important;
+        color: var(--fh-primary) !important;
+        break-after: avoid;
+    }
+
+    /* Tables: solid maroon header row, light zebra rows, header repeats on each page */
+    table { width: 100% !important; min-width: 0 !important; border-collapse: collapse !important; font-size: 8.5pt !important; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; }
+    table thead th, .exec-table thead th {
+        background: var(--fh-primary) !important;
+        color: #fff !important;
+        font-weight: 700 !important;
+        padding: 1.8mm 2mm !important;
+        border: 0 !important;
+        text-align: left;
+    }
+    table td { padding: 1.5mm 2mm !important; border: 0 !important; border-bottom: .3pt solid #e3d9d7 !important; background: none !important; }
+    table tbody tr:nth-child(even) td { background: #f7efee !important; }
+    table tfoot th, table tfoot td { font-weight: 700 !important; border-top: .8pt solid var(--fh-primary) !important; }
+    /* Subtotal, total and final rows keep their emphasis on paper */
+    html body table tbody tr.statement-row--subtotal td { background: #fbf1ea !important; font-weight: 700 !important; }
+    html body table tbody tr.statement-row--total td { background: #f6e3e1 !important; color: #111 !important; font-weight: 700 !important; }
+    html body table tbody tr.statement-row--final td { background: var(--fh-primary) !important; color: #fff !important; font-weight: 700 !important; }
+    .table-wrap, .table-scroll, .three-statement-scroll { overflow: visible !important; }
+
+    /* Summary figures as label / value rows, value in bold */
+    .summary-grid, .summary-grid--compact, .finance-kpis, .exec-kpis, .owner-kpis, .hr-kpis, .pa-kpis {
+        display: block !important;
+        margin: 0 0 5mm !important;
+    }
+    .summary-card > * { margin: 0 !important; }
+    .summary-card {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: baseline !important;
+        justify-content: space-between !important;
+        gap: 6mm;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 1.6mm 2mm !important;
+        border-bottom: .3pt solid #e3d9d7 !important;
+        break-inside: avoid;
+    }
+    .summary-card span, .summary-card small { font-size: 9pt !important; color: #222 !important; }
+    .summary-card strong { font: 700 9pt var(--fh-text) !important; color: #111 !important; }
+
+    a { color: inherit !important; text-decoration: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .drawer, .drawer-scrim { transition: none !important; }
+}

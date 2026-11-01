@@ -19,14 +19,7 @@
 
         <div class="card">
             <div class="form-grid">
-                <div class="field @error('username') field--error @enderror">
-                    <label for="username">Username <span class="req">required</span></label>
-                    <input id="username" name="username" type="text"
-                           value="{{ old('username', $suggested) }}"
-                           autocapitalize="none" autocorrect="off" spellcheck="false" required>
-                    @error('username')<p class="field-error">{{ $message }}</p>@enderror
-                    <p class="field-hint">Lowercase letters, numbers, dots and dashes. This is what they type to sign in.</p>
-                </div>
+                <div class="field"><label>Username</label><input value="{{ $employee->staff_no ?: 'Add a staff number first' }}" readonly aria-readonly="true"><small>The login username is the staff number. It changes automatically if HR changes the staff number.</small></div>
 
                 <div class="field @error('email') field--error @enderror">
                     <label for="email">Email <span class="req">required</span></label>

@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title','Daily Supervision')
+@section('title','Daily Collection Approvals')
 @section('content')
 <form class="card sales-report__filter" method="GET" action="{{ route('supervision.index') }}">
     <div class="field"><label>From date</label><input type="date" name="from" value="{{ $from }}"></div>

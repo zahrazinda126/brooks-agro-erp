@@ -92,11 +92,13 @@ class EmployeeController extends Controller
     public function store(StoreEmployeeRequest $request): RedirectResponse
     {
         $data = $request->validated();
+        unset($data['national_id_photo']);
 
-        $data['staff_no'] = $data['staff_no'] ?: $this->nextStaffNo();
+        $data['staff_no'] = ($data['staff_no'] ?? null) ?: $this->nextStaffNo();
         $data['created_by'] = $request->user()->id;
 
         $employee = Employee::create($data);
+        $this->saveNationalIdPhoto($request, $employee);
 
         AuditLog::record(
             'created', $employee,
@@ -108,6 +110,25 @@ class EmployeeController extends Controller
         return redirect()
             ->route('employees.show', $employee)
             ->with('status', "{$employee->fullName()} has been added to the register.");
+    }
+
+    /** Open the employee's national ID picture (private file, HR access only). */
+    public function nationalIdPhoto(Employee $employee): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        abort_unless(\App\Support\Uploads::exists($employee->national_id_photo, 'local'), 404, 'No ID picture has been uploaded.');
+
+        return \App\Support\Uploads::response($employee->national_id_photo, 'local');
+    }
+
+    /** Store an uploaded ID picture privately, replacing any earlier one. */
+    private function saveNationalIdPhoto(Request $request, Employee $employee): void
+    {
+        if (! $request->hasFile('national_id_photo')) return;
+        $old = $employee->national_id_photo;
+        $path = \App\Support\Uploads::store($request->file('national_id_photo'), 'employee-ids', 'local');
+        $employee->forceFill(['national_id_photo' => $path])->save();
+        if ($old && $old !== $path) \Illuminate\Support\Facades\Storage::disk(\App\Support\Uploads::disk('local'))->delete($old);
+        AuditLog::record('national_id_photo_uploaded', $employee, ($old ? 'Replaced' : 'Uploaded')." the national ID picture for {$employee->fullName()}.", null, null, 'hr');
     }
 
     public function show(Employee $employee): View
@@ -128,14 +149,17 @@ class EmployeeController extends Controller
 
     public function update(UpdateEmployeeRequest $request, Employee $employee): RedirectResponse
     {
-        $before = $employee->only(array_keys($request->validated()));
+        $data = $request->validated();
+        unset($data['national_id_photo']);
+        $before = $employee->only(array_keys($data));
 
-        $employee->update($request->validated());
+        $employee->update($data);
+        $this->saveNationalIdPhoto($request, $employee);
 
         AuditLog::record(
             'updated', $employee,
             "Updated {$employee->fullName()}.",
-            $before, $employee->only(array_keys($request->validated())),
+            $before, $employee->only(array_keys($data)),
             'hr'
         );
 

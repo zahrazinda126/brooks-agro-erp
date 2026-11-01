@@ -1,6 +1,6 @@
-<style>
+@pushOnce('styles')<style>
 .legacy-hr{background:#fff;border:1px solid #aaa;padding:10px;color:#111;font:13px Arial,sans-serif}.legacy-hr__scroll{overflow-x:auto;padding-bottom:8px}.legacy-hr__sheet{min-width:1180px}.legacy-hr h3{text-align:center;font-size:17px;margin:5px 0 16px;text-transform:uppercase}.legacy-hr h4{font-size:14px;margin:18px 0 5px}.legacy-hr table{width:100%;border-collapse:collapse;background:#fff}.legacy-hr th,.legacy-hr td{border:1px solid #222;padding:5px 6px;vertical-align:middle;color:#111}.legacy-hr th{background:#c6e0b4;text-align:center;font-weight:700}.legacy-hr .num{text-align:center;white-space:nowrap}.legacy-hr .narrative{padding:8px 3px;white-space:pre-line}.legacy-hr .issue{color:#e11;font-weight:600}.legacy-hr .empty{color:#8b8178;text-align:center}.legacy-hr .section-no{display:inline-block;min-width:20px}.legacy-hr .wide{min-width:1250px}.legacy-hr .attendance-summary{display:flex;gap:28px;align-items:center;margin:0 0 7px;padding:8px 10px;border:1px solid #222;background:#eef5e9}.legacy-hr .attendance-summary strong{margin-left:6px}.legacy-hr__response{display:block;width:100%;min-height:88px;padding:10px;border:1px solid #222;background:#fff;color:#111;font:inherit;resize:vertical}
-</style>
+</style>@endPushOnce
 @php
 $attendance=$snapshot['records']->where('type','attendance')->keyBy('employee_id');
 $securityStaff=$snapshot['employees']->filter(fn($employee)=>Str::contains(Str::lower(($employee->job_title??'').' '.($employee->role_name??'')),['security','guard']));
@@ -15,6 +15,7 @@ $attendanceExceptions=$detailRows('attendance','attendance')->keyBy(fn($row)=>St
 $managementObservations=collect(data_get($departmentRows->get('ad_hoc')?->details,'management_observations',[]));
 @endphp
 <div class="legacy-hr"><div class="legacy-hr__scroll"><div class="legacy-hr__sheet">
+ @include('partials.report-letterhead', ['title' => 'Human Resource & Administration Daily Report'])
  <h3>Human Resource and Administration Report for {{ \Carbon\Carbon::parse($date)->format('jS F Y') }}</h3>
 
  <h4><span class="section-no">1</span>Staff Attendance Report</h4>

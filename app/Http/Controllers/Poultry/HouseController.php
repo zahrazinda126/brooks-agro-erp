@@ -20,16 +20,18 @@ class HouseController extends Controller
 
         $workers = Employee::where('status', 'active')
             ->where(function ($query) {
-                $query->whereHas('user.roles', fn ($roles) => $roles->where('code', 'casual-worker'))
-                    ->orWhereHas('user.role', fn ($role) => $role->where('code', 'casual-worker'));
+                $query->whereHas('user.roles', fn ($roles) => $roles->whereIn('code', \App\Models\User::DATA_ENTRY_ROLES))
+                    ->orWhereHas('user.role', fn ($role) => $role->whereIn('code', \App\Models\User::DATA_ENTRY_ROLES));
             })
             ->orderBy('first_name')
             ->get();
 
         return view('poultry.houses.index', [
+            // Natural order: House 1, House 2 … House 10.
             'houses' => PoultryHouse::with(['batch', 'activeAssignments.employee'])
-                ->orderBy('house_number')
-                ->get(),
+                ->get()
+                ->sortBy('house_number', SORT_NATURAL | SORT_FLAG_CASE)
+                ->values(),
             'batches' => AnimalGroup::where('status', 'active')->orderBy('code')->get(),
             'workers' => $workers,
         ]);
@@ -120,8 +122,8 @@ class HouseController extends Controller
             abort_if(\Illuminate\Support\Carbon::parse($data['moved_on'])->isBefore($batch->received_date), 422,
                 'The movement date cannot be before the batch arrived.');
             $ageOnMovementDate = $batch->ageInDays(\Illuminate\Support\Carbon::parse($data['moved_on']));
-            abort_if($to->house_type === 'standard' && $ageOnMovementDate < 42, 422,
-                'These chicks are only '.$ageOnMovementDate.' days old. Transfer to a standard house is allowed from 42 days.');
+            abort_if($to->house_type === 'standard' && $ageOnMovementDate < config('farm.brooder_max_age_days'), 422,
+                'These chicks are only '.$ageOnMovementDate.' days old. Transfer to a standard house is allowed from '.config('farm.brooder_max_age_days').' days.');
             $from->decrement('bird_quantity', $data['bird_quantity']);
             $from->refresh();
             if ($from->bird_quantity === 0) {

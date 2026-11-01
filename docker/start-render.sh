@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
+# APP_URL is set in the hosting settings (DigitalOcean); Render supplies RENDER_EXTERNAL_URL.
 export APP_URL="${APP_URL:-${RENDER_EXTERNAL_URL:-http://localhost:10000}}"
 
 mkdir -p \

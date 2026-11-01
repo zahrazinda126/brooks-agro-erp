@@ -16,6 +16,12 @@ return [
     'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
+    | Where uploaded receipts and contracts go. Empty = this server's disks (local use).
+    | Production on DigitalOcean: UPLOADS_DISK=spaces.
+    */
+    'uploads' => env('UPLOADS_DISK'),
+
+    /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
@@ -45,6 +51,20 @@ return [
             'visibility' => 'public',
             'throw' => false,
             'report' => false,
+        ],
+
+        // DigitalOcean Spaces (S3-compatible). Files are private; links are signed and short-lived.
+        'spaces' => [
+            'driver' => 's3',
+            'key' => env('SPACES_KEY'),
+            'secret' => env('SPACES_SECRET'),
+            'region' => env('SPACES_REGION', 'fra1'),
+            'bucket' => env('SPACES_BUCKET'),
+            'endpoint' => env('SPACES_ENDPOINT', 'https://fra1.digitaloceanspaces.com'),
+            'use_path_style_endpoint' => false,
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => true,
         ],
 
         's3' => [

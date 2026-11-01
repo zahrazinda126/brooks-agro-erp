@@ -126,7 +126,7 @@
   @if(data_get($row?->details,'system_source'))
   <div class="daily-sheet" role="region" aria-label="{{ $unitLabel }} daily report sheet">
    <h3>BROOKS AGRO FARM LIMITED</h3><h4>{{ Str::upper($unitLabel) }} DAILY REPORT — {{ \Carbon\Carbon::parse($date)->format('d F Y') }}</h4>
-   <table><thead><tr><th>Unit</th><th>System-generated summary</th><th>Activities and results recorded</th></tr></thead><tbody><tr><td><strong>{{ $unitLabel }}</strong></td><td>{{ $row->summary }}</td><td style="white-space:pre-line">{{ $row->activities }}</td></tr></tbody></table>
+   <table><thead><tr><th>Unit</th><th>System-generated summary</th><th>Activities and results recorded</th></tr></thead><tbody><tr><td><strong>{{ $unitLabel }}</strong></td><td>{{ $row->summary }}</td><td class="u-pre-line">{{ $row->activities }}</td></tr></tbody></table>
   </div>
   @if($row?->status==='changes_requested')<div class="notice"><strong>CEO requested a correction:</strong> {{ $row->review_note }}</div>@endif
   <form method="POST" action="{{ route('daily-reports.save') }}">@csrf<input type="hidden" name="report_date" value="{{ $date }}"><input type="hidden" name="department_code" value="{{ $departmentCode }}"><input type="hidden" name="unit_code" value="{{ $unitCode }}"><input type="hidden" name="summary" value="{{ $row->summary }}"><textarea name="activities" hidden>{{ $row->activities }}</textarea><div class="form-grid"><div class="field"><label>Owner comment / challenge (optional)</label><textarea name="challenges" placeholder="Add context only when the generated report needs explanation">{{ old('challenges',$row->challenges) }}</textarea></div><div class="field"><label>Recommendation / follow-up (optional)</label><textarea name="recommendations" placeholder="Add any action the CEO should know about">{{ old('recommendations',$row->recommendations) }}</textarea></div></div>@if($departmentCode==='finance' && $unitCode==='sales_collections')<button class="btn" name="action" value="share">Submit Sales report to Finance</button>@else<button class="btn btn--quiet" name="action" value="draft">Save comment</button>@endif</form>
@@ -143,10 +143,10 @@
  </details>
  @elseif(($isFinanceManager && $departmentCode==='finance' && $unitCode==='sales_collections' && $row?->status==='manager_shared') || ($isCeo && $row && in_array($row->status,['manager_shared','changes_requested','ceo_reviewed'])) || (($isDirector || $canViewAll) && $row?->status==='ceo_reviewed'))
  <article class="report-unit card"><div class="section-heading"><div><p class="card-label">{{ $unitLabel }}</p><h3>{{ Str::headline($row->status) }}</h3></div><small>{{ $row->preparer?->displayName() }} · {{ $row->shared_at?->format('d M Y, H:i') }}</small></div>
-  <p style="white-space:pre-line">{{ $row->summary }}</p>
-  @if($row->activities)<h4>Activities / results</h4><p style="white-space:pre-line">{{ $row->activities }}</p>@endif
-  @if($row->challenges)<h4>Challenges</h4><p style="white-space:pre-line">{{ $row->challenges }}</p>@endif
-  @if($row->recommendations)<h4>Recommendations</h4><p style="white-space:pre-line">{{ $row->recommendations }}</p>@endif
+  <p class="u-pre-line">{{ $row->summary }}</p>
+  @if($row->activities)<h4>Activities / results</h4><p class="u-pre-line">{{ $row->activities }}</p>@endif
+  @if($row->challenges)<h4>Challenges</h4><p class="u-pre-line">{{ $row->challenges }}</p>@endif
+  @if($row->recommendations)<h4>Recommendations</h4><p class="u-pre-line">{{ $row->recommendations }}</p>@endif
   @if($row->review_note)<div class="notice"><strong>CEO comment:</strong> {{ $row->review_note }}</div>@endif
   @if($isCeo && $row->status==='manager_shared')<form method="POST" action="{{ route('daily-reports.review',$row) }}">@csrf<div class="field"><label>CEO comment</label><textarea name="review_note" required placeholder="Comment before reviewing or returning this unit report"></textarea></div><div class="form-actions"><button class="btn btn--quiet" name="decision" value="changes">Return for correction</button><button class="btn" name="decision" value="review">Review & include</button></div></form>@endif
   @if($isDirector)<form method="POST" action="{{ route('daily-reports.comments') }}">@csrf<input type="hidden" name="report_date" value="{{ $date }}"><input type="hidden" name="department_code" value="{{ $departmentCode }}"><input type="hidden" name="unit_report_id" value="{{ $row->id }}"><div class="field"><label>Comment to {{ $unitLabel }} report owner</label><textarea name="body" required></textarea></div><button class="btn">Send comment</button></form>@endif
@@ -161,7 +161,7 @@
 @endif
 @endforeach
 </div>
-<style>
+@pushOnce('styles')<style>
 .daily-sheet{margin:14px 0 18px;padding:14px;background:#fff;border:1px solid #b8b1a8;overflow-x:auto;color:#17120f}.daily-sheet h3,.daily-sheet h4{text-align:center;margin:2px 0 8px}.daily-sheet h3{font-size:16px}.daily-sheet h4{font-size:14px}.daily-sheet table{width:100%;min-width:760px;border-collapse:collapse}.daily-sheet th,.daily-sheet td{border:1px solid #322b26;padding:10px;text-align:left;vertical-align:top}.daily-sheet th{background:#d9ead0;font-weight:800}.daily-sheet td:first-child{width:18%}.daily-sheet td:nth-child(2){width:30%}
-</style>
+</style>@endPushOnce
 @endsection

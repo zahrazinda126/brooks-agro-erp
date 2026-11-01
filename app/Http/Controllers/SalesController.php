@@ -36,12 +36,22 @@ class SalesController extends Controller
 {
     private const CATEGORIES = ['eggs', 'poultry', 'goats', 'rabbits', 'dogs', 'milk', 'manure', 'garden', 'other'];
 
-    private const METHODS = ['cash', 'bank', 'agent', 'mobile_money', 'in_kind', 'prepayment', 'farm_consumption'];
+    private const METHODS = ['cash', 'bank', 'agent', 'mtn_merchant', 'airtel_merchant', 'mobile_money', 'in_kind', 'prepayment', 'farm_consumption'];
+    // Money paid through a merchant code lands in that wallet.
+    private const MERCHANT_ACCOUNTS = ['mtn_merchant' => 'MTN Mobile Money', 'airtel_merchant' => 'Airtel Mobile Money', 'mobile_money' => 'MTN Mobile Money'];
 
     public function index(Request $request): View
     {
         $screen = $request->query('screen', 'sale');
-        abort_unless(in_array($screen, ['sale', 'inventory', 'setup', 'reports', 'analysis', 'balancing', 'receipt_archive'], true), 404);
+        abort_unless(in_array($screen, ['daily', 'sale', 'inventory', 'setup', 'reports', 'analysis', 'balancing', 'receipt_archive'], true), 404);
+        // Daily Sales: the sales person's own sales sheet for the chosen dates.
+        if ($screen === 'daily') {
+            abort_unless($request->user()->canAccess('sales'), 403);
+            $from = (string) $request->query('sales_from', now()->toDateString());
+            $to = (string) $request->query('sales_to', now()->toDateString());
+            abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) && $from <= $to, 422, 'Choose valid sales dates.');
+            return view('sales.daily', ['sheet' => app(\App\Services\DailySalesSheet::class)->for($request->user(), $from, $to)]);
+        }
         $inventoryUnit = $request->query('unit');
         $priceUnit = $screen === 'setup' ? $request->query('price_unit') : null;
         $analysisView = $request->query('analysis_view');
@@ -105,6 +115,12 @@ class SalesController extends Controller
         $reportTotal = (float) $reportSales->sum('total');
         $customerReport = $reportSales->groupBy('customer_name')->map(fn ($rows, $name) => ['name' => $name, 'sales' => $rows->count(), 'amount' => (float) $rows->sum('total')])->sortByDesc('amount')->values()->map(fn ($row, $index) => $row + ['rank' => $index + 1, 'share' => $reportTotal > 0 ? $row['amount'] / $reportTotal * 100 : 0]);
         $productReport = $reportSales->flatMap->lines->groupBy(fn ($line) => $line->description.'|'.$line->unit)->map(fn ($rows) => ['name' => $rows->first()->description, 'unit' => $rows->first()->unit, 'quantity' => (float) $rows->sum('quantity'), 'amount' => (float) $rows->sum('line_total')])->sortByDesc('amount')->values();
+        // Products sold per day (Sales report → Products sold), newest day first.
+        $productDailyReport = $reportSales->flatMap(fn ($sale) => $sale->lines->map(fn ($line) => ['date' => $sale->sale_date->toDateString(), 'line' => $line]))
+            ->groupBy(fn ($row) => $row['date'].'|'.$row['line']->description.'|'.$row['line']->unit)
+            ->map(fn ($rows) => ['date' => $rows->first()['date'], 'name' => $rows->first()['line']->description, 'unit' => $rows->first()['line']->unit,
+                'quantity' => (float) $rows->sum(fn ($row) => $row['line']->quantity), 'amount' => (float) $rows->sum(fn ($row) => $row['line']->line_total)])
+            ->sortBy([['date', 'desc'], ['amount', 'desc']])->values();
         $paymentAnalysis = $reportSales->groupBy(fn ($sale) => $sale->payment_method ?: 'not_specified')->map(fn ($rows, $method) => ['method' => str($method)->replace('_', ' ')->title()->toString(), 'sales' => $rows->count(), 'amount' => (float) $rows->sum('total')])->sortByDesc('amount')->values();
         $unitAnalysis = $reportSales->flatMap->lines->groupBy(fn ($line) => match ($line->category) {
             'eggs', 'poultry' => 'Poultry', 'goats', 'milk' => 'Goats', 'rabbits' => 'Rabbits', 'dogs' => 'Dogs', 'garden' => 'Garden', default => 'Other',
@@ -154,7 +170,21 @@ class SalesController extends Controller
         $priceHistory = $screen === 'setup'
             ? AuditLog::with('user')->whereIn('event', ['sale_price_approved','sale_price_changed'])->where('auditable_type', SaleProduct::class)->latest('created_at')->limit(20)->get()
             : collect();
-        $farmStock = $screen === 'inventory' ? $this->farmProductsInStock($eggStock) : collect();
+        // Sellable stock: on hand for a chosen day, or day-by-day movement, filtered by unit and search.
+        $stock = null;
+        if ($screen === 'inventory') {
+            $stockFilters = ['unit' => $inventoryUnit, 'q' => $request->query('q'), 'hide_empty' => $request->boolean('hide_empty')];
+            $service = app(\App\Services\SellableStock::class);
+            $stockView = $request->query('stock_view') === 'movement' ? 'movement' : 'on_hand';
+            $stockOn = $request->date('on') ?? now();
+            if ($stockOn->isFuture()) $stockOn = now();
+            $moveFrom = $request->date('from') ?? now()->subDays(13);
+            $moveTo = $request->date('to') ?? now();
+            if ($moveFrom->gt($moveTo)) [$moveFrom, $moveTo] = [$moveTo, $moveFrom];
+            $stock = ['view' => $stockView, 'filters' => $stockFilters, 'on' => $stockOn, 'from' => $moveFrom, 'to' => $moveTo, 'units' => \App\Services\SellableStock::UNITS,
+                'rows' => $stockView === 'movement' ? $service->movements($moveFrom, $moveTo, $stockFilters) : $service->onHand($stockOn, $stockFilters),
+                'service' => $service];
+        }
 
         $balanceDate = $request->query('balance_date', now()->toDateString());
         abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $balanceDate), 422, 'Choose a valid balancing date.');
@@ -217,7 +247,9 @@ class SalesController extends Controller
                 ->get();
         }
 
-        return view('sales.index', compact('products', 'eggStock', 'farmStock', 'inventoryUnit', 'priceUnit', 'analysisView', 'revenueView', 'customers', 'poultryHouses', 'prepayments', 'sales', 'screen', 'from', 'to', 'fromMonth', 'toMonth', 'customerReport', 'productReport', 'paymentAnalysis', 'unitAnalysis', 'analysisMonths', 'customerMonthlyAnalysis', 'analysisProductColumns', 'customerProductAnalysis', 'revenueFinancialYear', 'revenueMonths', 'revenueMonthlyAnalysis', 'revenueYtdAnalysis', 'revenueYearStart', 'revenueYtdEnd', 'monthly', 'reportTotal', 'reportSales', 'priceHistory', 'balanceDate', 'balanceSales', 'balancePayments', 'balanceByMethod', 'balanceOpening', 'balanceCashReceived', 'balanceCashDue', 'dailyBalance', 'receiptArchive', 'receiptFrom', 'receiptTo', 'receiptDestination', 'receiptSalesPerson', 'receiptSalesPeople') + [
+        // Current stock per product, shown beside the product on the sale form.
+        $productStock = $screen === 'sale' ? app(\App\Services\SellableStock::class)->forProducts($products) : [];
+        return view('sales.index', compact('productStock', 'stock', 'products', 'eggStock', 'inventoryUnit', 'priceUnit', 'analysisView', 'revenueView', 'customers', 'poultryHouses', 'prepayments', 'sales', 'screen', 'from', 'to', 'fromMonth', 'toMonth', 'customerReport', 'productReport', 'productDailyReport', 'paymentAnalysis', 'unitAnalysis', 'analysisMonths', 'customerMonthlyAnalysis', 'analysisProductColumns', 'customerProductAnalysis', 'revenueFinancialYear', 'revenueMonths', 'revenueMonthlyAnalysis', 'revenueYtdAnalysis', 'revenueYearStart', 'revenueYtdEnd', 'monthly', 'reportTotal', 'reportSales', 'priceHistory', 'balanceDate', 'balanceSales', 'balancePayments', 'balanceByMethod', 'balanceOpening', 'balanceCashReceived', 'balanceCashDue', 'dailyBalance', 'receiptArchive', 'receiptFrom', 'receiptTo', 'receiptDestination', 'receiptSalesPerson', 'receiptSalesPeople') + [
             'todayTotal' => (float) Sale::whereDate('sale_date', today())->whereNotIn('status', ['void'])->where('approval_status','approved')->where('is_staff_consumption', false)->sum('total'),
             'monthTotal' => (float) Sale::whereBetween('sale_date', [now()->startOfMonth(), now()->endOfMonth()])->whereNotIn('status', ['void'])->where('approval_status','approved')->where('is_staff_consumption', false)->sum('total'),
             'pendingApprovalCount'=>Sale::where('approval_status','pending')->count(),
@@ -254,7 +286,7 @@ class SalesController extends Controller
         $cashDue = round($opening + $cashReceived, 2);
         abort_if(abs((float) $data['amount_transferred'] - $cashDue) > 0.009, 422, 'The transferred amount must equal the cash to account for: UGX '.number_format($cashDue, 2).'.');
 
-        $receiptPath = $request->file('deposit_receipt')?->store('daily-sales-deposit-receipts', 'public');
+        $receiptPath = ($request->file('deposit_receipt') ? \App\Support\Uploads::store($request->file('deposit_receipt'), 'daily-sales-deposit-receipts') : null);
 
         DailySalesBalance::create([
             ...collect($data)->except(['sales_person_id', 'deposit_receipt'])->all(),
@@ -273,13 +305,9 @@ class SalesController extends Controller
     public function dailyBalanceReceipt(Request $request, DailySalesBalance $dailySalesBalance): StreamedResponse
     {
         abort_unless($this->isFinanceUser($request), 403);
-        abort_unless($dailySalesBalance->receipt_path && Storage::disk('public')->exists($dailySalesBalance->receipt_path), 404, 'Receipt file not found.');
+        abort_unless(\App\Support\Uploads::exists($dailySalesBalance->receipt_path), 404, 'Receipt file not found.');
 
-        return Storage::disk('public')->response(
-            $dailySalesBalance->receipt_path,
-            basename($dailySalesBalance->receipt_path),
-            ['Content-Disposition' => 'inline; filename="'.basename($dailySalesBalance->receipt_path).'"']
-        );
+        return \App\Support\Uploads::response($dailySalesBalance->receipt_path);
     }
 
     private function isFinanceUser(Request $request): bool
@@ -290,69 +318,6 @@ class SalesController extends Controller
         return $roles->contains('finance-manager')
             || $user->department?->code === 'finance'
             || $user->departments->contains('code', 'finance');
-    }
-
-    private function farmProductsInStock($eggStock)
-    {
-        $poultry = $eggStock->map(fn ($stock) => [
-            'item' => $stock['name'],
-            'detail' => number_format($stock['trays']).' full trays and '.number_format($stock['loose']).' loose eggs',
-            'quantity' => $stock['eggs'],
-            'unit' => 'eggs',
-        ]);
-
-        foreach (AnimalGroup::with('breed')->active()->where('current_quantity', '>', 0)->orderBy('code')->get() as $group) {
-            $poultry->push([
-                'item' => $group->name ?: $group->code,
-                'detail' => collect([$group->code, $group->breed?->name, $group->house])->filter()->unique()->implode(' · '),
-                'quantity' => (float) $group->current_quantity,
-                'unit' => 'birds',
-            ]);
-        }
-
-        $stock = collect(['poultry' => $poultry]);
-        foreach (['goats', 'rabbits', 'dogs'] as $unit) {
-            $stock[$unit] = DB::table('livestock_groups')
-                ->where('unit_code', $unit)
-                ->where('status', 'active')
-                ->where('current_quantity', '>', 0)
-                ->orderBy('group_code')
-                ->get()
-                ->map(fn ($group) => [
-                    'item' => $group->group_code,
-                    'detail' => $group->breed ?: 'Breed not recorded',
-                    'quantity' => (float) $group->current_quantity,
-                    'unit' => 'animals',
-                ]);
-        }
-
-        $gardenRecords = FarmUnitRecord::query()
-            ->where('unit_code', 'garden')
-            ->where('verification_status', 'approved')
-            ->whereIn('record_type', ['harvest', 'loss', 'sale'])
-            ->whereNotNull('quantity')
-            ->orderBy('subject')
-            ->get();
-        $stock['garden'] = $gardenRecords
-            ->groupBy(fn ($record) => mb_strtolower(trim($record->subject)).'|'.mb_strtolower(trim($record->measure_unit ?: 'units')))
-            ->map(function ($records) {
-                $first = $records->first();
-                $available = $records->sum(fn ($record) => $record->record_type === 'harvest'
-                    ? (float) $record->quantity
-                    : -(float) $record->quantity);
-
-                return [
-                    'item' => $first->subject,
-                    'detail' => 'Approved harvest balance',
-                    'quantity' => max(0, $available),
-                    'unit' => $first->measure_unit ?: 'units',
-                ];
-            })
-            ->filter(fn ($row) => $row['quantity'] > 0)
-            ->sortBy('item')
-            ->values();
-
-        return $stock;
     }
 
     private function normalisedRevenueLines($sales)
@@ -556,6 +521,8 @@ class SalesController extends Controller
         $user = $request->user();
         $roleCodes = $user->roles->pluck('code')->push($user->role?->code)->filter();
 
+        if ($user->seesOnlyProductionReports()) return false;
+
         return $user->canViewAllReports()
             || $roleCodes->intersect(['ceo', 'director', 'finance-manager'])->isNotEmpty();
     }
@@ -572,8 +539,9 @@ class SalesController extends Controller
     public function storeSale(Request $request, CommunicationService $communications): RedirectResponse
     {
         abort_unless($request->user()->canDo('sales', 'create'), 403);
-        $data = $request->validate(['sale_date' => ['required', 'date', 'before_or_equal:today'], 'customer_id' => ['nullable', 'exists:sales_customers,id'], 'walk_in_customer' => ['nullable', 'string', 'max:160'], 'staff_consumption'=>['nullable','boolean'], 'consumed_by'=>['nullable','required_if:staff_consumption,1','string','max:180'], 'payment_type' => ['required', 'in:cash'], 'payment_method' => ['nullable', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'string', 'max:120'], 'amount_paid' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'merchant_code' => ['nullable', 'required_if:payment_method,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'], 'notes' => ['nullable', 'string', 'max:2000'], 'lines' => ['required', 'array', 'min:1'], 'lines.*.product_id' => ['nullable', 'required_without:lines.*.description', 'exists:sale_products,id'], 'lines.*.category' => ['nullable', 'required_without:lines.*.product_id', Rule::in(self::CATEGORIES)], 'lines.*.description' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:180'], 'lines.*.unit' => ['nullable', 'required_without:lines.*.product_id', Rule::in(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'])], 'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required', 'numeric', 'min:0'], 'lines.*.poultry_house_id' => ['nullable', 'exists:poultry_houses,id']]);
-        $receiptPath = $request->file('payment_receipt')?->store('sales-payment-receipts', 'public');
+        $data = $request->validate(['sale_date' => ['required', 'date', 'before_or_equal:today'], 'customer_id' => ['nullable', 'exists:sales_customers,id'], 'walk_in_customer' => ['nullable', 'string', 'max:160'], 'staff_consumption'=>['nullable','boolean'], 'consumed_by'=>['nullable','required_if:staff_consumption,1','string','max:180'], 'payment_type' => ['required', 'in:cash'], 'payment_method' => ['nullable', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'string', 'max:120'], 'amount_paid' => ['nullable', 'numeric', 'min:0'], 'discount' => ['nullable', 'numeric', 'min:0'], 'merchant_code' => ['nullable', 'required_if:payment_method,mtn_merchant,airtel_merchant,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'], 'notes' => ['nullable', 'string', 'max:2000'], 'lines' => ['required', 'array', 'min:1'], 'lines.*.product_id' => ['nullable', 'required_without:lines.*.description', 'exists:sale_products,id'], 'lines.*.category' => ['nullable', 'required_without:lines.*.product_id', Rule::in(self::CATEGORIES)], 'lines.*.description' => ['nullable', 'required_without:lines.*.product_id', 'string', 'max:180'], 'lines.*.unit' => ['nullable', 'required_without:lines.*.product_id', Rule::in(['tray','egg','bird','chick','animal','head','kg','bag','litre','crate','bunch','bundle','piece'])], 'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required', 'numeric', 'min:0'], 'lines.*.poultry_house_id' => ['nullable', 'exists:poultry_houses,id']]);
+        $receiptPath = ($request->file('payment_receipt') ? \App\Support\Uploads::store($request->file('payment_receipt'), 'sales-payment-receipts') : null);
+        if (isset(self::MERCHANT_ACCOUNTS[$data['payment_method'] ?? ''])) $data['farm_account'] = self::MERCHANT_ACCOUNTS[$data['payment_method']];
         $staffConsumption = $request->boolean('staff_consumption') || ($data['payment_method'] ?? null) === 'farm_consumption';
         if ($staffConsumption) {
             $data['payment_type']='cash'; $data['payment_method']=null;
@@ -583,10 +551,15 @@ class SalesController extends Controller
         $customerId = $data['customer_id'] ?? null;
         $customer = $customerId ? SalesCustomer::find($customerId) : null;
         $enteredName = trim($data['walk_in_customer'] ?? '');
+        // Every sale is recorded against a named customer (a new name is added to the customer list).
+        if (! $staffConsumption && ! $customer && ($enteredName === '' || strcasecmp($enteredName, 'One-time customer') === 0)) {
+            return back()->withErrors(['walk_in_customer' => "Enter the customer's name. Every sale is recorded against a customer."])->withInput();
+        }
         if (! $staffConsumption && ! $customer && $enteredName !== '' && strcasecmp($enteredName, 'One-time customer') !== 0) {
             $customer = SalesCustomer::whereRaw('lower(name) = ?', [mb_strtolower($enteredName)])->first()
                 ?: SalesCustomer::create(['name' => $enteredName, 'credit_limit' => 0, 'is_active' => true]);
         }
+        \App\Support\CustomerArchive::reactivate($customer);
         $customerName = $staffConsumption ? $data['walk_in_customer'] : ($customer?->name ?: 'One-time customer');
         try {
             $sale = DB::transaction(function () use ($data, $customer, $customerName, $request, $staffConsumption, $receiptPath) {
@@ -692,12 +665,20 @@ class SalesController extends Controller
             return back()->withErrors(['sale' => $e->getMessage()])->withInput();
         }
 
+        // Customer sales count as soon as the sales person records them: no Finance or CEO approval.
+        // Farm products taken for internal use still go to Finance and the CEO.
+        if (! $staffConsumption) {
+            $sale->update(['approval_status' => 'approved']);
+            return redirect()->to(route('dashboard', ['sales_from' => $data['sale_date'], 'sales_to' => $data['sale_date']]).'#daily-sales-table')->with('status', 'Sale recorded.');
+        }
+
         $approval = $sale->approvals()->create(['module_key'=>'sales','department_id'=>$request->user()->department_id,'submitted_by'=>$request->user()->id,'submitted_at'=>now(),'submission_note'=>($staffConsumption?'Internal farm product use':'Customer sale').' '.$sale->invoice_number.' requires Finance and CEO approval'.($staffConsumption?'.':' before receipt printing.'),'status'=>'pending','level'=>1,'required_levels'=>2,'due_at'=>now()->addDay()]);
         $approval->steps()->createMany([['stage'=>1,'role_code'=>'finance-manager','status'=>'pending'],['stage'=>2,'role_code'=>'ceo','status'=>'waiting']]);
         $message=$staffConsumption
             ? $sale->invoice_number.' records UGX '.number_format((float)$sale->total).' of farm products used internally by '.$data['consumed_by'].', entered by '.$request->user()->displayName().'. No payment or revenue was recorded.'
             : $sale->invoice_number.' for UGX '.number_format((float)$sale->total).' was entered by '.$request->user()->displayName().'. Review it before its receipt can be printed.';
         $communications->toRole('finance-manager',($staffConsumption?'Internal farm use':'Sale').' awaiting approval: '.$sale->invoice_number,$message,$request->user()->id,route('approvals.show',$approval,false));
+        $communications->toSalesCover('finance-manager',($staffConsumption?'Internal farm use':'Sale').' awaiting approval: '.$sale->invoice_number,$message,$request->user()->id,route('approvals.show',$approval,false));
         $communications->toRole('ceo',($staffConsumption?'Internal farm use recorded: ':'New sale entered: ').$sale->invoice_number,$message.' Finance approval is the first stage.',$request->user()->id,route('approvals.show',$approval,false));
 
         return redirect()->to(route('dashboard', ['sales_from' => $data['sale_date'], 'sales_to' => $data['sale_date']]).'#daily-sales-table')->with('status', $staffConsumption ? 'Internal farm use recorded with no payment or revenue and sent for approval.' : 'Sale recorded. Finance and the CEO have been notified for approval.');
@@ -730,8 +711,8 @@ class SalesController extends Controller
     public function payment(Request $request, Sale $sale): RedirectResponse
     {
         abort_unless($request->user()->canDo('receipts', 'create'), 403);
-        $data = $request->validate(['paid_on' => ['required', 'date', 'before_or_equal:today'], 'amount' => ['required', 'numeric', 'min:0.01', 'max:'.$sale->balance], 'payment_method' => ['required', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'required_unless:payment_method,prepayment','string','max:120'], 'reference' => ['nullable', 'string', 'max:100'], 'merchant_code' => ['nullable', 'required_if:payment_method,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120']]);
-        $receiptPath = $request->file('payment_receipt')?->store('sales-payment-receipts', 'public');
+        $data = $request->validate(['paid_on' => ['required', 'date', 'before_or_equal:today'], 'amount' => ['required', 'numeric', 'min:0.01', 'max:'.$sale->balance], 'payment_method' => ['required', Rule::in(self::METHODS)], 'farm_account' => ['nullable', 'required_unless:payment_method,prepayment','string','max:120'], 'reference' => ['nullable', 'string', 'max:100'], 'merchant_code' => ['nullable', 'required_if:payment_method,mtn_merchant,airtel_merchant,mobile_money', 'string', 'max:100'], 'payment_receipt' => ['nullable', 'required_if:payment_method,bank', 'required_if:payment_method,agent', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120']]);
+        $receiptPath = ($request->file('payment_receipt') ? \App\Support\Uploads::store($request->file('payment_receipt'), 'sales-payment-receipts') : null);
         DB::transaction(function () use ($sale, $data, $request, $receiptPath) {
             if ($data['payment_method'] === 'prepayment') {
                 $customer=$sale->customer ?: SalesCustomer::whereRaw('lower(name) = ?', [mb_strtolower($sale->customer_name)])->first();
@@ -743,6 +724,7 @@ class SalesController extends Controller
             $sale->decrement('balance', $data['amount']);
             $sale->refresh();
             $sale->update(['status' => (float) $sale->balance <= 0 ? 'paid' : 'partly_paid']);
+            if (isset(self::MERCHANT_ACCOUNTS[$data['payment_method']])) $data['farm_account'] = self::MERCHANT_ACCOUNTS[$data['payment_method']];
             $this->recordMoney($sale, (float) $data['amount'], $data['paid_on'], $data['payment_method'], $data['farm_account'] ?? 'Customer Prepayment Credit', $data['reference'] ?? null, $request->user()->id, $data['merchant_code'] ?? null, $receiptPath);
             $due = Receivable::where('invoice_number', $sale->invoice_number)->first();
             if ($due) {

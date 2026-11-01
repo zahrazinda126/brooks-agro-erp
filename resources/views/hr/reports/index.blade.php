@@ -40,7 +40,7 @@
                 @endforeach
             </div>
         @empty
-            <div class="card empty"><p class="muted" style="margin:0;">No records match this report period.</p></div>
+            <div class="card empty"><p class="muted u-m0">No records match this report period.</p></div>
         @endforelse
     </div>
 @endsection

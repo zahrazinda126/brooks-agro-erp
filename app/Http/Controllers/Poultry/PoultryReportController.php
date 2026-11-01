@@ -18,9 +18,15 @@ class PoultryReportController extends Controller
         $this->authorizeReport($request);
         [$from,$to,$batchId] = $this->filters($request);
         $scope = fn ($query,$date) => $query->whereBetween($date,[$from,$to])->when($batchId,fn($q)=>$q->where('animal_group_id',$batchId));
-        $eggs = $scope(EggCollection::with(['batch','house','lines.grade','recorder','approver'])->where('status','approved'),'collected_on')->latest('collected_on')->latest('collected_at')->get();
-        $feed = $scope(FeedConsumption::with(['batch','type','recorder'])->where('status','approved'),'used_on')->latest('used_on')->get();
-        $mortality = $scope(MortalityRecord::with(['batch','cause','recorder']),'occurred_on')->latest('occurred_on')->get();
+        $houseId = $request->integer('house') ?: null;
+        $inHouse = fn ($query) => $query->when($houseId, fn ($q) => $q->where('poultry_house_id', $houseId));
+        $eggs = $inHouse($scope(EggCollection::with(['batch','house','lines.grade','recorder','approver'])->where('status','approved'),'collected_on')->latest('collected_on')->latest('collected_at'))->get();
+        $feed = $inHouse($scope(FeedConsumption::with(['batch','type','recorder'])->where('status','approved'),'used_on')->latest('used_on'))->get();
+        // Feed type filter: the list offers every feed used in the period; the table and totals show the chosen one.
+        $feedTypes = $feed->map->label()->unique()->sort()->values();
+        $feedType = $request->string('feed')->trim()->toString() ?: null;
+        if ($feedType) $feed = $feed->filter(fn ($x) => $x->label() === $feedType)->values();
+        $mortality = $inHouse($scope(MortalityRecord::with(['batch','cause','recorder']),'occurred_on')->latest('occurred_on'))->get();
         $health = $scope(HealthEvent::with(['batch','medication','recorder']),'occurred_on')->latest('occurred_on')->get();
         $showSales = $this->canViewPoultrySales($request);
         $sales = $showSales ? $this->poultrySales($from,$to) : collect();
@@ -28,10 +34,14 @@ class PoultryReportController extends Controller
         $grades = EggGrade::where('is_active', true)->ordered()->get();
         $eggRows = $this->summarizeEggs($eggs, $grades);
 
-        return view('poultry.report.index', compact('from','to','batchId','eggs','eggRows','feed','mortality','health','sales','active','grades','showSales') + [
+        // One record type per page (tabs); the Excel export still contains every section.
+        $viewTitles = ['eggs' => 'Egg production', 'feed' => 'Feed consumption', 'mortality' => 'Mortality and culling', 'health' => 'Health and treatment', 'sales' => 'Poultry sales'];
+        $view = array_key_exists($request->query('view'), $viewTitles) ? $request->query('view') : 'eggs';
+        return view('poultry.report.index', compact('view', 'viewTitles', 'from','to','batchId','houseId','eggs','eggRows','feed','feedTypes','feedType','mortality','health','sales','active','grades','showSales') + [
             'batches'=>AnimalGroup::orderBy('code')->get(),
-            'pendingEggs'=>$scope(EggCollection::where('status','submitted'),'collected_on')->count(),
-            'pendingFeed'=>$scope(FeedConsumption::where('status','submitted'),'used_on')->count(),
+            'houses'=>\App\Models\PoultryHouse::get()->sortBy('house_number', SORT_NATURAL | SORT_FLAG_CASE)->values(),
+            'pendingEggs'=>$inHouse($scope(EggCollection::where('status','submitted'),'collected_on'))->count(),
+            'pendingFeed'=>$inHouse($scope(FeedConsumption::where('status','submitted'),'used_on'))->count(),
         ]);
     }
 
@@ -60,9 +70,11 @@ class PoultryReportController extends Controller
         $this->authorizeReport($request);
         [$from,$to,$batchId] = $this->filters($request);
         $scope = fn ($query,$date) => $query->whereBetween($date,[$from,$to])->when($batchId,fn($q)=>$q->where('animal_group_id',$batchId));
-        $eggs=$scope(EggCollection::with(['batch','house','lines.grade','recorder','approver'])->where('status','approved'),'collected_on')->get();
-        $feed=$scope(FeedConsumption::with(['batch','type'])->where('status','approved'),'used_on')->get();
-        $mortality=$scope(MortalityRecord::with(['batch','cause']),'occurred_on')->get();
+        $houseId=$request->integer('house')?:null;
+        $inHouse=fn($query)=>$query->when($houseId,fn($q)=>$q->where('poultry_house_id',$houseId));
+        $eggs=$inHouse($scope(EggCollection::with(['batch','house','lines.grade','recorder','approver'])->where('status','approved'),'collected_on'))->get();
+        $feed=$inHouse($scope(FeedConsumption::with(['batch','type'])->where('status','approved'),'used_on'))->get();
+        $mortality=$inHouse($scope(MortalityRecord::with(['batch','cause']),'occurred_on'))->get();
         $health=$scope(HealthEvent::with(['batch','medication']),'occurred_on')->get();
         $sales=$this->canViewPoultrySales($request) ? $this->poultrySales($from,$to) : collect();
         $grades=EggGrade::where('is_active',true)->ordered()->get();
@@ -137,6 +149,6 @@ class PoultryReportController extends Controller
     private function canViewPoultrySales(Request $request): bool
     {
         $roles = $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter();
-        return $roles->intersect(['sales-manager', 'finance-manager', 'ceo', 'director', 'personal-assistant'])->isNotEmpty();
+        return $roles->intersect(['sales-manager', 'finance-manager', 'ceo', 'director', 'personal-assistant', 'pa'])->isNotEmpty();
     }
 }

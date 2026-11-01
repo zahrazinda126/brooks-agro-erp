@@ -9,32 +9,49 @@ use Illuminate\Support\Facades\Route;
 
 class Module extends Model
 {
+    /*
+     | Menu groups for the module-driven menu (System Administrator and accounts without a
+     | role workspace), laid out as in Brooks Farm Hub: the management places first, then each
+     | farm department as its own place, then Settings. Only where a screen is listed changes;
+     | who may open it is still decided by the permission system.
+     */
     private const NAVIGATION = [
-        'Poultry' => ['poultry', 'flocks', 'batches', 'breeds', 'egg-entry', 'egg-inventory',
-            'bird-consumption', 'feed-consumption', 'health', 'medications', 'mortality-entry',
-            'mortality-assess', 'vaccination', 'biosecurity', 'hatchery'],
-        'Livestock' => ['goats', 'rabbits', 'dogs', 'dog-care', 'breeding', 'milk-record', 'kindling-record'],
-        'Stock' => ['inventory', 'stores', 'feedmill', 'feed-types', 'feed-received', 'goods-received',
-            'goods-issued', 'stock-transfers', 'stock-adjustments', 'reorder-levels', 'purchases',
-            'purchase-orders', 'quotations', 'suppliers'],
         'Finance' => ['finance', 'sales', 'customers', 'invoices', 'receipts', 'returns', 'customer-ledger',
             'payroll', 'expenses', 'payments', 'transactions', 'journal-entries', 'chart-of-accounts',
             'general-ledger', 'cash-book', 'bank-book', 'bank-reconcile', 'receivables', 'payables',
             'assets', 'budget', 'data-entry', 'loans', 'advances'],
         'People' => ['hr', 'attendance', 'leave', 'overtime', 'contracts', 'welfare', 'employee-medical',
             'discipline', 'training', 'staff-performance'],
+        'Operations' => ['production', 'veterinary', 'quality', 'maintenance', 'fleet', 'visitors',
+            'assign-supervisors', 'assign-tasks', 'approvals', 'messages', 'notifications', 'my-work',
+            'my-tasks', 'my-performance'],
         'Reports' => ['reports', 'analytics', 'kpi-dashboards', 'scheduled-reports', 'trial-balance',
             'profit-loss', 'balance-sheet', 'cash-flow'],
-        'Administration' => ['settings', 'security', 'audit', 'ai'],
-        'Operations' => ['production', 'quality', 'maintenance', 'fleet', 'assign-supervisors', 'assign-tasks',
-            'approvals', 'messages', 'notifications', 'my-work', 'my-tasks', 'my-performance'],
+        // Departments
+        'Poultry' => ['poultry', 'flocks', 'batches', 'breeds', 'egg-entry', 'egg-inventory',
+            'bird-consumption', 'feed-consumption', 'health', 'medications', 'mortality-entry',
+            'mortality-assess', 'vaccination', 'biosecurity', 'hatchery'],
+        'Goats' => ['goats', 'breeding', 'milk-record'],
+        'Rabbits' => ['rabbits', 'kindling-record'],
+        'Dogs' => ['dogs', 'dog-care'],
+        'Garden' => ['garden'],
+        'Inventory' => ['inventory', 'stores', 'feedmill', 'feed-types', 'feed-received', 'goods-received',
+            'goods-issued', 'stock-transfers', 'stock-adjustments', 'reorder-levels', 'purchases',
+            'purchase-orders', 'quotations', 'suppliers'],
+        // System set-up, in one place
+        'Settings' => ['settings', 'security', 'audit', 'ai', 'finance-periods', 'finance-accounts',
+            'payment-methods', 'document-numbering', 'tax-settings', 'budget-settings', 'finance-imports'],
     ];
+
+    /** Groups shown under the "Departments" heading of the menu. */
+    public const DEPARTMENT_GROUPS = ['Poultry', 'Goats', 'Rabbits', 'Dogs', 'Garden', 'Inventory'];
 
     private const NAVIGATION_LABELS = [
         'batches' => 'Birds', 'flocks' => 'Birds', 'egg-entry' => 'Egg Collection',
         'egg-inventory' => 'Egg Collection', 'feed-consumption' => 'Feeding',
-        'feedmill' => 'Feed', 'feed-types' => 'Feed', 'employee-medical' => 'Medical Records',
+        'feedmill' => 'Feed Stock', 'feed-types' => 'Feed Types', 'employee-medical' => 'Medical Records',
         'staff-performance' => 'Performance', 'discipline' => 'Disciplinary',
+        'hr' => 'Employees', 'loans' => 'Salary Advances',
     ];
     protected $fillable = ['key', 'name', 'group', 'parent_key', 'is_container',
                            'route', 'icon', 'sort_order', 'is_worker_module', 'is_active'];
@@ -117,11 +134,73 @@ class Module extends Model
             return route('poultry.performance.index');
         }
 
+        // Seeded modules whose work is done on an existing screen.
+        if (isset(self::EXISTING_SCREENS[$this->key]) && Route::has(self::EXISTING_SCREENS[$this->key][0])) {
+            [$routeName, $parameters] = self::EXISTING_SCREENS[$this->key] + [1 => []];
+            return route($routeName, $parameters);
+        }
+
         if ($this->route && Route::has($this->route)) {
             return route($this->route);
         }
 
         return route('module.placeholder', ['key' => $this->key]);
+    }
+
+    /** Module key => [route name, parameters] for modules served by a screen built under another name. */
+    private const EXISTING_SCREENS = [
+        'dashboard' => ['dashboard'],
+        // People: HR record screens
+        'attendance' => ['hr.records.index', ['module' => 'attendance']],
+        'leave' => ['hr.records.index', ['module' => 'leave']],
+        'overtime' => ['hr.records.index', ['module' => 'overtime']],
+        'contracts' => ['hr.records.index', ['module' => 'contracts']],
+        'discipline' => ['hr.records.index', ['module' => 'discipline']],
+        'training' => ['hr.records.index', ['module' => 'training']],
+        'welfare' => ['hr.records.index', ['module' => 'welfare']],
+        'employee-medical' => ['hr.records.index', ['module' => 'employee-medical']],
+        'advances' => ['hr.records.index', ['module' => 'advances']],
+        'loans' => ['hr.records.index', ['module' => 'advances']],
+        'my-performance' => ['hr.performance.index'],
+        // Daily work and livestock
+        'my-tasks' => ['daily.index'],
+        'pen-cleaning' => ['daily.index'],
+        'litter-removal' => ['daily.index'],
+        'vaccination-due' => ['vaccination-schedule.index'],
+        'vaccination' => ['vaccination-schedule.index'],
+        'medications' => ['health.index'],
+        'flocks' => ['batches.index'],
+        'egg-inventory' => ['collections.index'],
+        'milk-record' => ['operations.units.index', ['unit' => 'goats']],
+        'breeding' => ['operations.units.index', ['unit' => 'goats']],
+        'kindling-record' => ['operations.units.index', ['unit' => 'rabbits']],
+        'dog-care' => ['operations.units.index', ['unit' => 'dogs']],
+        'assign-tasks' => ['poultry-houses.index'],
+        // Operations and supply chain
+        'fleet' => ['hr.fleet.index'],
+        'feedmill' => ['operations.feed-stock.index'],
+        'stores' => ['inventory.index'],
+        'suppliers' => ['finance.payables.index'],
+        'purchase-orders' => ['finance.farm.purchases'],
+        // Finance
+        'finance' => ['finance.transactions.index'],
+        'data-entry' => ['finance.transactions.create'],
+        'payments' => ['finance.transactions.index'],
+        'expenses' => ['finance.transactions.index'],
+        'money-out' => ['finance.transactions.index'],
+        'money-in' => ['finance.receivables.index'],
+        'journal-entries' => ['finance.general-ledger.index'],
+        'the-books' => ['finance.general-ledger.index'],
+        'bank-reconcile' => ['finance.bank-book.index'],
+        'statements' => ['finance.reports.index'],
+        'analytics' => ['finance.reports.kpis'],
+        'notifications' => ['communications.index'],
+    ];
+
+    /** False for seeded modules that still only have the "not built yet" placeholder. */
+    public function isBuilt(): bool
+    {
+        return $this->url() !== route('module.placeholder', ['key' => $this->key]);
     }
 
     /*
@@ -142,7 +221,7 @@ class Module extends Model
         'flocks' => 'box', 'batches' => 'box', 'breeds' => 'dna',
         'poultry' => 'egg', 'egg-entry' => 'egg', 'egg-inventory' => 'egg',
         'hatchery' => 'egg',
-        'goats' => 'paw', 'rabbits' => 'paw', 'dogs' => 'paw', 'dog-care' => 'paw',
+        'goats' => 'paw', 'rabbits' => 'paw', 'dogs' => 'paw', 'dog-care' => 'paw', 'garden' => 'grain',
         'bird-consumption' => 'paw',
         'milk-record' => 'coins', 'kindling-record' => 'paw',
         'breeding' => 'dna',

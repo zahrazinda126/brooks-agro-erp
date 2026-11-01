@@ -78,7 +78,7 @@ class FleetController extends Controller
             'maintenance'=>['nullable','string','max:1000'],
         ]);
         abort_unless(CompanyVehicle::active()->where('registration_number', $data['vehicle_id'])->exists(), 422, 'Choose an active registered company vehicle.');
-        if($request->hasFile('fuel_receipt'))$data['fuel_receipt']=$request->file('fuel_receipt')->store('fleet/fuel-receipts','public');
+        if($request->hasFile('fuel_receipt'))$data['fuel_receipt']=\App\Support\Uploads::store($request->file('fuel_receipt'),'fleet/fuel-receipts');
         $previous=FleetRecord::whereRaw('lower(vehicle_id) = ?',[mb_strtolower(trim($data['vehicle_id']))])->whereNotNull('ending_odometer_km')->latest('recorded_on')->latest('id')->first();
         $difference=$previous?abs((float)$data['starting_odometer_km']-(float)$previous->ending_odometer_km):0;
         $record=FleetRecord::create($data+['recorded_by'=>$request->user()->id]);

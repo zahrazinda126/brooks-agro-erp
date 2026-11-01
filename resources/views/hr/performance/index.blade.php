@@ -19,7 +19,7 @@
                 <span class="data-cell" data-label="Score"><strong>{{ $row['score'] }}%</strong></span>
             </div>
         @empty
-            <div class="card empty"><p class="muted" style="margin:0;">No active employees are on the register.</p></div>
+            <div class="card empty"><p class="muted u-m0">No active employees are on the register.</p></div>
         @endforelse
     </div>
 @endsection

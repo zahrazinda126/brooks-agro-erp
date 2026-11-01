@@ -15,7 +15,7 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('employees.store') }}">
+    <form method="POST" action="{{ route('employees.store') }}" enctype="multipart/form-data">
         @csrf
 
         @include('hr._form')

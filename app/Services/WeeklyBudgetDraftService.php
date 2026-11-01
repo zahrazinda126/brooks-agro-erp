@@ -43,6 +43,41 @@ class WeeklyBudgetDraftService
         ],
     ];
 
+    /** Each production unit's own operating requirements: its starting draft (quantity 1, price 0 to fill in). */
+    public const UNIT_STARTER_LINES = [
+        'Poultry' => [['Layers mash', 'kg'], ['Chick and grower mash', 'kg'], ['Vaccines', 'doses'], ['Dewormers and vitamins', 'item'], ['Disinfectant', 'litres'], ['Wood shavings / litter', 'bags'], ['Egg trays', 'trays']],
+        'Goat Unit' => [['Dairy meal / concentrates', 'kg'], ['Hay and fodder', 'bales'], ['Mineral licks', 'blocks'], ['Dewormers', 'doses'], ['Acaricide (tick spray)', 'litres'], ['Veterinary drugs', 'item']],
+        'Rabbits Unit' => [['Rabbit pellets', 'kg'], ['Hay and greens', 'kg'], ['Veterinary drugs', 'item'], ['Cage repairs and bedding', 'item']],
+        'Dogs Unit' => [['Dog food', 'kg'], ['Rabies and other vaccines', 'doses'], ['Dewormers', 'doses'], ['Flea and tick treatment', 'item']],
+        'Kituntu Garden' => [['Seeds and seedlings', 'item'], ['Fertiliser', 'kg'], ['Pesticides and fungicides', 'litres'], ['Irrigation fuel / water', 'litres'], ['Casual labour', 'days']],
+        'Kituntu Tomato Garden' => [['Tomato seedlings', 'seedlings'], ['Stakes and twine', 'item'], ['Fungicides and pesticides', 'litres'], ['Fertiliser', 'kg'], ['Casual labour', 'days']],
+        'Kituntu Passion Fruits' => [['Passion fruit seedlings', 'seedlings'], ['Poles and wire', 'item'], ['Fertiliser', 'kg'], ['Pesticides and fungicides', 'litres'], ['Pruning and weeding labour', 'days']],
+    ];
+
+    /**
+     * Give every production unit its own starting draft the first time it has none.
+     * After that the weekly copy carries each unit forward, so lines a manager removes stay removed.
+     */
+    public function ensureUnitStarters(CarbonInterface $week, int $recordedBy, int $departmentId): int
+    {
+        if (Department::whereKey($departmentId)->value('code') !== 'production') return 0;
+        $start = $week->copy()->startOfWeek();
+        $created = 0;
+        foreach (self::UNIT_STARTER_LINES as $unit => $lines) {
+            if (Budget::where('department_id', $departmentId)->where('category', $unit)->exists()) continue;
+            foreach ($lines as [$item, $measure]) {
+                Budget::create([
+                    'period_start' => $start->toDateString(), 'period_end' => $start->copy()->endOfWeek()->toDateString(),
+                    'department_id' => $departmentId, 'category' => $unit, 'item' => $item, 'unit' => $measure,
+                    'quantity' => 1, 'unit_price' => 0, 'planned_amount' => 0, 'status' => 'draft',
+                    'recorded_by' => $recordedBy, 'funding_status' => 'pending', 'carryover_type' => 'template',
+                ]);
+                $created++;
+            }
+        }
+        return $created;
+    }
+
     /**
      * Start a new week's working draft from the most recent budget.
      * Existing lines are never overwritten, so managers remain free to edit

@@ -11,7 +11,7 @@
 
     <div class="card">
         <p class="card-label">Not built yet</p>
-        <p class="muted" style="margin:0 0 12px;">
+        <p class="muted u-m0-b12">
             Your account has access to this screen, but it has not been built
             yet. It is scheduled as part of the module rollout.
         </p>
@@ -20,7 +20,7 @@
 
     <div class="card">
         <p class="card-label">Your rights here</p>
-        <p style="margin:0;">
+        <p class="u-m0">
             @foreach (['view' => 'View', 'create' => 'Add', 'edit' => 'Change', 'delete' => 'Remove', 'approve' => 'Approve'] as $action => $label)
                 @if ($user->canDo($module->key, $action) || ($action === 'view' && $user->canAccess($module->key)))
                     <span class="pill" style="margin:0 4px 4px 0;">{{ $label }}</span>

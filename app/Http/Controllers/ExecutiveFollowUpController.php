@@ -19,7 +19,7 @@ class ExecutiveFollowUpController extends Controller
         'sales' => 'Sales team',
     ];
     private function roleCodes(Request $request) { return $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter(); }
-    private function isPa(Request $request): bool { return $this->roleCodes($request)->contains('personal-assistant'); }
+    private function isPa(Request $request): bool { return $this->roleCodes($request)->intersect(User::PA_ROLES)->isNotEmpty(); }
     private function isDirector(Request $request): bool { return $this->roleCodes($request)->contains('director'); }
     private function isCeo(Request $request): bool { return $this->roleCodes($request)->contains('ceo'); }
     private function authorizePa(Request $request): void { abort_unless($this->isPa($request), 403); }
@@ -37,7 +37,7 @@ class ExecutiveFollowUpController extends Controller
             'directives'=>$query->get(), 'isDirector'=>$isDirector, 'isPa'=>$isPa,
             'users'=>User::where('is_active',true)->whereKeyNot($request->user()->id)->orderBy('name')->get(),
             'recipientGroups'=>self::RECIPIENT_GROUPS,
-            'paUsers'=>User::where('is_active',true)->where(fn($q)=>$q->whereHas('roles',fn($r)=>$r->where('code','personal-assistant'))->orWhereHas('role',fn($r)=>$r->where('code','personal-assistant')))->get(),
+            'paUsers'=>User::where('is_active',true)->where(fn($q)=>$q->whereHas('roles',fn($r)=>$r->whereIn('code',User::PA_ROLES))->orWhereHas('role',fn($r)=>$r->whereIn('code',User::PA_ROLES)))->get(),
         ]);
     }
 
@@ -46,7 +46,7 @@ class ExecutiveFollowUpController extends Controller
         abort_unless($this->isPa($request) || $this->isDirector($request), 403);
         $data=$request->validate(['title'=>['required','string','max:180'],'directive'=>['required','string','max:3000'],'responsible_team'=>['required','string','max:100'],'issued_on'=>['required','date'],'due_on'=>['nullable','date','after_or_equal:issued_on'],'tracked_by'=>['nullable','exists:users,id']]);
         $director=$this->isDirector($request)?$request->user():User::whereHas('roles',fn($q)=>$q->where('code','director'))->orWhereHas('role',fn($q)=>$q->where('code','director'))->first();
-        $defaultPa=User::where('is_active',true)->where(fn($q)=>$q->whereHas('roles',fn($r)=>$r->where('code','personal-assistant'))->orWhereHas('role',fn($r)=>$r->where('code','personal-assistant')))->first();
+        $defaultPa=User::where('is_active',true)->where(fn($q)=>$q->whereHas('roles',fn($r)=>$r->whereIn('code',User::PA_ROLES))->orWhereHas('role',fn($r)=>$r->whereIn('code',User::PA_ROLES)))->first();
         $trackerId=$data['tracked_by']??($this->isPa($request)?$request->user()->id:$defaultPa?->id);
         $directive=ExecutiveDirective::create($data+['status'=>'awaiting_forwarding','progress'=>0,'directed_by'=>$director?->id??$request->user()->id,'tracked_by'=>$trackerId??$request->user()->id]);
         if($trackerId && $trackerId!==$request->user()->id) app(CommunicationService::class)->toUser($trackerId,'New directive to forward: '.$directive->title,$directive->directive,'directive',$request->user()->id,route('directives.index',absolute:false));
@@ -114,7 +114,7 @@ class ExecutiveFollowUpController extends Controller
         return back()->with('status','Progress and feedback sent.');
     }
 
-    public function storeMeeting(Request $request):RedirectResponse { $this->authorizePa($request); $d=$request->validate(['title'=>['required','string','max:180'],'starts_at'=>['required','date'],'ends_at'=>['nullable','date','after:starts_at'],'venue'=>['nullable','string','max:180'],'participants'=>['nullable','string','max:2000'],'agenda'=>['nullable','string','max:3000']]); $director=User::whereHas('roles',fn($q)=>$q->where('code','director'))->orWhereHas('role',fn($q)=>$q->where('code','director'))->first(); ExecutiveMeeting::create($d+['scheduled_for'=>$director?->id??$request->user()->id,'scheduled_by'=>$request->user()->id,'status'=>'scheduled']); if($director)app(CommunicationService::class)->toUser($director,'Meeting scheduled: '.$d['title'],'Scheduled for '.date('d M Y, H:i',strtotime($d['starts_at'])).($d['venue']?' at '.$d['venue']:'.'),'workflow',$request->user()->id); return back()->with('status','Meeting added to the Director\'s schedule.'); }
+    public function storeMeeting(Request $request):RedirectResponse { $this->authorizePa($request); $d=$request->validate(['title'=>['required','string','max:180'],'starts_at'=>['required','date'],'ends_at'=>['nullable','date','after:starts_at'],'venue'=>['nullable','string','max:180'],'participants'=>['nullable','string','max:2000'],'agenda'=>['nullable','string','max:3000'],'host'=>['nullable','string','max:180'],'reason'=>['nullable','string','max:60'],'contact'=>['nullable','string','max:60']]); $director=User::whereHas('roles',fn($q)=>$q->where('code','director'))->orWhereHas('role',fn($q)=>$q->where('code','director'))->first(); ExecutiveMeeting::create($d+['scheduled_for'=>$director?->id??$request->user()->id,'scheduled_by'=>$request->user()->id,'status'=>'scheduled']); if($director)app(CommunicationService::class)->toUser($director,'Meeting scheduled: '.$d['title'],'Scheduled for '.date('d M Y, H:i',strtotime($d['starts_at'])).($d['venue']?' at '.$d['venue']:'.'),'workflow',$request->user()->id); return back()->with('status','Meeting added to the Director\'s schedule.'); }
     public function updateMeeting(Request $request,ExecutiveMeeting $meeting):RedirectResponse { $this->authorizePa($request); $d=$request->validate(['status'=>['required',Rule::in(['scheduled','completed','postponed','cancelled'])],'outcome'=>['nullable','string','max:3000']]); $meeting->update($d); return back()->with('status','Meeting status updated.'); }
     public function storeFundFollowUp(Request $request):RedirectResponse { $this->authorizePa($request); $d=$request->validate(['approval_id'=>['required','exists:approvals,id','unique:approved_fund_follow_ups,approval_id'],'intended_purpose'=>['required','string','max:3000'],'follow_up_due_on'=>['nullable','date']]); $approval=Approval::findOrFail($d['approval_id']); abort_unless($approval->status==='approved',422,'Only fully approved requests can be followed up.'); ApprovedFundFollowUp::create($d+['approved_amount'=>(float)str_replace(',','',$approval->amount()??0),'tracked_by'=>$request->user()->id]); return back()->with('status','Approved funds added to implementation follow-up.'); }
     public function updateFundFollowUp(Request $request,ApprovedFundFollowUp $followUp):RedirectResponse { $this->authorizePa($request); $d=$request->validate(['status'=>['required',Rule::in(['awaiting_implementation','in_use','partly_accounted','verified','concern'])],'amount_accounted_for'=>['required','numeric','min:0','max:'.$followUp->approved_amount],'implementation_result'=>['required','string','max:3000'],'evidence_reference'=>['nullable','string','max:1000']]); $followUp->update($d); return back()->with('status','Approved-money follow-up updated.'); }

@@ -26,7 +26,7 @@ class DailyManagementReportController extends Controller
         $roles = $this->roles($request->user());
         $this->seedDailyUnitReports($date);
         $rows = DailyManagementReportSection::with('preparer')->whereDate('report_date', $date)->get()->groupBy('department_code')->map->keyBy('section_code');
-        $canViewAll = $roles->intersect(['ceo', 'director', 'personal-assistant'])->isNotEmpty();
+        $canViewAll = $roles->intersect(['ceo', 'director', 'personal-assistant', 'pa'])->isNotEmpty();
         $editable = $this->editableUnits($roles);
         $comments = DailyManagementReportComment::with(['author', 'unitReport'])->whereDate('report_date', $date)->oldest()->get();
         $closures = DB::table('daily_department_report_closures')->whereDate('report_date',$date)->get()->keyBy('department_code');
@@ -36,12 +36,20 @@ class DailyManagementReportController extends Controller
                 return isset($editable[$comment->department_code]);
             });
         }
-        if ($roles->contains('director')) {
+        // The Director reads the finished reports; the PA sees the same list, read-only.
+        $isDirectorView = $roles->contains('director');
+        if ($isDirectorView || $roles->intersect(['pa', 'personal-assistant'])->isNotEmpty()) {
             $readyDepartments = collect(self::DEPARTMENTS)
                 ->keys()
                 ->filter(fn (string $department) => $this->departmentReady($date, $department));
 
+            // The page lists the day's reports as links; one department opens at a time. The PA's report is listed with them.
+            $open = array_key_exists((string) $request->query('department'), self::DEPARTMENTS) ? $request->query('department') : null;
             return view('daily-reports.director', [
+                'open' => $open,
+                'isDirector' => $isDirectorView,
+                'paReport' => \App\Models\PaReport::with('author')->whereDate('report_date', $date)->where('status', 'submitted')->latest('submitted_at')->first(),
+                'ceoReport' => \App\Models\CeoReport::with('author')->whereDate('report_date', $date)->where('status', 'submitted')->latest('submitted_at')->first(),
                 'date' => $date,
                 'departments' => self::DEPARTMENTS,
                 'rows' => $rows,
@@ -410,6 +418,8 @@ class DailyManagementReportController extends Controller
                 $row = DailyManagementReportSection::whereDate('report_date', $date)->where('department_code', $departmentCode)->where('section_code', $unitCode)->first();
                 if ($row && data_get($row->details, 'system_source') !== 'auto_daily') continue;
                 $owner = $unitCode === 'sales_collections' ? ($owners['sales'] ?: $owners['finance']) : $owners[$departmentCode];
+                // No active manager account for this department yet (e.g. after onboarding): nothing to draft on their behalf.
+                if (! $owner) continue;
                 $values = ['summary'=>$summary, 'activities'=>$activities, 'details'=>['system_source'=>'auto_daily', 'generated_for'=>$date], 'prepared_by'=>$owner?->id];
                 if ($row) {
                     if (in_array($row->status, ['draft', 'changes_requested'], true)) $row->update($values);

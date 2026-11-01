@@ -20,7 +20,7 @@
                 @csrf @method('PUT')
                 <div class="field"><label for="name">Full name</label><input id="name" name="name" value="{{ old('name', $account->name) }}" required autocomplete="name"><small>This name appears on approvals, reports and the dashboard.</small></div>
                 <div class="form-grid">
-                    <div class="field"><label for="username">Username</label><input id="username" name="username" value="{{ old('username', $account->username) }}" required autocomplete="username"></div>
+                    @if($account->employee_id)<div class="field"><label>Username</label><input value="{{ $account->username }}" readonly aria-readonly="true"><small>The login username is the staff number. It changes automatically if HR changes the staff number.</small></div>@else<div class="field"><label for="username">Username</label><input id="username" name="username" value="{{ old('username', $account->username) }}" required autocomplete="username"></div>@endif
                     <div class="field"><label for="email">Email address</label><input type="email" id="email" name="email" value="{{ old('email', $account->email) }}" autocomplete="email" placeholder="name@brooksagro.ug"></div>
                 </div>
                 <div class="account-role"><span>Access level</span><strong>{{ $account->roleSummary() }}</strong><small>Roles and permissions are controlled separately to protect company records.</small></div>

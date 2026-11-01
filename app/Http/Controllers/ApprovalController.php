@@ -30,8 +30,12 @@ class ApprovalController extends Controller
             ->latest('submitted_at');
 
         if ($status === 'pending') {
-            $roleCodes = $this->effectiveRoleCodes($request);
-            if ($roleCodes->contains('director')) {
+            $roleCodes = $this->ownRoleCodes($request);
+            // Approval cover covers sales only: a delegate sees sales waiting for the covered role.
+            $coverRoles = $this->coverRoleCodes($request)->diff($roleCodes)->values();
+            if ($coverRoles->isNotEmpty() && ! $roleCodes->intersect(['finance-manager', 'ceo', 'director'])->count()) {
+                $query->where('module_key', 'sales')->whereHas('steps', fn ($q) => $q->where('status', 'pending')->whereIn('role_code', $coverRoles));
+            } elseif ($roleCodes->contains('director')) {
                 // The Director can track every submitted request that is routed to
                 // their stage, even while an earlier approval level is outstanding.
                 // The detail page still prevents a decision until the Director's
@@ -40,9 +44,11 @@ class ApprovalController extends Controller
                     ->where('role_code', 'director')
                     ->whereIn('status', ['waiting', 'pending']));
             } else {
-                $query->whereHas('steps', fn ($q) => $q
-                    ->where('status', 'pending')
-                    ->whereIn('role_code', $roleCodes));
+                $query->where(fn ($own) => $own->whereHas('steps', fn ($q) => $q
+                        ->where('status', 'pending')
+                        ->whereIn('role_code', $roleCodes))
+                    ->when($coverRoles->isNotEmpty(), fn ($any) => $any->orWhere(fn ($cover) => $cover->where('module_key', 'sales')
+                        ->whereHas('steps', fn ($q) => $q->where('status', 'pending')->whereIn('role_code', $coverRoles)))));
             }
         }
 
@@ -62,7 +68,7 @@ class ApprovalController extends Controller
     {
         $approval->load('steps');
         $step = $approval->currentStep();
-        $roleCodes = $this->effectiveRoleCodes($request);
+        $roleCodes = $this->effectiveRoleCodes($request, $approval);
         abort_unless($step && $roleCodes->contains($step->role_code), 403, 'This approval is waiting for another role or an active delegate.');
         $data = $request->validate([
             'decision' => ['required', 'in:approved,rejected'],
@@ -155,8 +161,12 @@ class ApprovalController extends Controller
                 $communications->toRole(
                     $next->role_code, 'Approval awaiting your decision',
                     $approval->label().' was approved by '.$request->user()->displayName().' and has reached your stage.',
-                    $request->user()->id
+                    $request->user()->id, route('approvals.show', $approval, false)
                 );
+                if ($approval->module_key === 'sales') {
+                    $communications->toSalesCover($next->role_code, 'Sale awaiting your decision',
+                        $approval->label().' has reached the '.$next->role_code.' stage.', $request->user()->id, route('approvals.show', $approval, false));
+                }
             }
         });
 
@@ -187,7 +197,7 @@ class ApprovalController extends Controller
                 ->orderBy('category')->orderBy('id')->get();
         }
 
-        $roleCodes = $this->effectiveRoleCodes($request);
+        $roleCodes = $this->effectiveRoleCodes($request, $approval);
         $currentStep = $approval->currentStep();
         $canActAtThisStage = $approval->status === 'pending'
             && $currentStep && $roleCodes->contains($currentStep->role_code);
@@ -300,8 +310,8 @@ class ApprovalController extends Controller
         abort_unless($ownRoles->contains($data['role_code']),403,'You can delegate only your own approval role.');
         ApprovalDelegation::where('delegator_id',$request->user()->id)->where('role_code',$data['role_code'])->where('is_active',true)->update(['is_active'=>false]);
         ApprovalDelegation::create($data+['delegator_id'=>$request->user()->id,'is_active'=>true]);
-        app(CommunicationService::class)->toUser((int)$data['delegate_id'],'Approval authority delegated to you','You may approve as '.$data['role_code'].' from '.$data['starts_on'].' to '.$data['ends_on'].'.','workflow',$request->user()->id,route('approvals.index',absolute:false));
-        return back()->with('status','Approval authority delegated for the selected period.');
+        app(CommunicationService::class)->toUser((int)$data['delegate_id'],'Approval authority delegated to you','You may approve sales as '.$data['role_code'].' from '.$data['starts_on'].' to '.$data['ends_on'].'. Other requests still wait for them.','workflow',$request->user()->id,route('approvals.index',absolute:false));
+        return back()->with('status','Sales approval cover assigned for the selected period.');
     }
 
     public function revokeDelegation(Request $request, ApprovalDelegation $delegation): RedirectResponse
@@ -311,10 +321,22 @@ class ApprovalController extends Controller
         return back()->with('status','Approval delegation revoked.');
     }
 
-    private function effectiveRoleCodes(Request $request)
+    /** Roles the user may approve as for this approval: their own, plus a covered role for sales only. */
+    private function effectiveRoleCodes(Request $request, ?Approval $approval = null)
     {
-        $direct=$request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter();
-        $delegated=ApprovalDelegation::current()->where('delegate_id',$request->user()->id)->pluck('role_code');
-        return $direct->merge($delegated)->unique();
+        $direct = $this->ownRoleCodes($request);
+        if ($approval && $approval->module_key !== 'sales') return $direct->unique();
+        return $direct->merge($this->coverRoleCodes($request))->unique();
+    }
+
+    private function ownRoleCodes(Request $request)
+    {
+        return $request->user()->roles->pluck('code')->push($request->user()->role?->code)->filter()->unique()->values();
+    }
+
+    /** Roles handed to this user through approval cover (sales approvals only). */
+    private function coverRoleCodes(Request $request)
+    {
+        return ApprovalDelegation::current()->where('delegate_id', $request->user()->id)->pluck('role_code')->unique()->values();
     }
 }

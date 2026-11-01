@@ -18,7 +18,7 @@
 @if ($groups->isEmpty())
     <div class="card">
         <p class="card-label">No breeds</p>
-        <p class="muted" style="margin:0 0 14px;">
+        <p class="muted u-m0-b14">
             Add the breeds you keep. The figures are on the delivery note or breed
             sheet that comes with the birds.
         </p>
@@ -102,9 +102,9 @@
     @endforeach
 @endif
 
-<div class="card" style="margin-top:18px;">
+<div class="card u-mt-18">
     <p class="card-label">Where these figures come from</p>
-    <p class="muted" style="margin:0;">
+    <p class="muted u-m0">
         Hatcheries supply a breed sheet or delivery note with the point of lay,
         peak week and expected rate. Copy those in and every batch of that breed
         gets its timetable automatically — when eggs are due, what size to expect,

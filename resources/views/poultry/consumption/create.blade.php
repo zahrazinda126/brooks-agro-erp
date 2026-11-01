@@ -75,7 +75,7 @@
 
     <div class="card">
         <p class="card-label">Who authorised it <span class="req">required</span></p>
-        <p class="muted" style="margin:0 0 14px;">
+        <p class="muted u-m0-b14">
             A live bird leaving the flock always needs a name against it.
             Without one, "eaten on the farm" is the easiest cover there is for
             a bird walking out of the gate.
@@ -106,7 +106,7 @@
 
     <div class="card">
         <p class="card-label">What the birds were worth</p>
-        <p class="muted" style="margin:0 0 14px;">
+        <p class="muted u-m0-b14">
             Not money that came in — none did. But the farm gave that up, and
             a year of unvalued birds is a hole in the accounts nobody can see.
         </p>

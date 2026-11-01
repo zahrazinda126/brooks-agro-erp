@@ -1,10 +1,11 @@
 @extends('layouts.app')
 @section('title','Vaccination Schedule')
 @section('content')
-<x-report-header eyebrow="Poultry health" title="Poultry Vaccination" description="Vaccinations administered by batch, upcoming schedule and complete treatment traceability." period="Current programme and history"><x-slot:actions><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button></x-slot:actions></x-report-header>
-@include('vaccination-schedule._filters')
+<x-report-header eyebrow="Poultry health" :title="$view === 'records' ? 'Vaccinations Given' : 'Vaccination Schedule'" :description="$view === 'records' ? 'Vaccinations administered by batch, with lot, expiry and dose traceability.' : 'The vaccination programme by bird age, per batch and general.'" period="Current programme and history"><x-slot:actions><button class="btn btn--quiet" type="button" onclick="window.print()">Print</button></x-slot:actions></x-report-header>
+@include('partials.health-switch', ['healthCurrent' => 'vaccination'])
+@if($canEdit)<div class="screen-actions"><button type="button" class="btn btn--small" onclick="document.getElementById('add-schedule').showModal()">+ Add schedule item</button><button type="button" class="btn btn--small" onclick="document.getElementById('record-vaccination').showModal()">+ Record vaccination</button></div>@endif
 @if($canEdit)
-<details class="card disclosure vaccination-record-form" id="record-vaccination" @if($errors->hasAny(['animal_group_id','vaccine_batch_number','expires_on']) || request()->filled('batch')) open @endif><summary><span><strong>Record vaccination completed</strong><small>Batch, vaccine, dose and manufacturer traceability</small></span></summary><div class="disclosure__body"><form method="POST" action="{{ route('vaccination-records.store') }}">@csrf
+<dialog id="record-vaccination" class="page-dialog" aria-label="Record vaccination"><button type="button" class="page-dialog__close" aria-label="Close" onclick="this.closest('dialog').close()">&times;</button><h3>Record vaccination completed</h3><form method="POST" action="{{ route('vaccination-records.store') }}">@csrf<input type="hidden" name="_dialog" value="record">
 <div class="form-grid">
 <div class="field"><label>Poultry batch</label><select name="animal_group_id" required><option value="">Choose batch</option>@foreach($batches as $batch)<option value="{{ $batch->id }}" @selected(old('animal_group_id',request('batch'))==$batch->id)>{{ $batch->code }} &mdash; {{ $batch->name ?: $batch->house }} ({{ number_format($batch->current_quantity) }} birds)</option>@endforeach</select></div>
 <div class="field"><label>Vaccine used</label><select name="medication_id" required><option value="">Choose vaccine</option>@foreach($medications as $vaccine)<option value="{{ $vaccine->id }}" @selected(old('medication_id',request('vaccine'))==$vaccine->id)>{{ $vaccine->name }}</option>@endforeach</select></div>
@@ -21,13 +22,15 @@
 <div class="field"><label>Cost (UGX)</label><input type="number" min="0" name="cost" value="{{ old('cost') }}"></div>
 <div class="field"><label class="check"><input type="checkbox" name="vet_involved" value="1" @checked(old('vet_involved'))><span>Veterinary professional involved</span></label></div>
 <div class="field field--wide"><label>Observations / notes</label><textarea name="findings">{{ old('findings') }}</textarea></div>
-</div><button class="btn">Save vaccination record</button></form></div></details>
+</div><button class="btn">Save vaccination record</button></form></dialog>
 @endif
-@if($canEdit)<details class="card disclosure"><summary>Add schedule item</summary><div class="disclosure__body"><form method="POST" action="{{ route('vaccination-schedule.store') }}">@csrf @include('vaccination-schedule._form',['plan'=>null])<button class="btn">Add to schedule</button></form></div></details>@endif
-<div class="section-heading" id="vaccination-records"><div><p class="card-label">Completed vaccinations</p><h3>Batch vaccination history</h3></div></div>
+@if($canEdit)<dialog id="add-schedule" class="page-dialog" aria-label="Add schedule item"><button type="button" class="page-dialog__close" aria-label="Close" onclick="this.closest('dialog').close()">&times;</button><h3>Add schedule item</h3><form method="POST" action="{{ route('vaccination-schedule.store') }}">@csrf<input type="hidden" name="_dialog" value="schedule"> @include('vaccination-schedule._form',['plan'=>null])<button class="btn">Add to schedule</button></form></dialog>@endif
+@include('vaccination-schedule._filters')
+@if($view === 'records')
 <div class="card table-wrap"><table><thead><tr><th>Date</th><th>Batch</th><th>Vaccine</th><th>Birds</th><th>Dose / route</th><th>Vaccine lot</th><th>Manufacturer / expiry</th><th>Next due</th><th>Recorded by</th></tr></thead><tbody>@forelse($records as $record)<tr><td>{{ $record->occurred_on->format('d M Y') }}</td><td><strong>{{ $record->batch?->code }}</strong><small>{{ $record->batch?->breed?->name }}</small></td><td>{{ $record->medication?->name }}</td><td>{{ number_format($record->birds_treated) }}</td><td>{{ $record->dose_given }}<small>{{ $record->application_route }}</small></td><td>{{ $record->vaccine_batch_number ?: 'Not recorded' }}</td><td>{{ $record->manufacturer ?: 'Not recorded' }}<small>Expires {{ $record->expires_on?->format('d M Y') ?: 'not recorded' }}</small></td><td>{{ $record->next_due_on?->format('d M Y') ?: 'Not set' }}</td><td>{{ $record->recorder?->displayName() }}</td></tr>@empty<tr><td colspan="9">No completed vaccinations match these filters.</td></tr>@endforelse</tbody></table></div>{{ $records->links() }}
-<div class="section-heading" id="vaccination-schedule"><div><p class="card-label">Standard programme</p><h3>Vaccination schedule by bird age</h3></div></div>
-<div class="card table-wrap vaccination-table"><table><thead><tr><th>Batch</th><th>Purpose</th><th>Vaccine</th><th>Breed</th><th>First due</th><th>Window</th><th>Repeats</th><th>Essential</th><th>Status</th><th></th></tr></thead><tbody>@forelse($plans as $plan)<tr><td>{{ $plan->batch?->code ?? 'General programme' }}</td><td>{{ Str::headline($plan->purpose) }}</td><td><strong>{{ $plan->medication?->name }}</strong><small>{{ $plan->note }}</small></td><td>{{ $plan->breed?->name ?? 'All breeds' }}</td><td>{{ $plan->ageLabel() }}</td><td>&plusmn; {{ $plan->window_days }} days</td><td>{{ $plan->repeat_every_days ? 'Every '.$plan->repeat_every_days.' days until day '.($plan->repeat_until_days?:$plan->age_days+365) : 'Once' }}</td><td>{{ $plan->is_essential?'Yes':'No' }}</td><td>{{ $plan->is_active?'Active':'Inactive' }}</td><td>@if($canEdit)<details class="disclosure"><summary>Edit</summary><div class="disclosure__body"><form method="POST" action="{{ route('vaccination-schedule.update',$plan) }}">@csrf @method('PUT') @include('vaccination-schedule._form',['plan'=>$plan])<button class="btn btn--small">Save</button></form></div></details>@endif</td></tr>@empty<tr><td colspan="10">No schedule items match these filters.</td></tr>@endforelse</tbody></table></div>
+@else
+
+<div class="card table-wrap vaccination-table"><table><thead><tr><th>Batch</th><th>Purpose</th><th>Vaccine</th><th>Breed</th><th>First due</th><th>Window</th><th>Repeats</th><th>Essential</th><th>Status</th><th></th></tr></thead><tbody>@forelse($plans as $plan)<tr><td>{{ $plan->batch?->code ?? 'General programme' }}</td><td>{{ Str::headline($plan->purpose) }}</td><td><strong>{{ $plan->medication?->name }}</strong><small>{{ $plan->note }}</small></td><td>{{ $plan->breed?->name ?? 'All breeds' }}</td><td>{{ $plan->ageLabel() }}</td><td>&plusmn; {{ $plan->window_days }} days</td><td>{{ $plan->repeat_every_days ? 'Every '.$plan->repeat_every_days.' days until day '.($plan->repeat_until_days?:$plan->age_days+365) : 'Once' }}</td><td>{{ $plan->is_essential?'Yes':'No' }}</td><td>@if($plan->is_finished)<x-status-pill status="completed" label="Finished" />@else<x-status-pill :status="$plan->is_active ? 'pending' : 'inactive'" :label="$plan->is_active ? 'Active' : 'Inactive'" />@endif @if($plan->doses_given && !$plan->is_finished)<small class="table-sub">{{ $plan->doses_given }} of {{ count($plan->dueAges()) }} doses given</small>@endif</td><td>@if($canEdit)<button type="button" class="btn btn--quiet btn--small" onclick="document.getElementById('edit-plan-{{ $plan->id }}').showModal()">Edit</button><dialog id="edit-plan-{{ $plan->id }}" class="page-dialog" aria-label="Edit schedule item"><button type="button" class="page-dialog__close" aria-label="Close" onclick="this.closest('dialog').close()">&times;</button><h3>Edit schedule item</h3><form method="POST" action="{{ route('vaccination-schedule.update',$plan) }}">@csrf @method('PUT')<input type="hidden" name="_dialog" value="edit-plan-{{ $plan->id }}"> @include('vaccination-schedule._form',['plan'=>$plan])<div class="form-actions"><button class="btn">Save changes</button></div></form></dialog>@endif</td></tr>@empty<tr><td colspan="10">No schedule items match these filters.</td></tr>@endforelse</tbody></table></div>
 <script>
 document.querySelectorAll('[data-schedule-batch]').forEach(select => {
     const details = select.closest('form').querySelector('[data-schedule-details]');
@@ -38,5 +41,14 @@ document.querySelectorAll('[data-schedule-batch]').forEach(select => {
     select.addEventListener('change', sync);
     sync();
 });
+@endif
+</script>
+<script>
+(() => {
+    // Reopen the form after a failed save, or when a reminder link pre-selects a batch.
+    const open = @json(old('_dialog') ?: (request()->filled('batch') && $view === 'records' ? 'record' : null));
+    const dialog = open && document.getElementById(open === 'record' ? 'record-vaccination' : (open === 'schedule' ? 'add-schedule' : open));
+    if (dialog && dialog.showModal) dialog.showModal();
+})();
 </script>
 @endsection

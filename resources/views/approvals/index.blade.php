@@ -2,8 +2,9 @@
 
 @section('title', 'Approval Queue')
 @section('content')
-@if($ownApprovalRoles->isNotEmpty())
-<details class="card disclosure" style="margin-bottom:1rem"><summary><span><strong>Approval cover while I am absent</strong><small>Temporarily authorize another active user to approve on your behalf</small></span></summary><div class="disclosure__body">
+{{-- Sales approval cover is set up from Pending Approvals only. --}}
+@if($ownApprovalRoles->isNotEmpty() && $status === 'pending' && ! request()->filled('type'))
+<details class="card disclosure u-mb-16"><summary><span><strong>Sales approval cover while I am absent</strong><small>Someone else approves sales on your behalf while you are away. Budgets, purchases and other requests still wait for you.</small></span></summary><div class="disclosure__body">
     <form method="POST" action="{{ route('approvals.delegations.store') }}" class="form-grid">@csrf
         <div class="field"><label>Approval role</label><select name="role_code" required>@foreach($ownApprovalRoles as $role)<option value="{{ $role }}">{{ Str::headline($role) }}</option>@endforeach</select></div>
         <div class="field"><label>Person covering</label><select name="delegate_id" required><option value="">Choose person</option>@foreach($delegateUsers as $person)<option value="{{ $person->id }}">{{ $person->displayName() }}</option>@endforeach</select></div>
@@ -24,7 +25,7 @@
             ? $approval->steps->where('stage', '<', $directorStep->stage)->whereNotIn('status', ['approved'])->count()
             : 0;
     @endphp
-    <article class="card" style="margin-bottom:1rem">
+    <article class="card u-mb-16">
         <div class="page-head">
             <div><p class="card-label">{{ ucfirst(str_replace('-', ' ', $approval->module_key)) }}</p><h2>{{ $approval->label() }}</h2></div>
             <strong>{{ $approval->status === 'pending' ? 'SUBMITTED' : strtoupper($approval->status) }}</strong>

@@ -25,3 +25,15 @@ Schedule::command('budgets:prepare-weekly-drafts')
     ->name('prepare-weekly-department-budget-drafts')
     ->dailyAt('00:10')
     ->withoutOverlapping();
+
+// Customers with no purchase for a year move to Archived (they come back when they buy again).
+Schedule::call(fn () => \App\Support\CustomerArchive::archiveDormant())
+    ->name('archive-dormant-customers')
+    ->dailyAt('01:30')
+    ->withoutOverlapping();
+
+// Straight-line depreciation for the month just ended; idempotent per asset and month.
+Schedule::command('finance:post-depreciation')
+    ->name('post-monthly-depreciation')
+    ->monthlyOn(1, '01:00')
+    ->withoutOverlapping();

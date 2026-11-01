@@ -89,7 +89,7 @@
     @endif
 </div>
 
-<div class="detail-grid" style="margin-top:12px;">
+<div class="detail-grid u-mt-12">
 
     {{--
         The laying timeline. This is what the age tracking is for: it turns
@@ -141,18 +141,18 @@
             <p class="card-label">Egg size expected now</p>
 
             @if (! $batch->shouldBeLaying())
-                <p class="muted" style="margin:0;">
+                <p class="muted u-m0">
                     Not laying yet. When it starts, expect <strong>starter</strong> eggs —
                     a hen's first eggs are small and grow with her over the following
                     weeks.
                 </p>
             @elseif ($expected->isEmpty())
-                <p class="muted" style="margin:0;">
+                <p class="muted u-m0">
                     Past the normal laying window. Size and shell quality usually fall
                     off at this age.
                 </p>
             @else
-                <p class="muted" style="margin:0 0 12px;">
+                <p class="muted u-m0-b12">
                     At {{ $weeks }} weeks, most eggs should be:
                 </p>
 
@@ -165,7 +165,7 @@
                     @endforeach
                 </div>
 
-                <p class="field-hint" style="margin-top:12px;">
+                <p class="field-hint u-mt-12">
                     Smaller sizes than this from a flock of {{ $weeks }} weeks usually
                     points at feed, water or disease rather than the birds.
                 </p>
@@ -216,7 +216,7 @@
             <dt>Remaining</dt><dd><strong>{{ number_format($batch->current_quantity) }}</strong></dd>
         </dl>
 
-        <p class="field-hint" style="margin-top:12px;">
+        <p class="field-hint u-mt-12">
             These update as daily records are entered.
         </p>
     </div>
@@ -225,12 +225,12 @@
 @if ($batch->notes)
     <div class="card">
         <p class="card-label">Notes</p>
-        <p style="margin:0;white-space:pre-wrap;">{{ $batch->notes }}</p>
+        <p class="u-m0 u-pre-wrap">{{ $batch->notes }}</p>
     </div>
 @endif
 
 @if ($user->canDo('batches', 'edit') && $batch->isActive())
-    <details class="card" style="margin-top:12px;">
+    <details class="card u-mt-12">
         <summary class="card-label" style="cursor:pointer;">Close this batch</summary>
 
         <p class="muted" style="margin:12px 0;">
@@ -255,7 +255,7 @@
     </details>
 @endif
 
-<p style="margin-top:18px;">
+<p class="u-mt-18">
     <a class="btn btn--quiet btn--inline" href="{{ route('batches.index') }}">Back to batches</a>
 </p>
 

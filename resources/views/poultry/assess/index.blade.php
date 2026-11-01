@@ -4,6 +4,7 @@
 
 @section('content')
 
+@include('partials.health-switch', ['healthCurrent' => 'examination'])
 <div class="page-head">
     <h2>Deaths to assess</h2>
     <p>Workers have counted. You decide why.</p>
@@ -12,7 +13,7 @@
 @if ($pending->isEmpty())
     <div class="card">
         <p class="card-label">Nothing waiting</p>
-        <p class="muted" style="margin:0;">
+        <p class="muted u-m0">
             Every death recorded has been assessed. New ones appear here as
             workers enter them.
         </p>

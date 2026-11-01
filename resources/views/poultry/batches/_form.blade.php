@@ -1,5 +1,5 @@
 @php($showBatchCosts = !auth()->user()->isProductionUser())
-﻿{{--
+{{--
     Shared by create and edit.
 
     Ordered the way birds actually arrive: what they are, when they came,
@@ -11,7 +11,7 @@
     <p class="card-label">What arrived</p>
 
     <div class="form-grid">
-        @if(!isset($batch) && isset($batchOrders))<div class="field field--wide"><label for="batch_order_id">Finance pre-arrival order</label><select id="batch_order_id" name="batch_order_id"><option value="">No finance order / legacy arrival</option>@foreach($batchOrders as $order)<option value="{{ $order->id }}" data-supplier="{{ $order->supplier_name }}" data-breed="{{ $order->breed }}" data-quantity="{{ $order->quantity_ordered }}" @if($showBatchCosts) data-total="{{ $order->order_total }}" @endif @selected(old('batch_order_id')==$order->id)>{{ $order->order_number }} · {{ $order->supplier_name }} · {{ number_format($order->quantity_ordered) }} birds · paid UGX {{ number_format($order->paidAmount()) }}</option>@endforeach</select><p class="field-hint">Finance owns all payments. Production selects the order and records only arrival quantities, condition, housing and other production details.</p></div>@endif
+        @if(!isset($batch) && isset($batchOrders))<div class="field field--wide"><label for="batch_order_id">Finance pre-arrival order</label><select id="batch_order_id" name="batch_order_id"><option value="">No finance order / legacy arrival</option>@foreach($batchOrders as $order)<option value="{{ $order->id }}" data-supplier="{{ $order->supplier_name }}" data-breed="{{ $order->breed }}" data-quantity="{{ $order->quantity_ordered }}" @if($showBatchCosts) data-total="{{ $order->order_total }}" @endif @selected(old('batch_order_id')==$order->id)>{{ $order->order_number }} · {{ $order->supplier_name }} · {{ number_format($order->quantity_ordered) }} birds · paid @money($order->paidAmount())</option>@endforeach</select><p class="field-hint">Finance owns all payments. Production selects the order and records only arrival quantities, condition, housing and other production details.</p></div>@endif
         <div class="field @error('code') field--error @enderror">
             <label for="code">Batch code</label>
             <input id="code" name="code" type="text"
@@ -226,7 +226,7 @@
 @if (! isset($batch))
 <div class="card">
     <p class="card-label">Final step · Allocate birds to houses</p>
-    <p class="field-hint">The farm has 43 poultry houses. Allocate only the live birds received: paid birds + free birds − transit deaths. Chicks aged 42 days or less must go into brooders.</p>
+    <p class="field-hint">The farm has 43 poultry houses. Allocate only the live birds received: paid birds + free birds − transit deaths. Chicks aged {{ config('farm.brooder_max_age_days') }} days or less must go into brooders.</p>
     @error('house_allocations')<p class="field-error">{{ $message }}</p>@enderror
     <div class="house-allocation-list">
         @forelse ($availableHouses as $house)

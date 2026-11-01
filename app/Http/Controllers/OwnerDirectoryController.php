@@ -20,6 +20,7 @@ class OwnerDirectoryController extends Controller
     public function customers(Request $request): View
     {
         $this->authorizeCustomerDirectory($request);
+        \App\Support\CustomerArchive::archiveDormant();
         $search = trim((string) $request->query('search'));
         $request->validate([
             'month'=>['nullable','date_format:Y-m'],
@@ -37,7 +38,7 @@ class OwnerDirectoryController extends Controller
         $purchasedTo = $request->date('purchased_to')?->toDateString();
         $createdFrom = $request->date('created_from')?->toDateString();
         $createdTo = $request->date('created_to')?->toDateString();
-        $month = Carbon::createFromFormat('Y-m', (string) $request->query('month', now()->format('Y-m')))->startOfMonth();
+        $month = Carbon::createFromFormat('!Y-m', (string) $request->query('month', now()->format('Y-m')))->startOfMonth();
         $monthEnd = $month->copy()->endOfMonth();
         $productId = $request->integer('product_id') ?: null;
 
@@ -79,7 +80,7 @@ class OwnerDirectoryController extends Controller
             ->where('sale.status', '!=', 'void')
             ->whereBetween('sale.sale_date', [$month->toDateString(), $monthEnd->toDateString()])
             ->when($productId, fn ($query) => $query->where('line.product_id', $productId))
-            ->selectRaw("coalesce(customer.id, 0) as customer_id, coalesce(customer.name, sale.customer_name) as customer_name, max(customer.phone) as phone, coalesce(product.name, line.description) as product_name, case when product.egg_grade_id is not null then 'trays' else line.unit end as unit, sum(case when product.egg_grade_id is not null and line.unit = 'egg' then line.quantity / greatest(coalesce(grade.eggs_per_tray, 30), 1) else line.quantity end) as quantity, sum(line.line_total) as amount, case when sum(case when product.egg_grade_id is not null and line.unit = 'egg' then line.quantity / greatest(coalesce(grade.eggs_per_tray, 30), 1) else line.quantity end) > 0 then sum(line.line_total) / sum(case when product.egg_grade_id is not null and line.unit = 'egg' then line.quantity / greatest(coalesce(grade.eggs_per_tray, 30), 1) else line.quantity end) else 0 end as average_price, count(distinct sale.id) as purchase_days, max(sale.sale_date) as last_purchase")
+            ->selectRaw("coalesce(customer.id, 0) as customer_id, coalesce(customer.name, sale.customer_name) as customer_name, max(customer.phone) as phone, coalesce(product.name, line.description) as product_name, case when product.egg_grade_id is not null then 'trays' else line.unit end as unit, sum(case when product.egg_grade_id is not null and line.unit = 'egg' then line.quantity / (case when coalesce(grade.eggs_per_tray, 30) < 1 then 1 else coalesce(grade.eggs_per_tray, 30) end) else line.quantity end) as quantity, sum(line.line_total) as amount, case when sum(case when product.egg_grade_id is not null and line.unit = 'egg' then line.quantity / (case when coalesce(grade.eggs_per_tray, 30) < 1 then 1 else coalesce(grade.eggs_per_tray, 30) end) else line.quantity end) > 0 then sum(line.line_total) / sum(case when product.egg_grade_id is not null and line.unit = 'egg' then line.quantity / (case when coalesce(grade.eggs_per_tray, 30) < 1 then 1 else coalesce(grade.eggs_per_tray, 30) end) else line.quantity end) else 0 end as average_price, count(distinct sale.id) as purchase_days, max(sale.sale_date) as last_purchase")
             ->groupByRaw("coalesce(customer.id, 0), coalesce(customer.name, sale.customer_name), coalesce(product.name, line.description), case when product.egg_grade_id is not null then 'trays' else line.unit end")
             ->orderByDesc('amount')->get();
         $productRevenue = (float) $productRows->sum('amount');

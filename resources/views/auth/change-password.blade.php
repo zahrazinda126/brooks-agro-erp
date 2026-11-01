@@ -3,9 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#06302E">
+    <meta name="theme-color" content="#fbf1ec">
     <title>Choose a password · Brooks Agro</title>
-    <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/app.css') }}?v={{ filemtime(public_path('css/app.css')) }}">
+    <link rel="stylesheet" href="{{ asset('css/farmhub.css') }}?v={{ filemtime(public_path('css/farmhub.css')) }}">
 </head>
 <body>
     <main class="auth">

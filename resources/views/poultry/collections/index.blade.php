@@ -84,9 +84,9 @@
 </div>
 
 @if ($collections->isEmpty())
-    <div class="card" style="margin-top:12px;">
+    <div class="card u-mt-12">
         <p class="card-label">Nothing recorded</p>
-        <p class="muted" style="margin:0;">
+        <p class="muted u-m0">
             No collections in this range.
         </p>
     </div>
@@ -179,9 +179,9 @@
     <div class="pager">{{ $collections->links() }}</div>
 @endif
 
-<div class="card" style="margin-top:18px;">
+<div class="card u-mt-18">
     <p class="card-label">About these times</p>
-    <p class="muted" style="margin:0;">
+    <p class="muted u-m0">
         <strong>Collected</strong> is what the worker entered — their statement
         of when they did the round. <strong>Recorded</strong> is when the form
         was submitted, taken from the system rather than typed, so it cannot be
