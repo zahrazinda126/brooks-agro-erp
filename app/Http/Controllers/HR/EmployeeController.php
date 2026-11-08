@@ -84,6 +84,7 @@ class EmployeeController extends Controller
         return view('hr.create', [
             'departments' => $this->departments(),
             'roles'       => $this->roles(),
+            'rooms'       => TemporaryWorkerController::rooms(),
             // Shown as a guide; a blank number is allocated on save.
             'nextStaffNo' => $this->nextStaffNo(),
         ]);
@@ -93,11 +94,34 @@ class EmployeeController extends Controller
     {
         $data = $request->validated();
         unset($data['national_id_photo']);
+        $roomId = $data['staff_hostel_room_id'] ?? null;
+        unset($data['staff_hostel_room_id']);
 
         $data['staff_no'] = ($data['staff_no'] ?? null) ?: $this->nextStaffNo();
         $data['created_by'] = $request->user()->id;
+        if (($data['employment_type'] ?? null) === 'temporary') {
+            $data['on_payroll'] = false;
+            $data['base_salary'] = 0;
+            $data['pay_frequency'] = 'daily';
+            $data['payment_method'] = null;
+        }
 
-        $employee = Employee::create($data);
+        $employee = DB::transaction(function () use ($data, $roomId, $request) {
+            $employee = Employee::create($data);
+            if ($roomId && $employee->employment_type === 'temporary') {
+                $room = DB::table('staff_hostel_rooms')->where('id', $roomId)->where('is_active', true)->lockForUpdate()->first();
+                abort_if(!$room || $room->condition === 'unavailable', 422, 'Choose an available room for this temporary worker.');
+                $occupied = DB::table('staff_accommodation_allocations')->where('staff_hostel_room_id', $room->id)->whereNull('checked_out_on')->count();
+                abort_if($occupied >= $room->bed_spaces, 422, 'That room has no free bed space.');
+                DB::table('staff_accommodation_allocations')->insert([
+                    'staff_hostel_room_id' => $room->id, 'employee_id' => $employee->id,
+                    'checked_in_on' => $employee->hire_date ?: today()->toDateString(),
+                    'expected_checkout_on' => $employee->expected_end_date,
+                    'recorded_by' => $request->user()->id, 'created_at' => now(), 'updated_at' => now(),
+                ]);
+            }
+            return $employee;
+        });
         $this->saveNationalIdPhoto($request, $employee);
 
         AuditLog::record(

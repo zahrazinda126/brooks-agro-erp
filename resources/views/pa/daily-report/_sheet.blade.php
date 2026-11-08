@@ -12,7 +12,9 @@
     $visitors = $facts['visitors'] ?? [];
     $money = $facts['money'] ?? ['approved' => 0, 'accounted' => 0, 'awaiting' => []];
     $build = $facts['construction'] ?? [];
+    $constructionUpdates = collect(old('construction_updates', $report->construction_updates ?? []))->keyBy('project_id');
     $activities = old('activities', $report->activities ?? []);
+    $activityProjectOptions = collect(['Kituntu', 'Poultry', 'Goats', 'Rabbits', 'Dogs', 'Garden', 'Construction'])->merge(collect($build)->pluck('name'))->unique()->values();
     if ($editable && count($activities) < 3) $activities = array_merge($activities, array_fill(0, 3 - count($activities), ['project' => '', 'activity' => '', 'status' => '']));
     // "CEO" reads as "CEO'S INDIVIDUAL DIRECTIVES REPORT"; other teams as "HR – INDIVIDUAL DIRECTIVES REPORT".
     $officerTitle = fn ($team) => mb_strtoupper($team).(preg_match('/^(ceo|director|chairman)$/i', $team) ? "'S" : ' –').' INDIVIDUAL DIRECTIVES REPORT';
@@ -45,23 +47,53 @@
  <h4>Projects / Farm Activities</h4>
  <table><thead><tr><th style="width:44px">S/N</th><th style="width:20%">Project</th><th>Activity Done</th><th style="width:20%">Status</th></tr></thead><tbody id="pa-activities">
  @if($editable)
-  @foreach($activities as $i => $a)<tr><td class="num">{{ $i + 1 }}</td><td><input class="cell-input" name="activities[{{ $i }}][project]" value="{{ $a['project'] ?? '' }}" list="pa-projects" placeholder="e.g. Kituntu"></td><td><input class="cell-input" name="activities[{{ $i }}][activity]" value="{{ $a['activity'] ?? '' }}" placeholder="e.g. Irrigation in the tomatoes"></td><td><input class="cell-input" name="activities[{{ $i }}][status]" value="{{ $a['status'] ?? '' }}" list="pa-statuses" placeholder="Done / On going"></td></tr>@endforeach
+  @foreach($activities as $i => $a)<tr><td class="num">{{ $i + 1 }}</td><td><input class="cell-input pa-project-name" name="activities[{{ $i }}][project]" value="{{ $a['project'] ?? '' }}" list="pa-projects" placeholder="e.g. Kituntu"><select class="cell-input pa-construction-link" name="activities[{{ $i }}][construction_project_id]"><option value="">Link construction project</option>@foreach($build as $project)<option value="{{ $project['project_id'] }}" @selected(($a['construction_project_id'] ?? '') == $project['project_id'])>{{ $project['name'] }}</option>@endforeach</select></td><td><input class="cell-input" name="activities[{{ $i }}][activity]" value="{{ $a['activity'] ?? '' }}" placeholder="e.g. Irrigation in the tomatoes"></td><td><input class="cell-input" name="activities[{{ $i }}][status]" value="{{ $a['status'] ?? '' }}" list="pa-statuses" placeholder="Done / On going"></td></tr>@endforeach
  @else
   @forelse($report->activities ?? [] as $i => $a)<tr><td class="num">{{ $i + 1 }}</td><td>{{ $a['project'] ?: '—' }}</td><td>{{ $a['activity'] }}</td><td class="num">{{ $a['status'] ?: '—' }}</td></tr>
   @empty<tr><td colspan="4" class="empty">{{ $report->did_today ?: 'No activities were listed.' }}</td></tr>@endforelse
  @endif
  </tbody></table>
  @if($editable)
-  <datalist id="pa-projects">@foreach(['Kituntu', 'Poultry', 'Goats', 'Rabbits', 'Dogs', 'Garden', 'Construction'] as $p)<option value="{{ $p }}">@endforeach</datalist>
+  <datalist id="pa-projects">@foreach($activityProjectOptions as $p)<option value="{{ $p }}">@endforeach</datalist>
   <datalist id="pa-statuses">@foreach(['Done', 'On going', 'In progress', 'Pending', 'Not done'] as $st)<option value="{{ $st }}">@endforeach</datalist>
+  <template data-construction-project-options>@foreach($build as $project)<option value="{{ $project['project_id'] }}">{{ $project['name'] }}</option>@endforeach</template>
   <button type="button" class="btn btn--quiet btn--small add-row no-print" id="pa-add-activity">+ Add a row</button>
   <script>
+  var activityTable=document.getElementById('pa-activities');
+  activityTable.addEventListener('change',function(e){if(e.target.matches('.pa-construction-link')&&e.target.value){var name=e.target.options[e.target.selectedIndex].textContent; e.target.closest('tr').querySelector('.pa-project-name').value=name;}});
   document.getElementById('pa-add-activity').addEventListener('click', function () {
-      var body = document.getElementById('pa-activities'), i = body.rows.length, row = body.insertRow();
-      row.innerHTML = '<td class="num">' + (i + 1) + '</td><td><input class="cell-input" name="activities[' + i + '][project]" list="pa-projects" placeholder="e.g. Kituntu"></td><td><input class="cell-input" name="activities[' + i + '][activity]" placeholder="Activity done"></td><td><input class="cell-input" name="activities[' + i + '][status]" list="pa-statuses" placeholder="Done / On going"></td>';
+      var body = activityTable, i = body.rows.length, row = body.insertRow(), options=document.querySelector('[data-construction-project-options]').innerHTML;
+      row.innerHTML = '<td class="num">' + (i + 1) + '</td><td><input class="cell-input pa-project-name" name="activities[' + i + '][project]" list="pa-projects" placeholder="e.g. Kituntu"><select class="cell-input pa-construction-link" name="activities[' + i + '][construction_project_id]"><option value="">Link construction project</option>' + options + '</select></td><td><input class="cell-input" name="activities[' + i + '][activity]" placeholder="Activity done"></td><td><input class="cell-input" name="activities[' + i + '][status]" list="pa-statuses" placeholder="Done / On going"></td>';
       row.querySelector('input').focus();
   });
   </script>
+ @endif
+
+ @if($build || $report->construction_updates)
+ <h4>Construction Project Daily Updates</h4>
+ @if($editable)<p class="officer">Project name, ID, timeline, project headcount and lead contact are filled from the project register. Link construction activities to a project in the list above; their count and progress fill automatically. Enter tasks, challenges, PPE and remarks here. The HR daily construction report reads these entries.</p>@endif
+ <table><thead><tr><th>Project</th><th>Activities</th><th>Tasks to be achieved</th><th>Completed %</th><th>Pending %</th><th>Challenges</th><th>PPE on site</th><th>Remarks</th></tr></thead><tbody>
+ @forelse($build as $i => $project)
+  @php($update=$constructionUpdates->get($project['project_id'], []))
+  @php($projectActivities=collect($activities)->filter(fn($activity)=>filled($activity['activity']??null)&&mb_strtolower(trim((string)($activity['project']??'')))===mb_strtolower(trim($project['name']))))
+  @php($projectStatuses=$projectActivities->pluck('status')->map(fn($status)=>mb_strtolower(trim((string)$status))))
+  @php($hasProjectStatuses=$projectStatuses->isNotEmpty()&&$projectStatuses->every(fn($status)=>$status!==''))
+  @php($projectCompleted=$hasProjectStatuses?(int)round($projectStatuses->filter(fn($status)=>in_array($status,['done','complete','completed'],true))->count()/$projectStatuses->count()*100):null)
+  <tr><td>{{ $project['name'] }} <small class="data-sub">#{{ $project['project_id'] }} · {{ $project['timeline'] }} · {{ $project['builders'] }} people · Lead: {{ $project['contact'] ?: '—' }}</small>@if($editable)<input type="hidden" name="construction_updates[{{ $i }}][project_id]" value="{{ $project['project_id'] }}">@endif</td>
+   @if($editable)
+    <td>{{ $projectActivities->count() }}</td>
+    <td><textarea class="cell-input" name="construction_updates[{{ $i }}][tasks]">{{ $update['tasks'] ?? '' }}</textarea></td>
+    <td>{{ $projectCompleted === null ? '—' : $projectCompleted.'%' }}</td>
+    <td>{{ $projectCompleted === null ? '—' : (100-$projectCompleted).'%' }}</td>
+    <td><textarea class="cell-input" name="construction_updates[{{ $i }}][challenges]">{{ $update['challenges'] ?? '' }}</textarea></td>
+    <td><textarea class="cell-input" name="construction_updates[{{ $i }}][ppe]">{{ $update['ppe'] ?? '' }}</textarea></td>
+    <td><textarea class="cell-input" name="construction_updates[{{ $i }}][remarks]">{{ $update['remarks'] ?? '' }}</textarea></td>
+   @else
+    <td>{{ $projectActivities->count() ?: '—' }}</td><td>{{ $update['tasks'] ?? '—' }}</td><td>{{ $projectCompleted === null ? '—' : $projectCompleted.'%' }}</td><td>{{ $projectCompleted === null ? '—' : (100-$projectCompleted).'%' }}</td><td>{{ $update['challenges'] ?? '—' }}</td><td>{{ $update['ppe'] ?? '—' }}</td><td>{{ $update['remarks'] ?? '—' }}</td>
+   @endif
+  </tr>
+ @empty<tr><td colspan="8" class="empty">No active construction projects are registered.</td></tr>@endforelse
+ </tbody></table>
  @endif
 
  <h4>Chairman's Engagements</h4>

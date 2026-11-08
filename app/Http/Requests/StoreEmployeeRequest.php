@@ -46,11 +46,12 @@ class StoreEmployeeRequest extends FormRequest
                 'permanent', 'contract', 'casual', 'temporary', 'intern', 'student', 'vacist', 'other',
             ])],
 
-            'hire_date' => ['nullable', 'date'],
+            'hire_date' => ['nullable', 'required_if:employment_type,temporary', 'date'],
 
             // Anyone temporary should have an expected leaving date, so HR
             // sees who is finishing rather than finding out on payday.
             'expected_end_date' => ['nullable', 'date', 'after_or_equal:hire_date'],
+            'staff_hostel_room_id' => ['nullable', 'exists:staff_hostel_rooms,id'],
             'placement_from'    => ['nullable', 'string', 'max:160'],
 
             'end_date' => ['nullable', 'date', 'after_or_equal:hire_date'],

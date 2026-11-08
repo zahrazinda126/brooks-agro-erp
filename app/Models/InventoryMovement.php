@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class InventoryMovement extends Model
 {
-    protected $fillable = ['inventory_item_id', 'inventory_store_id', 'inventory_batch_id', 'inventory_request_id', 'adjustment_reason', 'poultry_house_id', 'construction_project_id', 'financial_transaction_id', 'movement_date', 'movement_type', 'receipt_status', 'location', 'quantity', 'unit_cost', 'total_cost', 'supplier_or_recipient', 'reference', 'notes', 'recorded_by', 'confirmed_by', 'confirmed_at'];
+    protected $fillable = ['inventory_item_id', 'inventory_store_id', 'employee_id', 'inventory_batch_id', 'inventory_request_id', 'adjustment_reason', 'poultry_house_id', 'construction_project_id', 'financial_transaction_id', 'movement_date', 'movement_type', 'receipt_status', 'location', 'quantity', 'unit_cost', 'total_cost', 'supplier_or_recipient', 'reference', 'notes', 'recorded_by', 'confirmed_by', 'confirmed_at'];
 
     protected function casts(): array
     {
@@ -17,6 +17,11 @@ class InventoryMovement extends Model
     public function item(): BelongsTo
     {
         return $this->belongsTo(InventoryItem::class, 'inventory_item_id');
+    }
+
+    public function employee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class);
     }
 
     public function recorder(): BelongsTo

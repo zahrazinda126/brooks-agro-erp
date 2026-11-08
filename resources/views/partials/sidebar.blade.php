@@ -389,7 +389,7 @@
         if (($item['key'] ?? null) === 'pa-meetings') return request()->routeIs('pa.meetings');
         if (($item['key'] ?? null) === 'pa-money') return request()->routeIs('pa.approved-money');
         if (($item['key'] ?? null) === 'on-farm') return request()->routeIs('hr.on-farm');
-        if (($item['key'] ?? null) === 'staff-consumables') return request()->routeIs('hr.accommodation.index') && request('view') === 'consumables';
+        if (($item['key'] ?? null) === 'staff-consumables') return request()->routeIs('hr.consumables.index');
         if (($item['key'] ?? null) === 'temporary-workers') return request()->routeIs('hr.temporary.*');
         if (($item['key'] ?? null) === 'profitability-report') return request()->routeIs('finance.reports.profitability');
         if (($item['key'] ?? null) === 'unit-costs-report') return request()->routeIs('finance.reports.unit-costs');
@@ -496,7 +496,6 @@
         'Fixed Assets' => [
             ['key' => 'assets', 'label' => 'Asset Register'],
         ],
-        'Reports' => $hrSections['📈 Reports'],
         'Communication' => $hrSections['Communication'],
     ];
 
@@ -696,7 +695,7 @@
                                     ? match ($item['key']) {
                                         'hr' => route('employees.index'),
                                         'hr-entry' => route('hr.data-entry.index'),
-                                        'staff-consumables' => route('hr.accommodation.index', ['view' => 'consumables']),
+                                        'staff-consumables' => route('hr.consumables.index'),
                                         'accommodation' => route('hr.accommodation.index'),
                                         'on-farm' => route('hr.on-farm'),
                                         'temporary-workers' => route('hr.temporary.index'),

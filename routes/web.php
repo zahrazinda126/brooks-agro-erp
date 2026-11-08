@@ -14,6 +14,7 @@ use App\Http\Controllers\HR\FleetController;
 use App\Http\Controllers\HR\WelfareBudgetController;
 use App\Http\Controllers\HR\AccommodationController;
 use App\Http\Controllers\HR\HrDataEntryController;
+use App\Http\Controllers\HR\StaffConsumablesController;
 use App\Http\Controllers\Poultry\BatchController;
 use App\Http\Controllers\Poultry\BreedController;
 use Illuminate\Support\Facades\Route;
@@ -206,6 +207,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/hr/staff-welfare-budget', [WelfareBudgetController::class, 'index'])->name('hr.welfare-budget.index');
         Route::get('/hr/data-entry', [HrDataEntryController::class, 'index'])->name('hr.data-entry.index');
         Route::get('/hr/accommodation', [AccommodationController::class, 'index'])->name('hr.accommodation.index');
+        Route::get('/hr/consumables', [StaffConsumablesController::class, 'index'])->name('hr.consumables.index');
         Route::get('/hr/on-the-farm', [AccommodationController::class, 'onFarm'])->name('hr.on-farm');
         // Temporary workers: short registration, no login, not on payroll; HR assigns rooms.
         Route::get('/hr/temporary-workers', [\App\Http\Controllers\HR\TemporaryWorkerController::class, 'index'])->name('hr.temporary.index');

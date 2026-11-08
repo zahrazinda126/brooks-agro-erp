@@ -7,15 +7,15 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        Schema::table('staff_accommodation_items', function (Blueprint $table) {
-            $table->decimal('unit_cost', 14, 2)->nullable()->after('quantity');
+        Schema::table('pa_daily_reports', function (Blueprint $table) {
+            $table->json('construction_updates')->nullable()->after('activities');
         });
     }
 
     public function down(): void
     {
-        Schema::table('staff_accommodation_items', function (Blueprint $table) {
-            $table->dropColumn('unit_cost');
+        Schema::table('pa_daily_reports', function (Blueprint $table) {
+            $table->dropColumn('construction_updates');
         });
     }
 };

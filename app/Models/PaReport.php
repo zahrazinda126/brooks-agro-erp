@@ -10,11 +10,11 @@ class PaReport extends Model
 {
     protected $table = 'pa_daily_reports';
 
-    protected $fillable = ['user_id', 'report_date', 'did_today', 'issues', 'plan_tomorrow', 'activities', 'status', 'submitted_at', 'facts', 'director_comment', 'commented_by', 'commented_at', 'read_at'];
+    protected $fillable = ['user_id', 'report_date', 'did_today', 'issues', 'plan_tomorrow', 'activities', 'construction_updates', 'status', 'submitted_at', 'facts', 'director_comment', 'commented_by', 'commented_at', 'read_at'];
 
     protected function casts(): array
     {
-        return ['report_date' => 'date', 'submitted_at' => 'datetime', 'commented_at' => 'datetime', 'read_at' => 'datetime', 'facts' => 'array', 'activities' => 'array'];
+        return ['report_date' => 'date', 'submitted_at' => 'datetime', 'commented_at' => 'datetime', 'read_at' => 'datetime', 'facts' => 'array', 'activities' => 'array', 'construction_updates' => 'array'];
     }
 
     public function author(): BelongsTo

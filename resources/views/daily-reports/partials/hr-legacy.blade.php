@@ -9,7 +9,7 @@ $sectionText=function($code,$field)use($departmentRows){return optional($departm
 $detailRows=function($code,$key)use($departmentRows){return collect(data_get($departmentRows->get($code)?->details,$key,[]))->filter(fn($row)=>collect($row)->filter(fn($value)=>filled($value))->isNotEmpty());};
 $securityEntries=$detailRows('security','security');
 $mealEntries=$detailRows('welfare','meals');
-$projectEntries=$detailRows('construction','projects');
+$projectEntries=collect($snapshot['construction'] ?? []);
 $adHocEntries=$detailRows('ad_hoc','activities');
 $attendanceExceptions=$detailRows('attendance','attendance')->keyBy(fn($row)=>Str::lower(trim($row['staff_no']??'')));
 $managementObservations=collect(data_get($departmentRows->get('ad_hoc')?->details,'management_observations',[]));
@@ -53,18 +53,27 @@ $managementObservations=collect(data_get($departmentRows->get('ad_hoc')?->detail
  </tbody></table>
 
  <h4><span class="section-no">5</span>Daily Construction Report</h4>
- <table><thead><tr><th>Deliverable</th><th>Project ID</th><th>Project timeline</th><th>Number of people on the project</th><th>Key contact person</th><th>Number of activities on the project</th><th>Tasks to be achieved</th><th>Status completed</th><th>Status pending</th><th>Challenges</th><th>PPE on site</th></tr></thead><tbody>
- @if($projectEntries->isNotEmpty()) @foreach($projectEntries as $entry)<tr><td>{{ $entry['deliverable']??'Construction' }}</td><td>{{ $entry['project_id']??'—' }}</td><td>{{ $entry['timeline']??'—' }}</td><td>{{ $entry['people']??'—' }}</td><td>{{ $entry['contact']??'—' }}</td><td>{{ $entry['activity_count']??'—' }}</td><td>{{ $entry['tasks']??'—' }}</td><td>{{ filled($entry['completed']??null)?$entry['completed'].'%':'—' }}</td><td>{{ filled($entry['pending']??null)?$entry['pending'].'%':'—' }}</td><td>{{ $entry['challenges']??'—' }}</td><td>{{ $entry['ppe']??'—' }}</td></tr>@endforeach @else
- <tr><td>Construction</td><td>—</td><td>—</td><td class="num">—</td><td>—</td><td class="num">—</td><td>{{ $sectionText('construction','activities') ?: '—' }}</td><td>—</td><td>—</td><td>{{ $sectionText('construction','challenges') ?: '—' }}</td><td>—</td></tr>
+ <table><thead><tr><th>Deliverable</th><th>Project ID</th><th>Project timeline</th><th>Number of people on the project</th><th>Key contact person</th><th>Number of activities on the project</th><th>Tasks to be achieved</th><th>Status completed</th><th>Status pending</th><th>Challenges</th><th>PPE on site</th><th>Remarks</th></tr></thead><tbody>
+ @if($projectEntries->isNotEmpty()) @foreach($projectEntries as $entry)<tr><td>{{ $entry['deliverable']??'Construction' }}</td><td>{{ $entry['project_id']??'—' }}</td><td>{{ $entry['timeline']??'—' }}</td><td>{{ $entry['people']??'—' }}</td><td>{{ $entry['contact']??'—' }}</td><td>{{ $entry['activity_count']??'—' }}</td><td>{{ $entry['tasks']??'—' }}</td><td>{{ filled($entry['completed']??null)?$entry['completed'].'%':'—' }}</td><td>{{ filled($entry['pending']??null)?$entry['pending'].'%':'—' }}</td><td>{{ $entry['challenges']??'—' }}</td><td>{{ $entry['ppe']??'—' }}</td><td>{{ $entry['remarks']??'—' }}</td></tr>@endforeach @else
+ <tr><td colspan="12" class="empty">No construction projects are registered for this date.</td></tr>
  @endif
  </tbody></table>
 
  <h4><span class="section-no">6</span>Ad Hoc Activities</h4>
  <table><thead><tr><th>Deliverable</th><th>Number of Ad Hoc activities</th><th>Type of Ad Hoc activities</th><th>Description of the activity</th><th>Reason for the Ad Hoc activities</th><th>Status of implementation</th><th>Remarks</th></tr></thead><tbody>
  @if($adHocEntries->isNotEmpty()) @foreach($adHocEntries as $entry)<tr><td>{{ $entry['deliverable']??'Ad hoc activity' }}</td><td>{{ $adHocEntries->count() }}</td><td>{{ $entry['type']??'—' }}</td><td>{{ $entry['description']??'—' }}</td><td>{{ $entry['reason']??'—' }}</td><td>{{ $entry['status']??'—' }}</td><td>{{ $entry['remarks']??'—' }}</td></tr>@endforeach @else
- <tr><td>CSR, client requests, emergencies, technical issues, meetings and disciplinary actions</td><td class="num">{{ $departmentRows->has('ad_hoc') ? 1 : 0 }}</td><td>{{ $sectionText('ad_hoc','summary') ?: '—' }}</td><td>{{ $sectionText('ad_hoc','activities') ?: '—' }}</td><td>{{ $sectionText('ad_hoc','recommendations') ?: '—' }}</td><td>{{ $departmentRows->has('ad_hoc') ? Str::headline($departmentRows->get('ad_hoc')->status) : '—' }}</td><td>{{ $sectionText('ad_hoc','challenges') ?: '—' }}</td></tr>
+ <tr><td>CSR, client requests, emergencies, technical issues, meetings and disciplinary actions</td><td class="num">0</td><td>—</td><td>No ad hoc activities were recorded for this date.</td><td>—</td><td>—</td><td>—</td></tr>
  @endif
  </tbody></table>
+ @if($editableObservations??false)
+ @php($adHocRow=$departmentRows->get('ad_hoc'))
+ <form method="POST" action="{{ route('daily-reports.save') }}" class="card">@csrf
+  <input type="hidden" name="report_date" value="{{ $date }}"><input type="hidden" name="department_code" value="hr"><input type="hidden" name="unit_code" value="ad_hoc">
+  <input type="hidden" name="summary" value="{{ $adHocRow?->summary ?: 'HR Ad Hoc Activities' }}"><input type="hidden" name="activities" value="{{ $adHocRow?->activities }}">
+  @include('daily-reports.partials.structured-fields',['departmentCode'=>'hr','unitCode'=>'ad_hoc','details'=>$adHocRow?->details ?? []])
+  <button class="btn btn--quiet" name="action" value="draft">Save Ad Hoc Activities</button>
+ </form>
+ @endif
 
  @php
  $challenges=$submitted->pluck('challenges')->filter();

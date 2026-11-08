@@ -15,7 +15,7 @@ class PaDailyReport
 {
     private const CLOSED = ['done', 'completed', 'cancelled'];
 
-    public function facts(Carbon $date): array
+    public function facts(Carbon $date, array $includeConstructionProjectIds = []): array
     {
         $day = $date->toDateString();
 
@@ -50,11 +50,21 @@ class PaDailyReport
             ])->values()->all(),
         ];
 
-        $construction = DB::table('construction_projects')->where('status', 'active')->orderBy('name')->get()->map(fn ($p) => [
+        $construction = DB::table('construction_projects')->where(function ($query) use ($includeConstructionProjectIds) {
+            $query->where('status', 'active');
+            if ($includeConstructionProjectIds) $query->orWhereIn('id', $includeConstructionProjectIds);
+        })->whereDate('starts_on', '<=', $day)->where(fn ($query) => $query->whereNull('expected_end_on')->orWhereDate('expected_end_on', '>=', $day))->orderBy('name')->get()->map(fn ($p) => [
+            'project_id' => $p->id,
             'name' => $p->name,
+            'timeline' => $p->starts_on ? Carbon::parse($p->starts_on)->format('d M Y').($p->expected_end_on ? ' – '.Carbon::parse($p->expected_end_on)->format('d M Y') : ' – Ongoing') : '—',
             'builders' => DB::table('construction_project_workers')->where('construction_project_id', $p->id)
                 ->where(fn ($q) => $q->whereNull('from_on')->orWhereDate('from_on', '<=', $day))
                 ->where(fn ($q) => $q->whereNull('to_on')->orWhereDate('to_on', '>=', $day))->count(),
+            'contact' => DB::table('construction_project_workers')->join('employees', 'employees.id', '=', 'construction_project_workers.employee_id')
+                ->where('construction_project_workers.construction_project_id', $p->id)->where('construction_project_workers.role', 'lead')
+                ->where(fn ($q) => $q->whereNull('from_on')->orWhereDate('from_on', '<=', $day))
+                ->where(fn ($q) => $q->whereNull('to_on')->orWhereDate('to_on', '>=', $day))
+                ->orderBy('construction_project_workers.id')->value(DB::raw("concat(employees.first_name, ' ', employees.last_name)")),
             'materials' => (float) DB::table('inventory_movements')->where('construction_project_id', $p->id)
                 ->whereIn('movement_type', ['issued', 'farm_use'])->whereDate('movement_date', $day)->sum('total_cost'),
             'paid' => (float) DB::table('financial_transactions')->where('construction_project_id', $p->id)->whereNull('reversed_at')

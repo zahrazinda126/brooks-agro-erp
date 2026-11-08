@@ -28,7 +28,7 @@ class Employee extends Model
         'phone', 'alt_phone', 'email', 'national_id', 'gender', 'on_payroll',
         'date_of_birth', 'address', 'next_of_kin_name', 'next_of_kin_phone',
         'department_id', 'role_id', 'job_title', 'employment_type',
-        'hire_date', 'end_date', 'status',
+        'hire_date', 'expected_end_date', 'placement_from', 'end_date', 'status',
         'base_salary', 'pay_frequency', 'payment_method',
         'bank_name', 'bank_account', 'mobile_money_number',
         'notes', 'created_by',
@@ -39,6 +39,7 @@ class Employee extends Model
         return [
             'date_of_birth' => 'date',
             'hire_date'     => 'date',
+            'expected_end_date' => 'date',
             'end_date'      => 'date',
             'base_salary'   => 'decimal:2',
         ];

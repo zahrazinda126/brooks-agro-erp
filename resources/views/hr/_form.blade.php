@@ -208,6 +208,19 @@
             <p class="field-hint">So HR sees who is finishing rather than finding out on payday.</p>
         </div>
 
+        @if(!isset($employee))
+        <div class="field" data-temporary-worker-only hidden>
+            <label for="staff_hostel_room_id">Room <small>(optional)</small></label>
+            <select id="staff_hostel_room_id" name="staff_hostel_room_id">
+                <option value="">No room</option>
+                @foreach(($rooms ?? collect()) as $room)
+                    <option value="{{ $room->id }}" @selected(old('staff_hostel_room_id') == $room->id)>{{ $room->hostel }} · Room {{ $room->room_number }}</option>
+                @endforeach
+            </select>
+            <p class="field-hint">Choosing a room checks the temporary worker in when you save this form.</p>
+        </div>
+        @endif
+
         <div class="field" data-placement-only hidden>
             <label for="placement_from">Sent by</label>
             <input id="placement_from" name="placement_from" type="text"
@@ -236,7 +249,7 @@
     </div>
 </div>
 
-<div class="card">
+<div class="card" @if(!isset($employee)) data-payroll-only @endif>
     <p class="card-label">How they get paid</p>
 
     <div class="form-grid">
@@ -333,6 +346,8 @@
     var select = document.querySelector('[data-employment]');
     var hint   = document.querySelector('[data-series-hint]');
     var temp   = document.querySelector('[data-temp-only]');
+    var tempAccommodation = document.querySelector('[data-temporary-worker-only]');
+    var payrollCard = document.querySelector('[data-payroll-only]');
     var place  = document.querySelector('[data-placement-only]');
     if (!select) return;
 
@@ -359,6 +374,13 @@
         }
 
         if (temp)  temp.hidden  = TEMPORARY.indexOf(v) === -1;
+        if (tempAccommodation) tempAccommodation.hidden = v !== 'temporary';
+        if (payrollCard) {
+            payrollCard.hidden = v === 'temporary';
+            payrollCard.querySelectorAll('input, select, textarea, button').forEach(function (field) {
+                field.disabled = v === 'temporary';
+            });
+        }
         if (place) place.hidden = PLACEMENT.indexOf(v) === -1;
     }
 

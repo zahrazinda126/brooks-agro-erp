@@ -79,6 +79,13 @@ class DailyManagementReportController extends Controller
         abort_if(!$row->exists && DB::table('daily_department_report_closures')->whereDate('report_date',$data['report_date'])->where('department_code',$data['department_code'])->exists(),422,'The department manager already closed reporting for this date. Ask them to reopen it before adding another activity.');
         abort_if($row->exists && $row->status === 'ceo_reviewed', 422, 'A CEO-reviewed unit report is locked.');
         $details = collect($data['details'] ?? [])->map(fn ($rows) => collect($rows)->filter(fn ($item) => collect($item)->filter(fn ($value) => filled($value))->isNotEmpty())->values()->all())->all();
+        // HR's ad hoc register and management observations share the same unit row.
+        // Editing one must not erase the other.
+        if ($data['department_code'] === 'hr' && $data['unit_code'] === 'ad_hoc'
+            && array_key_exists('management_observations', $row->details ?? [])
+            && !array_key_exists('management_observations', $details)) {
+            $details['management_observations'] = $row->details['management_observations'];
+        }
         if(data_get($row->details,'system_source') && empty($details)) $details=$row->details;
         $row->fill(['summary' => $data['summary'], 'activities' => $data['activities'] ?? null, 'challenges' => $data['challenges'] ?? null, 'recommendations' => $data['recommendations'] ?? null, 'details' => $details, 'prepared_by' => $request->user()->id, 'status' => $data['action'] === 'share' ? 'manager_shared' : 'draft', 'shared_at' => $data['action'] === 'share' ? now() : null, 'reviewed_by' => null, 'reviewed_at' => null, 'review_note' => null])->save();
         if ($data['action'] === 'share') {
@@ -259,6 +266,7 @@ class DailyManagementReportController extends Controller
             'fleet' => DB::table('fleet_records')->whereDate('recorded_on', $date)->orderBy('set_off_at')->get(),
             'active_staff' => DB::table('employees')->where('status', 'active')->count(),
             'employees' => DB::table('employees')->leftJoin('departments', 'departments.id', '=', 'employees.department_id')->leftJoin('roles', 'roles.id', '=', 'employees.role_id')->where('employees.status', 'active')->select('employees.*', 'departments.name as department_name', 'roles.name as role_name')->orderBy('departments.name')->orderBy('employees.first_name')->get(),
+            'construction' => app(\App\Services\ConstructionDailyReport::class)->rows($date),
         ];
     }
 

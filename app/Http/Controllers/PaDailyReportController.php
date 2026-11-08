@@ -6,6 +6,7 @@ use App\Models\{AuditLog, PaReport, User};
 use App\Services\{CommunicationService, PaDailyReport};
 use Carbon\Carbon;
 use Illuminate\Http\{RedirectResponse, Request};
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 /**
@@ -21,10 +22,11 @@ class PaDailyReportController extends Controller
         abort_unless($user->isPersonalAssistant(), 403);
         $date = $this->day($request->input('date'));
         $report = PaReport::firstOrNew(['user_id' => $user->id, 'report_date' => $date->toDateString()]);
+        $savedProjectIds = collect($report->construction_updates ?? [])->pluck('project_id')->map(fn ($id) => (int) $id)->all();
 
         return view('pa.daily-report.write', [
             'date' => $date, 'report' => $report,
-            'facts' => $report->isSubmitted() ? $report->facts : $facts->facts($date),
+            'facts' => $report->isSubmitted() ? $report->facts : $facts->facts($date, $savedProjectIds),
         ]);
     }
 
@@ -37,20 +39,41 @@ class PaDailyReportController extends Controller
             'report_date' => ['required', 'date', 'before_or_equal:today'],
             'activities' => ['nullable', 'array', 'max:60'],
             'activities.*.project' => ['nullable', 'string', 'max:120'],
+            'activities.*.construction_project_id' => ['nullable', 'integer', 'exists:construction_projects,id'],
             'activities.*.activity' => ['nullable', 'string', 'max:500'],
             'activities.*.status' => ['nullable', 'string', 'max:120'],
+            'construction_updates' => ['nullable', 'array', 'max:100'],
+            'construction_updates.*.project_id' => ['required', 'integer', 'distinct', 'exists:construction_projects,id'],
+            'construction_updates.*.tasks' => ['nullable', 'string', 'max:2000'],
+            'construction_updates.*.challenges' => ['nullable', 'string', 'max:2000'],
+            'construction_updates.*.ppe' => ['nullable', 'string', 'max:1000'],
+            'construction_updates.*.remarks' => ['nullable', 'string', 'max:2000'],
             'issues' => ['nullable', 'string', 'max:5000'],
             'plan_tomorrow' => ['nullable', 'string', 'max:5000'],
         ]);
-        $activities = collect($data['activities'] ?? [])->map(fn ($row) => array_map(fn ($v) => trim((string) $v), $row + ['project' => '', 'activity' => '', 'status' => '']))
-            ->filter(fn ($row) => $row['activity'] !== '')->values()->all();
+        $activities = collect($data['activities'] ?? [])->map(function ($row) {
+            $row = array_map(fn ($v) => trim((string) $v), $row + ['project' => '', 'activity' => '', 'status' => '']);
+            $row['construction_project_id'] = $row['construction_project_id'] !== '' ? (int) $row['construction_project_id'] : null;
+            if ($row['construction_project_id']) {
+                $row['project'] = DB::table('construction_projects')->where('id', $row['construction_project_id'])->value('name') ?: $row['project'];
+            }
+            return $row;
+        })->filter(fn ($row) => $row['activity'] !== '')->values()->all();
+        $constructionUpdates = collect($data['construction_updates'] ?? [])->map(fn ($row) => [
+            'project_id' => (int) $row['project_id'],
+            'tasks' => trim((string) ($row['tasks'] ?? '')),
+            'challenges' => trim((string) ($row['challenges'] ?? '')),
+            'ppe' => trim((string) ($row['ppe'] ?? '')),
+            'remarks' => trim((string) ($row['remarks'] ?? '')),
+        ])->values()->all();
         $date = $this->day($data['report_date']);
         $report = PaReport::firstOrNew(['user_id' => $user->id, 'report_date' => $date->toDateString()]);
         abort_if($report->isSubmitted(), 422, 'This report has already been sent to the Director.');
 
         $report->fill([
-            'activities' => $activities, 'issues' => $data['issues'] ?? null, 'plan_tomorrow' => $data['plan_tomorrow'] ?? null,
-        ] + ($submit ? ['status' => 'submitted', 'submitted_at' => now(), 'facts' => $facts->facts($date)] : ['status' => 'draft']))->save();
+            'activities' => $activities, 'construction_updates' => $constructionUpdates,
+            'issues' => $data['issues'] ?? null, 'plan_tomorrow' => $data['plan_tomorrow'] ?? null,
+        ] + ($submit ? ['status' => 'submitted', 'submitted_at' => now(), 'facts' => $facts->facts($date, collect($constructionUpdates)->pluck('project_id')->all())] : ['status' => 'draft']))->save();
 
         if (! $submit) {
             return redirect()->route('pa.daily-report', ['date' => $date->toDateString()])->with('status', 'Draft saved.');
